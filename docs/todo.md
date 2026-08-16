@@ -1205,7 +1205,7 @@
 
 目标：云机以非 root、可重启、仓库外 credentials 运行。
 
-`BLOCKED_BY: CLOUD_HOST_NOT_PROVIDED`。unit/tmpfiles/journald 模板及静态安全测试已完成；watchdog heartbeat、`systemctl show`、`/proc` 和 journal 的真实云机回读不得用本地模板代替。
+`CONTROL_DEPLOYED; EXECUTION_PLANE_BLOCKED_BY_FINAL_PROTOCOL_EVIDENCE`。`47.251.28.201` 上的无私钥 Control 已完成真实 systemd、`/proc`、journal、钱包和 artifact 回读；Hot Executor/Reconciler/Exit 仍因最终 Factory/ABI/route 未冻结而不安装、不授权。
 
 - [x] 创建 Control Sentinel unit。
 - [x] 创建 Executor unit。
@@ -1215,15 +1215,18 @@
 - [x] 配置 WorkingDirectory。
 - [x] 配置 EnvironmentFile/LoadCredential。
 - [x] 配置 umask 和 runtime permissions。
-- [ ] 配置 restart/backoff/watchdog。
+- [x] 配置 restart/backoff。
+- [ ] 配置 watchdog heartbeat。
 - [x] 配置 journald redaction/rotation。
 - [x] 配置 network/time dependencies。
-- [ ] 服务实际 readback 与 artifact SHA 对齐。
+- [x] Control 服务实际 readback 与 artifact SHA 对齐，见 [2026-08-16-control-deployment.md](./receipts/2026-08-16-control-deployment.md)。
+- [ ] Executor/Reconciler/Exit 在最终协议证据完成后部署并回读。
 
 验收：
 
-- [ ] 服务重启后恢复 state，不重复 intent。
-- [ ] `/proc`、journal、部署目录不泄露 key。
+- [x] Control 服务重启后恢复监控状态；该服务无 signer、无 intent 写入能力。
+- [ ] Executor 服务重启后恢复 canonical state 且不重复 intent。
+- [x] `/proc`、journal、immutable release 目录不泄露 key；Control OS 用户不可读 wallet key。
 
 ### STORY-104：Region/RPC Benchmark（P1）
 
@@ -1250,7 +1253,7 @@
 目标：观察冗余但签名保持单 writer，防止双 payload。
 
 - [ ] 部署一台 active executor。
-- [ ] 部署一台无私钥 observer。
+- [x] 部署一台无私钥 observer（当前与 Control Sentinel 同机）。
 - [ ] observer 验证 signal coverage/latency。
 - [x] 定义 active failure detection。
 - [x] 定义受控接管流程。
@@ -1362,17 +1365,18 @@
 `BLOCKED_BY: READINESS_RECEIPT_IS_NOT_HOT_ARMED`。已创建 [receipts/production-readiness.md](./receipts/production-readiness.md) 负面回执，逐项记录证据、blocker 和 owner，不伪造 `HOT_ARMED`。
 
 - [x] chainId/current head。
-- [ ] HTTP/WSS/direct Sequencer health。
+- [x] HTTP/WSS/direct Sequencer health（生产 Control readback）。
 - [ ] Factory/Profile current bytecode readback。
 - [ ] exact/topic-wide subscriptions。
-- [ ] 10/10 wallet address/balance/nonces。
-- [ ] principal/entry Gas/exit Gas reservation。
-- [ ] Price Snapshot freshness。
+- [x] 10/10 wallet address/balance/nonces（每个 `0.0032 ETH`、latest/pending `0/0`）。
+- [x] principal/entry Gas/exit Gas reservation（当前 price/Gas snapshot 下 10/10 ready、60U all-in cap ready）。
+- [x] Price Snapshot freshness（生产 Control 持续双源刷新；不等于 launch authorization）。
 - [ ] strategy config hash/authorization。
 - [x] DB/leases/vault readiness。
 - [ ] inner/outer exit adapter readiness。
 - [ ] open UNKNOWN/positions。
-- [ ] deployed artifact SHA/systemd readback。
+- [x] keyless Control deployed artifact SHA/systemd readback。
+- [ ] Hot Executor/Reconciler/Exit artifact SHA/systemd readback。
 
 验收：
 
@@ -1413,7 +1417,8 @@
 - [x] 合并后创建受 ruleset `20907328` 保护的 tag `v0.1.0`。
 - [x] CD run `31940616256` 生成并发布 tgz、`SHA256SUMS` 与 `BUILD-METADATA.json`。
 - [x] GitHub Release v0.1.0 附 Tech Spec、ADRs、known limitations、测试/覆盖率与 checksum。
-- [ ] 云机仅部署经过批准的 artifact SHA。`BLOCKED_BY: CLOUD_HOST_AND_REGION_NOT_PROVIDED; RELEASE_IS_NOT_HOT_ARMED`。
+- [x] 云机 Control 仅部署用户批准、可追溯到 commit `61d9be5` 的 artifact SHA；该批准不授权资金执行。
+- [ ] Hot Executor 仅部署最终 `HOT_ARMED` 后批准的 release artifact。
 
 验收：
 
@@ -1493,7 +1498,8 @@
 - [x] 本可执行 todo 已按小故事卡、阶段、测试和验收拆解。
 - [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现并通过 207 项测试。
 - [x] 默认 live 入口在主网证据不完整时失败关闭，旧单钱包入口不进入 release artifact。
-- [x] 已生成 10 个仓库外 one-shot EOA 并验证 key/address correspondence，但未注资。
+- [x] 已生成 10 个仓库外 one-shot EOA，完成本地与服务器 10/10 key/address correspondence，并为每个钱包注入 `0.0032 ETH`；生产回读 nonce 均为 `0/0`。
+- [x] 已在 `47.251.28.201` 部署 keyless Control Sentinel，生产 HTTP/WSS/Sequencer、钱包 readiness、systemd 重启和 artifact SHA 回读通过；Hot Executor 保持未部署、未授权。
 
 ### 下一批必须先完成
 
