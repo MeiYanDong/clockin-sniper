@@ -7,7 +7,7 @@ The executor unit is additionally gated by `/etc/clockin-sniper/PRODUCTION_ARM_A
 Security boundaries:
 
 - `clockin-observer` runs Control Sentinel and receives no signer credentials.
-- provision the system group `clockin-status` before applying tmpfiles; it gives both service identities read-only directory traversal and access to redacted status files, while `credentials/` and `wallets/` remain `root:root 0700`;
+- provision the system group `clockin-status` before applying tmpfiles; `/run/clockin-status` is setgid+sticky group-writable so each service can atomically replace its own `0640` redacted status without deleting another owner's file, while `credentials/` and `wallets/` remain `root:root 0700`;
 - signer and vault material is copied by systemd into the per-service credentials directory, not exported as command-line arguments or environment values;
 - `ProtectProc=invisible`, `ProtectHome=true`, `UMask=0077`, a strict filesystem, empty capabilities, and owner-only state/runtime directories reduce exposure;
 - stdout/stderr goes to journald, but application-level redaction remains mandatory;

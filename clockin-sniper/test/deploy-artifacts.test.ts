@@ -93,7 +93,7 @@ describe("hardened production service templates", () => {
     assert.match(tmpfiles, /^d \/etc\/clockin-sniper\/credentials 0700 root root -$/mu);
     assert.match(tmpfiles, /^d \/etc\/clockin-sniper\/wallets 0700 root root -$/mu);
     assert.match(tmpfiles, /^d \/var\/lib\/clockin-sniper 0700 clockin clockin -$/mu);
-    assert.match(tmpfiles, /^d \/run\/clockin-status 2750 root clockin-status -$/mu);
+    assert.match(tmpfiles, /^d \/run\/clockin-status 3770 root clockin-status -$/mu);
 
     const journal = await readFile(`${systemdRoot}journald-clockin.conf`, "utf8");
     assert.match(journal, /^SystemMaxUse=1G$/mu);
