@@ -312,6 +312,7 @@
 - [x] 每个生产参数都有 owner、默认值、范围和变更方式。
 - [x] 预算或身份授权变化必须产生新 config hash。
 - [x] ADR 0006、strategy config、单元测试与 readiness 文档使用同一组参数。
+- [x] 保存 `clockin-policy-v2` 本地验证与 Public PR 实现回执。
 
 ---
 
