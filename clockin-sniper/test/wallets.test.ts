@@ -126,12 +126,20 @@ describe("wallet readiness and price snapshot", () => {
       approvalGasLimit: 50n,
       sellGasLimit: 100n,
       exitMaxFeePerGasWei: 1n,
-      safetyMarginWei: 100n,
+      maximumSellTransactions: 3,
+      gasSafetyMarginBps: 3_000,
+      aggregateAllInCapWei: 60_000_000n,
+      automaticTopUpAllowed: false,
     });
     assert.equal(report.hotArmed, true);
     assert.equal(report.principalReadyWallets, 10);
     assert.equal(report.exitGasReadyWallets, 10);
     assert.equal(report.nonceCleanWallets, 10);
+    assert.equal(report.rows[0]?.exitGasRequiredWei, 350n);
+    assert.equal(report.rows[0]?.gasSafetyMarginWei, 135n);
+    assert.equal(report.aggregateRequiredWei, 50_005_850n);
+    assert.equal(report.allInCapReady, true);
+    assert.equal(report.automaticTopUpAllowed, false);
   });
 
   it("pinpoints an underfunded or pending wallet without blocking report construction", async () => {
@@ -157,11 +165,48 @@ describe("wallet readiness and price snapshot", () => {
       approvalGasLimit: 50n,
       sellGasLimit: 100n,
       exitMaxFeePerGasWei: 1n,
-      safetyMarginWei: 100n,
+      maximumSellTransactions: 3,
+      gasSafetyMarginBps: 3_000,
+      aggregateAllInCapWei: 60_000_000n,
+      automaticTopUpAllowed: false,
     });
     assert.equal(report.hotArmed, false);
-    assert.equal(report.rows[0]?.shortfallWei, 5_000_349n);
+    assert.equal(report.rows[0]?.shortfallWei, 5_000_584n);
     assert.equal(report.rows[0]?.unknownPending, true);
+  });
+
+  it("fails readiness when three-sell gas exceeds the all-in cap and rejects automatic top-up", async () => {
+    const requester: JsonRpcRequester = {
+      providerId: "fixture",
+      async request<T>(method: string): Promise<T> {
+        if (method === "eth_chainId") return "0x1237" as T;
+        if (method === "eth_getBalance") return "0x989680" as T;
+        if (method === "eth_getTransactionCount") return "0x0" as T;
+        throw new Error(`unexpected ${method}`);
+      },
+    };
+    const policy = {
+      batchValueWei: 5_000_000n,
+      entryGasLimit: 100n,
+      entryMaxFeePerGasWei: 1n,
+      approvalGasLimit: 50n,
+      sellGasLimit: 100n,
+      exitMaxFeePerGasWei: 1n,
+      maximumSellTransactions: 3,
+      gasSafetyMarginBps: 3_000,
+      aggregateAllInCapWei: 50_005_849n,
+      automaticTopUpAllowed: false,
+    };
+    const report = await inspectWalletReadiness(requester, nonSecretManifest(), policy);
+    assert.equal(report.allInCapReady, false);
+    assert.equal(report.hotArmed, false);
+    await assert.rejects(
+      inspectWalletReadiness(requester, nonSecretManifest(), {
+        ...policy,
+        automaticTopUpAllowed: true,
+      }),
+      /automatic wallet top-up is disabled/,
+    );
   });
 
   it("freezes 5U to wei from two fresh integer price sources", async () => {

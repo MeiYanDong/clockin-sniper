@@ -30,6 +30,7 @@ export interface LaneDispatchDecision {
 
 export interface LaneOrchestratorConfig {
   readonly batchPrincipalRaw: bigint;
+  readonly minimumShrunkPrincipalRaw: bigint;
   readonly aggregatePrincipalCapRaw: bigint;
   readonly catchUpPolicy: CatchUpPolicy;
   readonly maxConcurrentCatchUpLanes: number;
@@ -59,6 +60,12 @@ export class TenLaneOrchestrator {
   constructor(plan: FeeBandPlan, config: LaneOrchestratorConfig) {
     if (plan.lanes.length !== 10) throw new RangeError("ten fee lanes are required");
     if (config.batchPrincipalRaw <= 0n) throw new RangeError("batch principal must be positive");
+    if (
+      config.minimumShrunkPrincipalRaw <= 0n ||
+      config.minimumShrunkPrincipalRaw > config.batchPrincipalRaw
+    ) {
+      throw new RangeError("minimum shrunk principal must be positive and no greater than batch");
+    }
     if (config.batchPrincipalRaw * 10n > config.aggregatePrincipalCapRaw) {
       throw new CanonicalInvariantError(
         "BUDGET_EXCEEDED",
@@ -75,6 +82,7 @@ export class TenLaneOrchestrator {
     this.configHash = stableHash({
       ...config,
       batchPrincipalRaw: config.batchPrincipalRaw.toString(),
+      minimumShrunkPrincipalRaw: config.minimumShrunkPrincipalRaw.toString(),
       aggregatePrincipalCapRaw: config.aggregatePrincipalCapRaw.toString(),
     });
     this.#lanes = plan.lanes.map((lane) => ({
@@ -219,19 +227,32 @@ export class TenLaneOrchestrator {
     }
 
     const decisions: LaneDispatchDecision[] = [];
+    let remainingObservedGlobalCapRaw =
+      observation.capScope === "GLOBAL" ? observation.capRaw : null;
     for (const lane of selected) {
       let principalRaw = this.#config.batchPrincipalRaw;
-      if (observation.capScope !== "UNKNOWN" && principalRaw > observation.capRaw) {
+      const observedLegalCapRaw = remainingObservedGlobalCapRaw ?? observation.capRaw;
+      if (observation.capScope !== "UNKNOWN" && principalRaw > observedLegalCapRaw) {
         if (this.#config.capPolicy === "STRICT_5U") {
           lane.state = "INCOMPATIBLE_5U_CAP";
           lane.reason = "5U principal exceeds current legal cap";
           continue;
         }
-        principalRaw = observation.capRaw;
+        principalRaw = observedLegalCapRaw;
       }
-      if (principalRaw <= 0n) {
+      if (principalRaw < this.#config.minimumShrunkPrincipalRaw) {
         lane.state = "INCOMPATIBLE_5U_CAP";
-        lane.reason = "current legal cap is zero";
+        lane.reason = "current legal cap is below the minimum non-dust lane principal";
+        continue;
+      }
+      const quote = quotes.get(lane.laneId);
+      if (
+        lane.trancheNumber > 1 &&
+        quoteIsValid(lane.laneId) &&
+        quote?.principalRaw !== principalRaw
+      ) {
+        lane.state = "DEFERRED";
+        lane.reason = "QUOTE_PRINCIPAL_MISMATCH: shrunk lane requires a fresh same-principal quote";
         continue;
       }
       const alreadyDispatched = this.#lanes.reduce(
@@ -246,7 +267,6 @@ export class TenLaneOrchestrator {
       }
       lane.state = "DISPATCHED";
       lane.dispatchedPrincipalRaw = principalRaw;
-      const quote = quotes.get(lane.laneId);
       lane.reason =
         lane.trancheNumber > 1 && !quoteIsValid(lane.laneId)
           ? "QUOTE_UNAVAILABLE: explicit one-per-block fallback requires downstream minOut policy"
@@ -264,6 +284,9 @@ export class TenLaneOrchestrator {
           reason: lane.reason,
         }),
       );
+      if (remainingObservedGlobalCapRaw !== null) {
+        remainingObservedGlobalCapRaw -= principalRaw;
+      }
     }
     if (decisions.length > 0 && observation.cooldownScope === "GLOBAL") {
       this.#lastGlobalDispatchTimestamp = observation.block.blockTimestamp;

@@ -21,12 +21,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Same-raw provider fanout, encrypted UNKNOWN recovery, receipt/economic-effect reconciliation, reorg revisions, latency timelines, positions, route valuation, and principal-first exit policy.
 - Health/readiness endpoints, evidence-only dashboard, asynchronous redacted alerts, single-writer failover, region benchmark tooling, hardened systemd templates, and deployment runbooks.
 - Build metadata, Git-history secret scanning, extracted-archive boundary scanning, and v2-only package exports.
+- `clockin-policy-v2` with a 50U principal/60U all-in envelope, 1U–5U cap resizing, dual-source price bounds, and seven-day scope-bound authorization.
+- Pre-principal executable-net stop/holding policy and a separately authorized 20% break-glass exit path while routine exits remain capped at 5%.
 
 ### Changed
 
 - Extended the verification command to include formatting, linting, coverage, production dependency audit, and package-content audit.
 - Changed the default live entrypoint to fail closed while required mainnet evidence is unavailable; legacy single-wallet commands are explicitly audit/replay-only.
-- Raised the tested baseline to 197 passing tests with line `89.46%`, branch `72.68%`, and function `94.62%` coverage.
+- Reserved per-wallet Gas for one entry, one approval and three sells plus 30% margin; aggregate readiness now enforces the all-in cap and rejects automatic top-up.
+- Raised the tested baseline to 207 passing tests with line `89.58%`, branch `72.27%`, and function `94.70%` coverage.
 
 ### Security
 

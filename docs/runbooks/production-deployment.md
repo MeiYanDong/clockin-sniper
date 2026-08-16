@@ -2,7 +2,7 @@
 
 ## Status and stop boundary
 
-This runbook describes a reproducible deployment, but it is not a deployment receipt. As of 2026-08-16, production activation is blocked by the unpublished final mainnet Launcher Factory/ABI, unfunded entry wallets, unresolved strategy bounds, missing region measurements, and the absence of an approved cloud host. Do not create `PRODUCTION_ARM_APPROVED` until `docs/receipts/production-readiness.md` reports `HOT_ARMED` with evidence for every gate.
+This runbook describes a reproducible deployment, but it is not a deployment receipt. As of 2026-08-16, owner strategy bounds are frozen in `clockin-policy-v2`, but production activation remains blocked by the unpublished final mainnet Launcher Factory/ABI, unfunded entry wallets, missing current price/authorization artifacts, missing region measurements, and the absence of an approved cloud host. Do not create `PRODUCTION_ARM_APPROVED` until `docs/receipts/production-readiness.md` reports `HOT_ARMED` with evidence for every gate.
 
 Never point the v2 systemd services at the legacy single-wallet `npm run live` entrypoint.
 
@@ -45,8 +45,8 @@ Save the redacted output in the private deployment receipt. Confirm that no cred
 
 1. Start `clockin-control` without signer credentials.
 2. Require current chain ID 4663, genesis fingerprint, Factory code hash, final adapter capability revision, time sync, WSS/HTTP health, and SQLite migration success.
-3. Verify all ten public wallet addresses, key correspondence, latest/pending nonce equality, principal balance, entry Gas, and reserved exit Gas.
-4. Verify fresh price snapshot bounds, zero unresolved `UNKNOWN` attempts, single-writer lease ownership, and current quote/validity-envelope semantics.
+3. Verify all ten public wallet addresses, key correspondence, latest/pending nonce equality, principal balance, one-entry/one-approval/three-sell Gas reserves and 30% Gas margin; aggregate requirements must fit the frozen 60U all-in cap.
+4. Verify the <=30-second dual-source price snapshot with <=2% deviation, the scope-bound <=7-day authorization, zero unresolved `UNKNOWN` attempts, single-writer lease ownership, and current quote/validity-envelope semantics.
 5. Start `clockin-reconciler` and `clockin-exit`; they must not create a second entry intent.
 6. Only after the signed production-readiness receipt says `HOT_ARMED`, atomically create the root-owned `PRODUCTION_ARM_APPROVED` marker and start `clockin-executor`.
 7. Read back `/ready`, service state, active lease, database schema, artifact SHA, and capability revision. Save this as the deployment receipt.

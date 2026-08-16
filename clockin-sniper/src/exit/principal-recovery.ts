@@ -10,7 +10,8 @@ export interface ExitPolicyConfig {
   readonly secondProfitMultipleBps: number;
   readonly secondProfitTokenShareBps: number;
   readonly runnerDrawdownBps: number;
-  readonly runnerMaxHoldingMs: number;
+  readonly runnerMaximumHoldingMs: number;
+  readonly momentumFailurePolicyId: "DISABLED_UNTIL_REPLAY_V1";
 }
 
 export interface RunnerState {
@@ -136,10 +137,13 @@ export function decidePrincipalFirstExit(input: {
   validateBps("secondProfitTokenShareBps", input.config.secondProfitTokenShareBps, 10_000);
   validateBps("runnerDrawdownBps", input.config.runnerDrawdownBps, 10_000);
   if (
-    input.config.runnerMaxHoldingMs <= 0 ||
-    !Number.isSafeInteger(input.config.runnerMaxHoldingMs)
+    input.config.runnerMaximumHoldingMs <= 0 ||
+    !Number.isSafeInteger(input.config.runnerMaximumHoldingMs)
   ) {
-    throw new RangeError("runnerMaxHoldingMs must be a positive safe integer");
+    throw new RangeError("runnerMaximumHoldingMs must be a positive safe integer");
+  }
+  if (input.config.momentumFailurePolicyId !== "DISABLED_UNTIL_REPLAY_V1") {
+    throw new Error("runner momentum exits remain disabled until replay validation");
   }
   if (input.position.executableNetLiquidationRaw.state !== "KNOWN") {
     return Object.freeze({
@@ -188,14 +192,12 @@ export function decidePrincipalFirstExit(input: {
       liquidation * 10_000n <=
         updatedRunnerPeakRaw * BigInt(10_000 - input.config.runnerDrawdownBps);
     const timedOut =
-      input.nowMs - input.runner.positionOpenedAtMs >= input.config.runnerMaxHoldingMs;
-    if (drawdown || input.runner.momentumFailed || timedOut) {
+      input.nowMs - input.runner.positionOpenedAtMs >= input.config.runnerMaximumHoldingMs;
+    if (drawdown || timedOut) {
       stage = "RUNNER";
       trigger = drawdown
         ? "runner executable net value hit drawdown"
-        : input.runner.momentumFailed
-          ? "runner momentum failed"
-          : "runner maximum holding time elapsed";
+        : "runner maximum holding time elapsed";
       instructions = allocateByTokenTarget(
         input.lots,
         input.quotesByLotId,

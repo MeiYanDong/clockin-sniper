@@ -14,6 +14,11 @@ import {
 } from "../src/effects/entry-effect-builder.js";
 import { buildExitEffect } from "../src/effects/exit-effect-builder.js";
 import { EntryExitControl } from "../src/exit/entry-exit-control.js";
+import {
+  decidePrePrincipalDownside,
+  type DownsidePolicyConfig,
+  type DownsidePolicyState,
+} from "../src/exit/downside-policy.js";
 import { buildExitPlan } from "../src/exit/exit-plan-builder.js";
 import { decidePrincipalFirstExit, type ExitPolicyConfig } from "../src/exit/principal-recovery.js";
 import { ExternalRouteRegistry, type ExternalRouteCandidate } from "../src/exit/route-registry.js";
@@ -241,7 +246,8 @@ describe("principal-first exit policy", () => {
     secondProfitMultipleBps: 30_000,
     secondProfitTokenShareBps: 1_000,
     runnerDrawdownBps: 2_500,
-    runnerMaxHoldingMs: 60_000,
+    runnerMaximumHoldingMs: 60_000,
+    momentumFailurePolicyId: "DISABLED_UNTIL_REPLAY_V1",
   };
 
   function positionWithQuotes(netEach: bigint) {
@@ -277,6 +283,21 @@ describe("principal-first exit policy", () => {
     assert.equal(decision.instructions[0]?.expectedNetOutputRaw, 10_200n);
   });
 
+  it("ignores unvalidated momentum signals while the replay-gated policy is disabled", () => {
+    const state = positionWithQuotes(4_000n);
+    const decision = decidePrincipalFirstExit({
+      ...state,
+      quotesByLotId: state.quotes,
+      actualRecoveredProceedsRaw: BigInt(state.position.totalActualCostRaw),
+      initialTotalTokenRaw: 2_000n,
+      runner: { executableNetPeakRaw: 8_000n, positionOpenedAtMs: 0, momentumFailed: true },
+      nowMs: 1_000,
+      config,
+    });
+    assert.equal(decision.stage, "HOLD");
+    assert.equal(decision.instructions.length, 0);
+  });
+
   it("uses actual recovered proceeds for 3x second profit and sells 10% of initial tokens", () => {
     const state = positionWithQuotes(12_000n);
     const decision = decidePrincipalFirstExit({
@@ -295,7 +316,7 @@ describe("principal-first exit policy", () => {
     );
   });
 
-  it("exits the runner on the first drawdown, momentum or time trigger", () => {
+  it("exits the runner on an executable-net drawdown", () => {
     const state = positionWithQuotes(3_000n);
     const decision = decidePrincipalFirstExit({
       ...state,
@@ -312,6 +333,108 @@ describe("principal-first exit policy", () => {
       decision.instructions.reduce((sum, item) => sum + item.tokenInputRaw, 0n),
       2_000n,
     );
+  });
+});
+
+describe("pre-principal downside policy", () => {
+  const config: DownsidePolicyConfig = {
+    initialStopLossBps: 3_000,
+    stopLossConfirmationBlocks: 2,
+    prePrincipalMaximumHoldingMs: 3_600_000,
+    noLiquidityPolicy: "ALERT_AND_RETRY_VERIFIED_ROUTES",
+  };
+  const state: DownsidePolicyState = {
+    positionOpenedAtMs: 0,
+    postEntryExecutableNetBaselineRaw: 10_000n,
+    lastCanonicalBlockNumber: null,
+    consecutiveBelowStopBlocks: 0,
+  };
+
+  it("requires two distinct consecutive canonical blocks below the post-entry net baseline", () => {
+    const first = decidePrePrincipalDownside({
+      actualRecoveredProceedsRaw: 0n,
+      actualCostRaw: 10_000n,
+      executableNetLiquidationRaw: 7_000n,
+      executableRouteCount: 1,
+      feeWindowClosed: true,
+      canonicalBlockNumber: 100n,
+      nowMs: 1_000,
+      state,
+      config,
+    });
+    assert.equal(first.action, "HOLD");
+    assert.equal(first.stopThresholdRaw, 7_000n);
+    assert.equal(first.updatedState.consecutiveBelowStopBlocks, 1);
+    const duplicate = decidePrePrincipalDownside({
+      actualRecoveredProceedsRaw: 0n,
+      actualCostRaw: 10_000n,
+      executableNetLiquidationRaw: 6_500n,
+      executableRouteCount: 1,
+      feeWindowClosed: true,
+      canonicalBlockNumber: 100n,
+      nowMs: 1_100,
+      state: first.updatedState,
+      config,
+    });
+    assert.equal(duplicate.action, "HOLD");
+    assert.equal(duplicate.updatedState.consecutiveBelowStopBlocks, 1);
+    const confirmed = decidePrePrincipalDownside({
+      actualRecoveredProceedsRaw: 0n,
+      actualCostRaw: 10_000n,
+      executableNetLiquidationRaw: 6_999n,
+      executableRouteCount: 1,
+      feeWindowClosed: true,
+      canonicalBlockNumber: 101n,
+      nowMs: 2_000,
+      state: duplicate.updatedState,
+      config,
+    });
+    assert.equal(confirmed.action, "EXIT_ALL");
+  });
+
+  it("does not sample stop loss during the fee window and exits after the 60-minute bound", () => {
+    const duringWindow = decidePrePrincipalDownside({
+      actualRecoveredProceedsRaw: 0n,
+      actualCostRaw: 10_000n,
+      executableNetLiquidationRaw: 5_000n,
+      executableRouteCount: 1,
+      feeWindowClosed: false,
+      canonicalBlockNumber: 100n,
+      nowMs: 120_000,
+      state,
+      config,
+    });
+    assert.equal(duringWindow.action, "HOLD");
+    assert.equal(duringWindow.updatedState.consecutiveBelowStopBlocks, 0);
+    const timedOut = decidePrePrincipalDownside({
+      actualRecoveredProceedsRaw: 0n,
+      actualCostRaw: 10_000n,
+      executableNetLiquidationRaw: 8_000n,
+      executableRouteCount: 1,
+      feeWindowClosed: true,
+      canonicalBlockNumber: 101n,
+      nowMs: 3_600_000,
+      state,
+      config,
+    });
+    assert.equal(timedOut.action, "EXIT_ALL");
+    assert.match(timedOut.reason, /maximum holding time/);
+  });
+
+  it("alerts without widening slippage when no verified executable route exists", () => {
+    const missing = decidePrePrincipalDownside({
+      actualRecoveredProceedsRaw: 0n,
+      actualCostRaw: 10_000n,
+      executableNetLiquidationRaw: null,
+      executableRouteCount: 0,
+      feeWindowClosed: true,
+      canonicalBlockNumber: 100n,
+      nowMs: 3_600_000,
+      state,
+      config,
+    });
+    assert.equal(missing.action, "ALERT_AND_RETRY_VERIFIED_ROUTES");
+    assert.match(missing.reason, /do not widen slippage automatically/);
   });
 });
 
@@ -403,6 +526,92 @@ describe("exit plan, effect, independent control and restart", () => {
         validityEnvelopeId: "validity-after-entry-stop",
         now: LATER,
       }),
+    );
+  });
+
+  it("separates routine 5% exits from explicit twice-confirmed 20% break-glass exits", () => {
+    const control = new EntryExitControl();
+    assert.throws(
+      () =>
+        control.authorizeExitNow({
+          operatorId: "operator-1",
+          lotId: "lot-1",
+          routeQuoteId: "quote-routine",
+          maximumSlippageBps: 501,
+          observedAt: NOW,
+        }),
+      /routine exit exceeds/,
+    );
+    const breakGlass = control.authorizeBreakGlassExit({
+      operatorId: "operator-1",
+      lotId: "lot-1",
+      routeQuoteId: "quote-break-glass",
+      maximumSlippageBps: 2_000,
+      secondConfirmationId: "confirmation-2",
+      justification: "verified route exists but routine bound cannot execute",
+      observedAt: NOW,
+    });
+    assert.equal(breakGlass.eventKind, "BREAK_GLASS_EXIT");
+    assert.equal(breakGlass.maximumSlippageBps, 2_000);
+    const [lot] = lots();
+    const quote = routeQuote(lot);
+    const position = aggregatePosition({
+      lots: [lot],
+      quotesByLotId: new Map([[lot.lotId, quote]]),
+      realizedProceedsRaw: 0n,
+      observedAt: LATER,
+    }).position;
+    const plan = buildExitPlan({
+      position,
+      lot,
+      quote,
+      tokenInputRaw: 100n,
+      policyStage: "BREAK_GLASS",
+      maximumSlippageBps: 2_000,
+      validityEnvelopeId: "break-glass-validity",
+      breakGlassAuthorizationId: breakGlass.eventId,
+      now: LATER,
+    });
+    assert.equal(plan.breakGlassAuthorizationId, breakGlass.eventId);
+    assert.throws(
+      () =>
+        buildExitPlan({
+          position,
+          lot,
+          quote,
+          tokenInputRaw: 100n,
+          policyStage: "EXIT_NOW",
+          maximumSlippageBps: 2_000,
+          validityEnvelopeId: "routine-cannot-escalate",
+          now: LATER,
+        }),
+      /routine exit plan exceeds/,
+    );
+    assert.throws(
+      () =>
+        control.authorizeBreakGlassExit({
+          operatorId: "operator-1",
+          lotId: "lot-1",
+          routeQuoteId: "quote-break-glass",
+          maximumSlippageBps: 2_000,
+          secondConfirmationId: "",
+          justification: "verified route exists",
+          observedAt: NOW,
+        }),
+      /second confirmation/,
+    );
+    assert.throws(
+      () =>
+        control.authorizeBreakGlassExit({
+          operatorId: "operator-1",
+          lotId: "lot-1",
+          routeQuoteId: "quote-break-glass",
+          maximumSlippageBps: 2_001,
+          secondConfirmationId: "confirmation-2",
+          justification: "verified route exists",
+          observedAt: NOW,
+        }),
+      /break-glass exit exceeds/,
     );
   });
 

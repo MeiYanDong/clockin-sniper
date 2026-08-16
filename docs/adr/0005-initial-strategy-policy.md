@@ -1,10 +1,10 @@
 # ADR 0005: Initial ClockIn strategy policy
 
-- Status: Accepted for implementation; partially blocked for production arming
+- Status: Superseded by [ADR 0006](0006-clockin-policy-v2-risk-and-authorization.md)
 - Date: 2026-08-16
 - Owners: project owner
 - Config revision: `clockin-policy-v1`
-- Related specification: [plan.md — User decisions](../plan.md#31-仍需用户最终决策的参数)
+- Related specification: [plan.md — resolved owner decisions](../plan.md#31-已冻结的用户决策clockin-policy-v2)
 
 ## Accepted implementation choices
 
@@ -26,6 +26,10 @@
 - final Factory/Profile/ABI and fork-derived catch-up calibration.
 
 These unresolved parameters do not block implementing and testing the parameterized engine. They do block `GATE-A SPEC_READY` and any production `HOT_ARMED` state.
+
+## Supersession note
+
+On 2026-08-16 the project owner resolved the remaining price, holding, downside, slippage, authorization, sizing, Gas and topology choices. ADR 0006 freezes those decisions as `clockin-policy-v2`; this record remains the historical v1 context.
 
 ## Change control
 

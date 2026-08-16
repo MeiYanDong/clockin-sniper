@@ -508,7 +508,9 @@ export interface ExitPlan {
     | "TAKE_SECOND_PROFIT"
     | "RUNNER"
     | "DUST_CLOSE"
-    | "EXIT_NOW";
+    | "EXIT_NOW"
+    | "BREAK_GLASS";
+  readonly breakGlassAuthorizationId?: Id;
   readonly routeQuoteId: Id;
   readonly tokenInputRaw: DecimalString;
   readonly minOutputRaw: DecimalString;
