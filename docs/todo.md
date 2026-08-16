@@ -1,8 +1,9 @@
 # ClockIn 生产级狙击系统：可执行开发任务清单
 
 > 来源规格：[plan.md](./plan.md)
-> 清单版本：`v1.0`
+> 清单版本：`v1.1`
 > 创建日期：`2026-08-16`
+> 最近更新：`2026-08-17`
 > 目标仓库：`MeiYanDong/clockin-sniper`（Public）
 > 目标网络：Robinhood Chain Mainnet，`chainId = 4663`
 
@@ -1028,7 +1029,7 @@
 
 目标：finalize 前能从内盘取得可执行 quote 并卖出。
 
-`BLOCKED_BY: FINAL_MAINNET_LAUNCH_POOL_SELL_ABI_NOT_PUBLISHED`。`VerifiedSellAdapter` contract、quote/minOut/allowance 能力边界、逐钱包 EffectRecord 和 same-raw 基础设施已实现；没有最终 ABI/fork 证据时不勾选具体内盘交易任务。
+`BLOCKED_BY: FINAL_MAINNET_LAUNCH_POOL_SELL_ABI_NOT_PUBLISHED`。参数化 `ConfiguredExitRouteRuntime` 已实现 launch-identity 动态 target、exact-block code hash、allowance/approve、可执行 quote、Gas 后净回款、minOut/deadline/sell calldata 和逐钱包 same-raw 服务；没有最终 ABI/fork 证据时仍不勾选具体主网内盘交易任务。
 
 - [ ] 实现 sell quote。
 - [ ] 实现 allowance/approve 或 permit。
@@ -1066,7 +1067,7 @@
 
 目标：finalize 后逐钱包通过外盘实现可核账退出。
 
-`BLOCKED_BY: FINAL_EXTERNAL_ROUTER_POOL_AND_FINALIZE_PROFILE_NOT_PUBLISHED`。通用 route registry 和 adapter contract 已测试，但不把 fixture route 当作主网可卖证据。
+`BLOCKED_BY: FINAL_EXTERNAL_ROUTER_POOL_AND_FINALIZE_PROFILE_NOT_PUBLISHED`。通用 route registry 与参数化 configured runtime 已支持固定 Router、显式 spender、静态或 token-prefix path、exact code identity、quote/sell calldata 和 same-raw 服务，但不把 fixture route 当作主网可卖证据。
 
 - [ ] 实现 router quote。
 - [ ] 实现 approve/permit。
@@ -1205,7 +1206,7 @@
 
 目标：云机以非 root、可重启、仓库外 credentials 运行。
 
-`CONTROL_DEPLOYED; EXECUTION_PLANE_BLOCKED_BY_FINAL_PROTOCOL_EVIDENCE`。`47.251.28.201` 上的无私钥 Control 已完成真实 systemd、`/proc`、journal、钱包和 artifact 回读；Hot Executor/Reconciler/Exit 仍因最终 Factory/ABI/route 未冻结而不安装、不授权。
+`CONTROL_DEPLOYED; EXECUTION_RUNTIME_IMPLEMENTED; EXECUTION_PLANE_BLOCKED_BY_FINAL_PROTOCOL_EVIDENCE`。`47.251.28.201` 上的无私钥 Control 已完成真实 systemd、`/proc`、journal、钱包和 artifact 回读；Executor/Reconciler/Exit entrypoint、状态 interlock、watchdog 和 deterministic renderer 已实现，仍因最终 Factory/ABI/route 未冻结而不授权、不启动。
 
 - [x] 创建 Control Sentinel unit。
 - [x] 创建 Executor unit。
@@ -1216,9 +1217,12 @@
 - [x] 配置 EnvironmentFile/LoadCredential。
 - [x] 配置 umask 和 runtime permissions。
 - [x] 配置 restart/backoff。
-- [ ] 配置 watchdog heartbeat。
+- [x] 配置 Type=notify、30 秒 watchdog heartbeat、ready/stopping 通知，并用注入式 notifier 断言心跳。
 - [x] 配置 journald redaction/rotation。
 - [x] 配置 network/time dependencies。
+- [x] 用绝对路径 renderer 原子生成四个 unit，并拒绝缺失 entrypoint/未解析 placeholder/危险路径。
+- [x] Executor 在启动和每次签名前要求 current Reconciler/Exit、匹配 profile/auth、WAL、10 signer 和零 unresolved attempt。
+- [x] 实现独立 production Executor/Reconciler/Exit entrypoint，release build 生成对应 `dist/*-service.js`。
 - [x] Control 服务实际 readback 与 artifact SHA 对齐，见 [2026-08-16-control-deployment.md](./receipts/2026-08-16-control-deployment.md)。
 - [ ] Executor/Reconciler/Exit 在最终协议证据完成后部署并回读。
 
@@ -1287,6 +1291,9 @@
 - [x] principal recovery/runner。
 - [x] entry disabled/exit enabled。
 - [x] secret/log/dashboard redaction。
+- [x] immutable production profile、精确 `4000→0/120s`、7 天授权和 launch-bound route。
+- [x] append-only plan/attempt/route/exit revisions、pre-broadcast cleanup 和 service lease release。
+- [x] Reconciler/Exit dependency interlock、redacted status 和 systemd watchdog。
 
 验收：
 
@@ -1348,7 +1355,7 @@
 - [x] 检查 staged diff。
 - [x] 检查 `npm pack --dry-run`。
 - [x] 解包 release artifact 再扫描。
-- [x] 检查 systemd credentials 权限（模板/静态测试；云机回读仍在 STORY-103 阻塞）。
+- [x] 检查 systemd credentials 权限：模板/静态测试通过；云机 root-only credential/wallet 目录和 Control OS 隔离已回读，资金服务仍未启动。
 - [x] 检查 journal/dashboard/alerts。
 - [x] 检查 SQLite/vault permissions。
 - [x] 检查依赖 lockfile 和 audit 结果。
@@ -1496,10 +1503,10 @@
 - [x] 当前私钥加载边界已迁到仓库外，并已有 secret scan/npm ignore 基础。
 - [x] 已测得当前质量基线：line 87.41%、branch 65.69%、function 88.61%。
 - [x] 本可执行 todo 已按小故事卡、阶段、测试和验收拆解。
-- [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现并通过 207 项测试。
+- [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现；生产 profile/adapters/三服务/interlock/watchdog 已补齐并通过 225 项测试。
 - [x] 默认 live 入口在主网证据不完整时失败关闭，旧单钱包入口不进入 release artifact。
 - [x] 已生成 10 个仓库外 one-shot EOA，完成本地与服务器 10/10 key/address correspondence，并为每个钱包注入 `0.0032 ETH`；生产回读 nonce 均为 `0/0`。
-- [x] 已在 `47.251.28.201` 部署 keyless Control Sentinel，生产 HTTP/WSS/Sequencer、钱包 readiness、systemd 重启和 artifact SHA 回读通过；Hot Executor 保持未部署、未授权。
+- [x] 已在 `47.251.28.201` 部署 keyless Control Sentinel，生产 HTTP/WSS/Sequencer、钱包 readiness、systemd 重启和 artifact SHA 回读通过；资金服务代码已完成但保持未启动、未授权。
 
 ### 下一批必须先完成
 

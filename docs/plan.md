@@ -1883,3 +1883,80 @@ Fork/replay 的目标是验证 calldata、状态变化和经济口径，不作�
 7. cap 缩量、catch-up、价格容差、7 天授权、5% 常规与 20% `BREAK_GLASS` 参数按第 31 节冻结。
 
 开发严格按 Phase 0 → Phase 12 的证据门推进，不先扩成通用机器人，也不在 exit 未闭合时把“买入完成”定义为项目完成。
+
+---
+
+## 33. As-built production runtime（2026-08-17）
+
+本节记录代码实际已经实现的生产边界；它补充前述目标设计，但不把未发布的协议事实写成已完成。
+
+### 33.1 当前真实状态
+
+- 10 个仓库外 one-shot EOA 已在生产链逐个回读，每个余额为 `0.0032 ETH`，`latestNonce=0`、`pendingNonce=0`；私钥不进入仓库、日志或回执。
+- `47.251.28.201` 已运行无私钥 `clockin-control`，HTTP/WSS/direct Sequencer 和双源价格检查可用；`/ready` 在协议证据缺失时正确返回 `503`。
+- Executor、Reconciler、Exit 的生产 entrypoint、SQLite schema、systemd 模板和确定性 renderer 已实现。它们可以提前安装为 disabled/inactive，但不能在最终 profile、授权和 arm marker 缺失时启动资金执行。
+- 2026-08-17 官方页面仍未发布可冻结的主网 Launcher Factory、ClockIn CA 和最终 buy/sell/finalize ABI；当前总状态继续是 `NOT_HOT_ARMED`。
+
+### 33.2 Profile 和动态地址绑定
+
+生产 `ProductionProtocolProfile` 必须同时固定：
+
+1. chainId `4663`、Factory runtime/proxy/implementation identity 和 start block；
+2. launch event ABI/topic 及 creator/token/pool/name/symbol/metadata/imageHash 字段映射；
+3. token/pool runtime code-hash allowlist；
+4. exact-block fee/window/cap/cooldown/EOA-only/quote-asset/preview-buy getters；
+5. buy selector、refCode、Gas、quote freshness 和 minOut 约束；
+6. 每条 exit route 的 target、spender、path、quote/sell ABI、bytecode identity 和 quote 语义。
+
+ClockIn owner policy 对该 profile 的要求是精确 `4000 bps → 0 bps / 120 seconds / LINEAR_TIME`。任何近似值、网页描述或历史合约都不能通过 profile parser。
+
+内盘 target 不假设为固定 Router：`targetMode=LAUNCH_POOL` 只能从已冻结 `LaunchIdentity.poolAddress` 解析；外盘 Router 使用 `targetMode=FIXED`。approval spender 和 path 也必须显式绑定，禁止从页面任意地址或未验证 Pair 推导。
+
+### 33.3 三服务执行闭环
+
+```text
+Reconciler READY + Exit READY
+          ↓ fresh status/profile/auth/WAL/UNKNOWN interlock
+Executor exact Factory event → identity freeze → 10 fee lanes → sign → same-raw fanout
+          ↓                                      ↓
+append-only plan/attempt                    encrypted signed vault
+          ↓                                      ↓
+Reconciler canonical receipt/effect → per-wallet PositionLot → Exit exact quote/sell
+```
+
+- Executor 启动时及每次 lane 签名前，都重新验证 Reconciler/Exit 状态新鲜度、profile hash、authorization ID、10 signer、WAL、未决 attempt 和 entry/exit 开关。
+- lane 1 在 L2 执行 canary；lanes 2–10 只有 official CA 形成 L3 且 canary 产生 canonical effect 后才解锁。每区块 catch-up 最多两 lane。
+- 每个 lane 在实际 block 读取可执行 `previewBuy`、quote asset、fee/cap/window/cooldown/EOA-only 和代码身份；不使用启动时缓存的价格替代 exact-block quote。
+- Exit 逐 lot 读取当前可执行 route quote、allowance 和 Gas，使用净回款触发策略；常规 minOut 最大 5% 滑点，20% 仅允许单独授权的 `BREAK_GLASS`。
+- 任一 open lot 无法估值时，aggregate downside/runner 决策保持不执行，避免把部分可见仓位误当成全部仓位清算。
+
+### 33.4 Crash/UNKNOWN 不变量
+
+- `ExecutionPlan`、`TxAttempt`、`RouteQuote`、`ExitPlan` 只追加 revision。状态修订不改变不可变的 plan hash。
+- provider 调用前可证明的本地失败：释放 nonce 和 capital reservation、把 plan 标成 `INVALIDATED`、把已有 attempt 标成 `DROPPED_PROVEN`、删除 vault payload。
+- 进入 `POSSIBLY_SUBMITTED` 后的任何异常：保留同一 nonce、同一 raw payload 和 vault reference，状态转为 `UNKNOWN`，由 Reconciler 继续查 receipt/nonce/effect；禁止用不同 payload 猜测性替换。
+- Reconciler 只有在 canonical receipt、两区块 canonicality 和 latest/pending nonce readback 一致后，才把 slot 标成 consumed 并生成经济 Effect/Position。
+- entry writer 完结后才释放 wallet lease；Exit 在无未决 nonce 时取得新的 fenced epoch，防止 entry/exit 双 writer。
+
+### 33.5 部署与激活边界
+
+生产安装采用绝对路径 renderer，生成四个 Type=notify/WatchdogSec=30 的 hardened units。Control 使用 `clockin-observer`；资金服务使用 `clockin`；状态目录通过只读共享组交换 redacted JSON，私钥和 RPC 凭证只走 systemd credentials。
+
+安装、构建通过、钱包有余额、服务文件存在都不等于激活。实盘启动仍必须按顺序满足：
+
+```text
+official Factory/ABI
+→ exact-block code identity
+→ historical fork/replay buy + inner/outer sell
+→ immutable profile
+→ <=7-day bound authorization
+→ current 10/10 funding/nonce/price/Gas/DB/exit readiness
+→ reviewed HOT_ARMED receipt
+→ root-owned PRODUCTION_ARM_APPROVED
+→ Reconciler + Exit READY
+→ Executor start
+```
+
+任何一步缺失都保持 execution units inactive，且不能用 testnet Factory、fixture ABI 或“服务能启动”替代。
+
+完整架构决策见 [ADR 0007](./adr/0007-production-runtime-interlock-and-route-binding.md)，最新官方证据见 [2026-08-17 Launcher status](./evidence/2026-08-17-launcher-mainnet-status.md)。

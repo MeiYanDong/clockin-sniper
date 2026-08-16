@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 const systemdRoot = fileURLToPath(new URL("../deploy/systemd/", import.meta.url));
+const rendererPath = fileURLToPath(new URL("../deploy/render-systemd.mjs", import.meta.url));
+const execFileAsync = promisify(execFile);
 const unitNames = [
   "clockin-control.service.in",
   "clockin-executor.service.in",
@@ -25,6 +31,9 @@ describe("hardened production service templates", () => {
       assert.match(unit, /^EnvironmentFile=\/etc\/clockin-sniper\/strategy\.env$/mu, unitName);
       assert.match(unit, /^Restart=on-failure$/mu, unitName);
       assert.match(unit, /^RestartSec=\d+s$/mu, unitName);
+      assert.match(unit, /^Type=notify$/mu, unitName);
+      assert.match(unit, /^NotifyAccess=all$/mu, unitName);
+      assert.match(unit, /^WatchdogSec=30s$/mu, unitName);
       assert.match(unit, /^StartLimitIntervalSec=\d+s$/mu, unitName);
       assert.match(unit, /^StartLimitBurst=\d+$/mu, unitName);
       assert.match(unit, /^UMask=0077$/mu, unitName);
@@ -36,6 +45,8 @@ describe("hardened production service templates", () => {
       assert.match(unit, /^ProtectHome=true$/mu, unitName);
       assert.match(unit, /^ProtectProc=invisible$/mu, unitName);
       assert.match(unit, /^CapabilityBoundingSet=$/mu, unitName);
+      assert.match(unit, /^SupplementaryGroups=clockin-status$/mu, unitName);
+      assert.match(unit, /^ReadWritePaths=.*\/run\/clockin-status$/mu, unitName);
       assert.match(unit, /^Wants=network-online\.target time-sync\.target$/mu, unitName);
     }
   });
@@ -59,6 +70,8 @@ describe("hardened production service templates", () => {
       }
       assert.match(unit, /^LoadCredential=vault_key:/mu, unitName);
       assert.match(unit, /^LoadCredential=wallet_manifest:/mu, unitName);
+      assert.match(unit, /^LoadCredential=factory_profile:/mu, unitName);
+      assert.match(unit, /^LoadCredential=authorization:/mu, unitName);
     }
   });
 
@@ -69,6 +82,8 @@ describe("hardened production service templates", () => {
       /^ConditionPathExists=\/etc\/clockin-sniper\/PRODUCTION_ARM_APPROVED$/mu,
     );
     assert.match(executor, /^ExecStart=@EXECUTOR_EXECUTABLE@$/mu);
+    assert.match(executor, /^Requires=clockin-reconciler\.service clockin-exit\.service$/mu);
+    assert.match(executor, /^After=.*clockin-reconciler\.service clockin-exit\.service$/mu);
     assert.doesNotMatch(executor, /npm run live(?:\s|$)/u);
   });
 
@@ -77,11 +92,52 @@ describe("hardened production service templates", () => {
     assert.match(tmpfiles, /^d \/etc\/clockin-sniper\/credentials 0700 root root -$/mu);
     assert.match(tmpfiles, /^d \/etc\/clockin-sniper\/wallets 0700 root root -$/mu);
     assert.match(tmpfiles, /^d \/var\/lib\/clockin-sniper 0700 clockin clockin -$/mu);
+    assert.match(tmpfiles, /^d \/run\/clockin-status 2750 root clockin-status -$/mu);
 
     const journal = await readFile(`${systemdRoot}journald-clockin.conf`, "utf8");
     assert.match(journal, /^SystemMaxUse=1G$/mu);
     assert.match(journal, /^MaxRetentionSec=14day$/mu);
     assert.match(journal, /^Compress=yes$/mu);
     assert.match(journal, /^Seal=yes$/mu);
+  });
+
+  it("renders only absolute release entrypoints and rejects unresolved placeholders", async () => {
+    const renderer = await readFile(rendererPath, "utf8");
+    assert.match(renderer, /safeAbsolute\(option\("--artifact-dir"\), "artifact directory"\)/u);
+    assert.match(renderer, /safeAbsolute\(option\("--node"\), "node executable"\)/u);
+    assert.match(renderer, /must be an absolute path without whitespace or shell syntax/u);
+    assert.match(renderer, /contains unresolved placeholders/isu);
+    const root = await mkdtemp(join(tmpdir(), "clockin-systemd-render-"));
+    try {
+      const artifactDir = join(root, "release");
+      const distDir = join(artifactDir, "clockin-sniper", "dist");
+      const outputDir = join(root, "units");
+      await mkdir(distDir, { recursive: true });
+      for (const entrypoint of [
+        "control-service.js",
+        "executor-service.js",
+        "reconciler-service.js",
+        "exit-service.js",
+      ]) {
+        await writeFile(join(distDir, entrypoint), "export {};\n", "utf8");
+      }
+      await execFileAsync(process.execPath, [
+        rendererPath,
+        "--artifact-dir",
+        artifactDir,
+        "--node",
+        process.execPath,
+        "--output-dir",
+        outputDir,
+      ]);
+      for (const templateName of unitNames) {
+        const unit = await readFile(join(outputDir, templateName.replace(/\.in$/u, "")), "utf8");
+        assert.doesNotMatch(unit, /@[A-Z][A-Z_]+@/u);
+        assert.match(unit, new RegExp(`^WorkingDirectory=${artifactDir}/clockin-sniper$`, "mu"));
+        assert.match(unit, new RegExp(`^ExecStart=${process.execPath} ${distDir}/`, "mu"));
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

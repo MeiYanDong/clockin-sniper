@@ -1,6 +1,6 @@
 {
-  "manifest_revision": 3,
-  "generated_at": "2026-08-16T10:40:02.000Z",
+  "manifest_revision": 4,
+  "generated_at": "2026-08-17T00:45:00.000Z",
   "network": "eip155:4663",
   "production_state": "NOT_HOT_ARMED",
   "mode": "real_funds_only_no_shadow_branch",
@@ -15,28 +15,32 @@
     "factory_profile_registry": "TESTED",
     "identity_l0_l4_authorization": "TESTED_SEVEN_DAY_MAXIMUM_TTL",
     "owner_policy_v2": "TESTED_OWNER_POLICY_COMPLETE_NOT_PROTOCOL_READY",
-    "mechanism_profile_reader": "TESTED_GENERIC_ADAPTER_NO_FINAL_MAINNET_ABI",
-    "ten_eoa_wallet_generation": "VERIFIED_LOCAL_KEYS_EXTERNAL_UNFUNDED",
-    "wallet_readiness": "TESTED_THREE_SELL_GAS_MARGIN_NOT_CURRENTLY_FUNDED",
+    "mechanism_profile_reader": "TESTED_EXACT_BLOCK_CONFIGURED_RUNTIME_NO_FINAL_MAINNET_ABI",
+    "production_profile_authorization": "TESTED_IMMUTABLE_PROFILE_AND_SEVEN_DAY_SCOPE_NO_CURRENT_AUTHORIZATION",
+    "ten_eoa_wallet_generation": "VERIFIED_EXTERNAL_KEYS_AND_PRODUCTION_ADDRESS_CORRESPONDENCE",
+    "wallet_readiness": "VERIFIED_10_OF_10_AT_0_0032_ETH_AND_ZERO_LATEST_PENDING_NONCES_2026_08_17",
     "ten_fee_band_entry": "TESTED_SHRINK_TO_CAP_WITH_ONE_U_MINIMUM",
     "canary_economic_reconciliation": "TESTED",
-    "same_raw_broadcast": "TESTED_NO_V2_LIVE_RECEIPT",
-    "unknown_recovery": "TESTED",
+    "same_raw_broadcast": "TESTED_PRODUCTION_ENTRY_AND_EXIT_NO_V2_LIVE_RECEIPT",
+    "unknown_recovery": "TESTED_ENCRYPTED_SAME_RAW_RECONCILIATION",
     "position_accounting": "TESTED",
-    "launch_pool_sell": "SUPPORTED_INTERFACE_FINAL_ABI_UNPUBLISHED",
-    "external_amm_exit": "SUPPORTED_INTERFACE_FINAL_ROUTE_UNPUBLISHED",
+    "launch_pool_sell": "TESTED_CONFIGURED_LAUNCH_IDENTITY_BOUND_RUNTIME_FINAL_ABI_UNPUBLISHED",
+    "external_amm_exit": "TESTED_CONFIGURED_FIXED_OR_TOKEN_PREFIX_ROUTE_FINAL_ROUTE_UNPUBLISHED",
     "principal_first_exit": "TESTED_POLICY_NO_LIVE_EXIT_RECEIPT",
     "pre_principal_downside_exit": "TESTED_NO_FINAL_EXECUTABLE_ROUTE",
     "routine_and_break_glass_slippage": "TESTED_FIVE_AND_TWENTY_PERCENT_NO_LIVE_EXIT_RECEIPT",
-    "systemd_templates": "TESTED_NOT_DEPLOYED",
-    "live_effect": "UNSUPPORTED_UNTIL_REAL_CANONICAL_RECEIPT"
+    "append_only_execution_revisions": "TESTED_PLAN_ATTEMPT_QUOTE_EXIT_AND_LEASE_RECOVERY",
+    "production_service_entrypoints": "TESTED_EXECUTOR_RECONCILER_EXIT_NOT_ARMED_OR_STARTED",
+    "production_service_interlock": "TESTED_REQUIRES_CURRENT_RECONCILER_EXIT_PROFILE_AUTH_WAL_AND_ZERO_UNKNOWN",
+    "systemd_templates": "TESTED_WATCHDOG_RENDERER_CONTROL_DEPLOYED_EXECUTION_UNITS_NOT_YET_INSTALLED",
+    "live_effect": "NO_REAL_CANONICAL_ENTRY_OR_EXIT_RECEIPT"
   },
   "blockers": [
     "OFFICIAL_MAINNET_LAUNCHER_FACTORY_AND_FINAL_ABI_NOT_PUBLISHED",
     "FINAL_MAINNET_POOL_BUY_SELL_FINALIZE_ADAPTERS_NOT_VERIFIED_CURRENT",
-    "ENTRY_WALLETS_NOT_FUNDED",
-    "FRESH_PRICE_SNAPSHOT_AND_BOUND_AUTHORIZATION_NOT_CREATED",
-    "CLOUD_REGION_AND_HOST_NOT_SELECTED_OR_DEPLOYED",
+    "BOUND_PRODUCTION_PROFILE_AND_AUTHORIZATION_NOT_CREATED",
+    "EXECUTION_UNITS_NOT_INSTALLED_STARTED_OR_ARMED",
+    "ACTIVE_REGION_PERFORMANCE_NOT_BENCHMARKED",
     "NO_V2_CANONICAL_ENTRY_OR_EXIT_RECEIPT"
   ],
   "legacy_boundary": {
@@ -46,9 +50,10 @@
     "reason": "single-wallet sequential nonce and unsupported automated exit do not satisfy v2"
   },
   "evidence_ids": [
-    "docs/evidence/2026-08-16-launcher-mainnet-status.md",
+    "docs/evidence/2026-08-17-launcher-mainnet-status.md",
     "docs/adr/0004-sqlite-wal-canonical-state.md",
     "docs/adr/0005-initial-strategy-policy.md",
-    "docs/adr/0006-clockin-policy-v2-risk-and-authorization.md"
+    "docs/adr/0006-clockin-policy-v2-risk-and-authorization.md",
+    "docs/adr/0007-production-runtime-interlock-and-route-binding.md"
   ]
 }

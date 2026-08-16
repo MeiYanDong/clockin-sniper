@@ -6,15 +6,20 @@ StartLimitIntervalSec=60s
 StartLimitBurst=8
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=all
+WatchdogSec=30s
 User=clockin
 Group=clockin
+SupplementaryGroups=clockin-status
 WorkingDirectory=@ARTIFACT_DIR@/clockin-sniper
 EnvironmentFile=/etc/clockin-sniper/strategy.env
 LoadCredential=rpc_http:/etc/clockin-sniper/credentials/rpc_http
 LoadCredential=rpc_wss:/etc/clockin-sniper/credentials/rpc_wss
 LoadCredential=vault_key:/etc/clockin-sniper/credentials/vault_key
 LoadCredential=wallet_manifest:/etc/clockin-sniper/credentials/entry-manifest.json
+LoadCredential=factory_profile:/etc/clockin-sniper/credentials/factory-profile.json
+LoadCredential=authorization:/etc/clockin-sniper/credentials/production-authorization.json
 LoadCredential=entry_01:/etc/clockin-sniper/wallets/entry-01.key
 LoadCredential=entry_02:/etc/clockin-sniper/wallets/entry-02.key
 LoadCredential=entry_03:/etc/clockin-sniper/wallets/entry-03.key
@@ -58,7 +63,7 @@ RestrictRealtime=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 AmbientCapabilities=
-ReadWritePaths=/var/lib/clockin-sniper /run/clockin-exit
+ReadWritePaths=/var/lib/clockin-sniper /run/clockin-exit /run/clockin-status
 
 [Install]
 WantedBy=multi-user.target

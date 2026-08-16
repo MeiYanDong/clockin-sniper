@@ -83,6 +83,11 @@ export function evaluateOperationalReadiness(
   if (input.identity.caState === "MISMATCH")
     reasons.push("official CA conflicts with frozen identity");
   if (!input.strategy.entryEnabled) reasons.push("entry is disabled");
+  if (!input.strategy.exitEnabled) reasons.push("exit or reconciliation is disabled");
+  if (input.exposure.verifiedExitRouteCount < 1)
+    reasons.push("no verified executable exit route is ready");
+  if (input.exposure.unknownAttemptCount > 0)
+    reasons.push("unresolved transaction attempts require reconciliation");
   const hotArmed = reasons.length === 0;
   return Object.freeze({
     ready: hotArmed,

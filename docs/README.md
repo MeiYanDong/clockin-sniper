@@ -6,6 +6,7 @@
 - [receipts/](receipts/README.md): publication, CI, deployment, and runtime evidence receipts.
 - [receipts/2026-08-16-security-audit.md](receipts/2026-08-16-security-audit.md): current-tree, history, dependency, systemd-boundary, and extracted-package audit.
 - [evidence/2026-08-16-launcher-mainnet-status.md](evidence/2026-08-16-launcher-mainnet-status.md): current official Launcher mainnet evidence and blockers.
+- [evidence/2026-08-17-launcher-mainnet-status.md](evidence/2026-08-17-launcher-mainnet-status.md): latest official-page refresh; Launcher Factory/ABI are still unpublished.
 - [runbooks/wallet-key-lifecycle.md](runbooks/wallet-key-lifecycle.md): external key creation, funding, rotation, and compromise response.
 - [runbooks/production-deployment.md](runbooks/production-deployment.md): hardened artifact deployment, readiness readback, and rollback.
 - [runbooks/failover.md](runbooks/failover.md): single-writer active/keyless-observer takeover protocol.

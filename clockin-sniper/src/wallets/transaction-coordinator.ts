@@ -183,6 +183,36 @@ export class WalletTransactionCoordinator {
     return this.transition(slot, "CONSUMED", updatedAt);
   }
 
+  releaseAfterDeterministicRejection(
+    slot: NonceSlot,
+    evidence: Readonly<{ allRoutesRejected: boolean; signedHashUnchanged: boolean }>,
+    updatedAt = new Date().toISOString(),
+  ): NonceSlot {
+    if (!evidence.allRoutesRejected || !evidence.signedHashUnchanged) {
+      throw new CanonicalInvariantError(
+        "TRANSPORT_UNKNOWN",
+        "nonce release requires deterministic rejection on every route",
+      );
+    }
+    const key = `${slot.walletAddress.toLowerCase()}:${slot.nonce}`;
+    const current =
+      this.#slots.get(key) ??
+      this.#fromPersisted(this.#store.walletNonceSlot(slot.walletAddress, slot.nonce));
+    if (
+      current === undefined ||
+      current.ownerId !== slot.ownerId ||
+      current.fencingEpoch !== slot.fencingEpoch ||
+      current.planId !== slot.planId ||
+      (current.state !== "POSSIBLY_SUBMITTED" && current.state !== "SIGNED")
+    ) {
+      throw new CanonicalInvariantError("NONCE_CONFLICT", "nonce slot is not releasable by owner");
+    }
+    current.state = "RELEASED";
+    this.#store.updateWalletNonceSlot(current, "RELEASED", updatedAt);
+    this.#slots.set(key, current);
+    return Object.freeze({ ...current });
+  }
+
   claimEntryIntent(input: {
     strategyId: string;
     launchId: string;

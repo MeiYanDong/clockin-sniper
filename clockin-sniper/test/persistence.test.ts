@@ -8,8 +8,12 @@ import {
   CanonicalInvariantError,
   stableHash,
   type CapitalReservation,
+  type ExecutionPlan,
+  type ExitPlan,
   type LaunchIdentity,
+  type RouteQuote,
   type StrategyBudget,
+  type TxAttempt,
   type WalletLane,
 } from "../src/core/canonical.js";
 import { planTenFeeBands } from "../src/entry/fee-band-planner.js";
@@ -123,14 +127,115 @@ function identity(tokenAddress = TOKEN): LaunchIdentity {
   });
 }
 
+function executionPlan(revision: number, state: ExecutionPlan["state"]): ExecutionPlan {
+  return Object.freeze({
+    planId: "plan-1",
+    planHash: "sha256:immutable-plan-payload",
+    strategyId: "clockin-mainnet-v1",
+    revision,
+    intentId: "intent-1",
+    launchId: "launch-1",
+    laneId: "clockin-mainnet-v1:lane-1",
+    validityEnvelopeId: "validity-1",
+    authorizationId: "authorization-1",
+    factoryProfileRevision: 1,
+    mechanismProfileRevision: 1,
+    adapterId: "configured-launcher-v1",
+    walletAddress: lanes()[0]?.address as `0x${string}`,
+    nonce: "0",
+    to: POOL,
+    valueRaw: "5000000",
+    calldataHash: HASH,
+    methodSelector: "0x12345678",
+    observedFeeBps: 4_000,
+    targetFeeBps: 4_000,
+    quoteBlock: "100",
+    minOutputRaw: "1",
+    gasLimit: "400000",
+    maxFeePerGasRaw: "2000000000",
+    maxPriorityFeePerGasRaw: "1000000000",
+    capitalReservationId: "reservation-1",
+    evidenceIds: Object.freeze(["quote-1"]),
+    state,
+    createdAt: NOW,
+    frozenAt: NOW,
+  });
+}
+
+function txAttempt(revision: number, state: TxAttempt["state"]): TxAttempt {
+  return Object.freeze({
+    attemptId: "attempt-1",
+    strategyId: "clockin-mainnet-v1",
+    revision,
+    intentId: "intent-1",
+    planId: "plan-1",
+    launchId: "launch-1",
+    laneId: "clockin-mainnet-v1:lane-1",
+    walletAddress: lanes()[0]?.address as `0x${string}`,
+    nonce: "0",
+    operation: "INITIAL",
+    signedTxHash: TX_HASH,
+    payloadHash: "keccak256:payload",
+    vaultRef: "vault:attempt-1",
+    transportEvents: Object.freeze([]),
+    state,
+    evidenceIds: Object.freeze(["plan-1"]),
+    createdAt: NOW,
+    updatedAt: `2026-08-16T00:00:0${revision}.000Z`,
+  });
+}
+
+function routeQuote(revision: number): RouteQuote {
+  return Object.freeze({
+    quoteId: "route-quote-1",
+    strategyId: "clockin-mainnet-v1",
+    revision,
+    launchId: "launch-1",
+    lotId: "lot-1",
+    routeId: "launch-pool-v1",
+    routeKind: "LAUNCH_POOL",
+    tokenInputRaw: "1000",
+    grossOutputRaw: revision === 1 ? "2000" : "2200",
+    sellTaxRaw: "0",
+    priceImpactRaw: "0",
+    approvalGasRaw: "100",
+    executionGasRaw: "200",
+    netOutputRaw: revision === 1 ? "1700" : "1900",
+    quoteBlock: String(100 + revision),
+    observedAt: `2026-08-16T00:00:0${revision}.000Z`,
+    expiresAt: `2026-08-16T00:01:0${revision}.000Z`,
+    evidenceIds: Object.freeze([`route-evidence-${revision}`]),
+  });
+}
+
+function exitPlan(revision: number, state: ExitPlan["state"]): ExitPlan {
+  return Object.freeze({
+    exitPlanId: "exit-plan-1",
+    strategyId: "clockin-mainnet-v1",
+    revision,
+    launchId: "launch-1",
+    positionId: "position-1",
+    lotId: "lot-1",
+    policyStage: "RECOVER_PRINCIPAL",
+    routeQuoteId: "route-quote-1",
+    tokenInputRaw: "1000",
+    minOutputRaw: "1500",
+    validityEnvelopeId: "exit-validity-1",
+    state,
+    evidenceIds: Object.freeze(["route-quote-1"]),
+    createdAt: NOW,
+    updatedAt: `2026-08-16T00:00:0${revision}.000Z`,
+  });
+}
+
 describe("SQLite canonical store", () => {
   it("applies, rolls back and reapplies migrations", () => {
     const store = new SqliteStore(":memory:");
-    assert.equal(store.schemaVersion(), 4);
+    assert.equal(store.schemaVersion(), 5);
     store.rollbackTo(1);
     assert.equal(store.schemaVersion(), 1);
     store.migrateToLatest();
-    assert.equal(store.schemaVersion(), 4);
+    assert.equal(store.schemaVersion(), 5);
     store.close();
   });
 
@@ -329,6 +434,70 @@ describe("SQLite canonical store", () => {
       ),
       2,
     );
+    store.close();
+  });
+
+  it("persists append-only plan, attempt, quote and exit revisions and returns only the latest", () => {
+    const store = new SqliteStore(":memory:");
+    store.initializeBudget(budget(), lanes());
+
+    store.saveExecutionPlan(executionPlan(1, "FROZEN"));
+    store.saveExecutionPlan(executionPlan(2, "SIGNED"));
+    assert.equal(store.tableCount("execution_plans"), 2);
+    assert.deepEqual(
+      store
+        .latestExecutionPlans("clockin-mainnet-v1", "launch-1")
+        .map((plan) => [plan.revision, plan.state, plan.planHash]),
+      [[2, "SIGNED", "sha256:immutable-plan-payload"]],
+    );
+
+    store.saveTxAttempt(txAttempt(1, "SIGNED"));
+    store.saveTxAttempt(txAttempt(2, "UNKNOWN"));
+    assert.equal(store.tableCount("tx_attempts"), 2);
+    assert.equal(store.latestTxAttempts("clockin-mainnet-v1")[0]?.state, "UNKNOWN");
+    assert.equal(store.unresolvedTxAttempts("clockin-mainnet-v1").length, 1);
+    store.saveTxAttempt(txAttempt(3, "DROPPED_PROVEN"));
+    assert.equal(store.tableCount("tx_attempts"), 3);
+    assert.equal(store.unresolvedTxAttempts("clockin-mainnet-v1").length, 0);
+
+    store.saveRouteQuote(routeQuote(1));
+    store.saveRouteQuote(routeQuote(2));
+    assert.equal(store.tableCount("route_quotes"), 2);
+    assert.deepEqual(
+      store
+        .latestRouteQuotes("clockin-mainnet-v1", "launch-1")
+        .map((quote) => [quote.revision, quote.netOutputRaw]),
+      [[2, "1900"]],
+    );
+
+    store.saveExitPlan(exitPlan(1, "ARMED"));
+    store.saveExitPlan(exitPlan(2, "DUE"));
+    assert.equal(store.tableCount("exit_plans"), 2);
+    assert.deepEqual(
+      store
+        .latestExitPlans("clockin-mainnet-v1", "launch-1")
+        .map((plan) => [plan.revision, plan.state]),
+      [[2, "DUE"]],
+    );
+    store.close();
+  });
+
+  it("releases only an owned service lease and makes it immediately non-live", () => {
+    const store = new SqliteStore(":memory:");
+    const epoch = store.acquireServiceLease(
+      "wallet:entry-01",
+      "executor-a",
+      "2026-08-16T00:10:00.000Z",
+      NOW,
+    );
+    assert.equal(store.ownsServiceLease("wallet:entry-01", "executor-a", epoch, NOW), true);
+    assert.throws(
+      () => store.releaseServiceLease("wallet:entry-01", "executor-b", epoch, NOW),
+      (error: unknown) =>
+        error instanceof CanonicalInvariantError && error.reasonCode === "NONCE_CONFLICT",
+    );
+    store.releaseServiceLease("wallet:entry-01", "executor-a", epoch, NOW);
+    assert.equal(store.ownsServiceLease("wallet:entry-01", "executor-a", epoch, NOW), false);
     store.close();
   });
 

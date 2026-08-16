@@ -4,7 +4,7 @@ coverage/
 *.log
 .env
 .env.*
-runtime/
+/runtime/
 **/wallet-backup*
 **/*.keystore
 **/*.pem

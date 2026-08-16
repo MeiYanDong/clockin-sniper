@@ -1,4 +1,6 @@
 export * from "./adapters/capability-manifest.js";
+export * from "./adapters/configured-exit.js";
+export * from "./adapters/configured-launcher.js";
 export * from "./adapters/protocol-contracts.js";
 export * from "./adapters/sell-adapter.js";
 export * from "./broadcast/same-raw-broadcaster.js";
@@ -44,6 +46,10 @@ export * from "./ops/region-benchmark.js";
 export * from "./persistence/ndjson-migration.js";
 export * from "./persistence/sqlite-store.js";
 export * from "./positions/position-book.js";
+export * from "./runtime/configured-discovery.js";
+export * from "./runtime/production-profile.js";
+export * from "./runtime/service-status.js";
+export * from "./runtime/transaction-snapshots.js";
 export * from "./strategies/strategy-router.js";
 export * from "./strategies/strategy-metrics.js";
 export * from "./wallets/price-snapshot.js";

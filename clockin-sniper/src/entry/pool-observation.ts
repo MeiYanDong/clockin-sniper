@@ -1,3 +1,5 @@
+import { isAddress } from "ethers";
+
 import { CanonicalInvariantError, stableHash } from "../core/canonical.js";
 import type { CapScope, CooldownScope } from "../identity/mechanism-profiler.js";
 
@@ -67,13 +69,10 @@ export async function observePoolAt(
   if (!Number.isSafeInteger(cooldown.seconds) || cooldown.seconds < 0) {
     throw new CanonicalInvariantError("POOL_STATE_INVALID", "pool cooldown is invalid");
   }
-  if (
-    curveStateHash.trim().length === 0 ||
-    quoteAsset === "0x0000000000000000000000000000000000000000"
-  ) {
+  if (curveStateHash.trim().length === 0 || !isAddress(quoteAsset)) {
     throw new CanonicalInvariantError(
       "POOL_STATE_INVALID",
-      "pool quote/curve state is impossible for an executable observation",
+      "pool quote asset or curve state is impossible for an executable observation",
     );
   }
   const base = {

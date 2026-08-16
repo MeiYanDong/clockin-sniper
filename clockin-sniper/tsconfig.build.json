@@ -12,6 +12,9 @@
     "src/v2-index.ts",
     "src/live-v2.ts",
     "src/control-service.ts",
+    "src/executor-service.ts",
+    "src/reconciler-service.ts",
+    "src/exit-service.ts",
     "src/create-wallet-batch.ts"
   ],
   "exclude": ["test/**/*.ts"]

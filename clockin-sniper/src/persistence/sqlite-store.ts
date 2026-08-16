@@ -292,6 +292,113 @@ const migrations: readonly Migration[] = Object.freeze([
       DROP TABLE fee_band_plans;
     `,
   },
+  {
+    version: 5,
+    name: "append_only_execution_revisions",
+    up: `
+      DROP INDEX idx_attempt_state;
+      ALTER TABLE execution_plans RENAME TO execution_plans_v4;
+      CREATE TABLE execution_plans (
+        plan_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        strategy_id TEXT NOT NULL,
+        launch_id TEXT NOT NULL,
+        lane_id TEXT NOT NULL REFERENCES wallet_lanes(lane_id),
+        wallet_address TEXT NOT NULL,
+        nonce TEXT NOT NULL,
+        plan_hash TEXT NOT NULL,
+        state TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (plan_id, revision),
+        UNIQUE (wallet_address, nonce, revision)
+      );
+      INSERT INTO execution_plans SELECT * FROM execution_plans_v4;
+      DROP TABLE execution_plans_v4;
+      CREATE INDEX idx_execution_plan_hash ON execution_plans(plan_hash);
+
+      ALTER TABLE tx_attempts RENAME TO tx_attempts_v4;
+      CREATE TABLE tx_attempts (
+        attempt_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        plan_id TEXT NOT NULL,
+        strategy_id TEXT NOT NULL,
+        launch_id TEXT NOT NULL,
+        lane_id TEXT NOT NULL,
+        wallet_address TEXT NOT NULL,
+        nonce TEXT NOT NULL,
+        tx_hash TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        state TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (attempt_id, revision),
+        UNIQUE (tx_hash, revision)
+      );
+      INSERT INTO tx_attempts SELECT * FROM tx_attempts_v4;
+      DROP TABLE tx_attempts_v4;
+      CREATE INDEX idx_attempt_state ON tx_attempts(state, updated_at);
+      CREATE INDEX idx_execution_wallet_nonce ON execution_plans(wallet_address, nonce);
+    `,
+    down: `
+      DROP INDEX idx_execution_plan_hash;
+      DROP INDEX idx_execution_wallet_nonce;
+      DROP INDEX idx_attempt_state;
+      ALTER TABLE execution_plans RENAME TO execution_plans_v5;
+      CREATE TABLE execution_plans (
+        plan_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        strategy_id TEXT NOT NULL,
+        launch_id TEXT NOT NULL,
+        lane_id TEXT NOT NULL REFERENCES wallet_lanes(lane_id),
+        wallet_address TEXT NOT NULL,
+        nonce TEXT NOT NULL,
+        plan_hash TEXT NOT NULL UNIQUE,
+        state TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (plan_id, revision),
+        UNIQUE (wallet_address, nonce)
+      );
+      INSERT INTO execution_plans
+        SELECT current.* FROM execution_plans_v5 current
+        JOIN (
+          SELECT wallet_address, nonce, MAX(revision) AS revision
+          FROM execution_plans_v5 GROUP BY wallet_address, nonce
+        ) latest
+        ON latest.wallet_address = current.wallet_address
+        AND latest.nonce = current.nonce
+        AND latest.revision = current.revision;
+      DROP TABLE execution_plans_v5;
+
+      ALTER TABLE tx_attempts RENAME TO tx_attempts_v5;
+      CREATE TABLE tx_attempts (
+        attempt_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        plan_id TEXT NOT NULL,
+        strategy_id TEXT NOT NULL,
+        launch_id TEXT NOT NULL,
+        lane_id TEXT NOT NULL,
+        wallet_address TEXT NOT NULL,
+        nonce TEXT NOT NULL,
+        tx_hash TEXT NOT NULL UNIQUE,
+        payload_hash TEXT NOT NULL,
+        state TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (attempt_id, revision)
+      );
+      INSERT INTO tx_attempts
+        SELECT current.* FROM tx_attempts_v5 current
+        JOIN (
+          SELECT tx_hash, MAX(revision) AS revision
+          FROM tx_attempts_v5 GROUP BY tx_hash
+        ) latest
+        ON latest.tx_hash = current.tx_hash AND latest.revision = current.revision;
+      DROP TABLE tx_attempts_v5;
+      CREATE INDEX idx_attempt_state ON tx_attempts(state, updated_at);
+    `,
+  },
 ]);
 
 interface CountRow {
@@ -378,6 +485,13 @@ export class SqliteStore {
       .prepare("SELECT COALESCE(MAX(version), 0) AS value FROM schema_migrations")
       .get() as unknown as CountRow;
     return Number(row.value);
+  }
+
+  walEnabled(): boolean {
+    const row = this.#database.prepare("PRAGMA journal_mode").get() as unknown as
+      | { journal_mode?: string }
+      | undefined;
+    return row?.journal_mode?.toLowerCase() === "wal";
   }
 
   migrateToLatest(now: IsoTimestamp = new Date().toISOString()): void {
@@ -653,6 +767,23 @@ export class SqliteStore {
       );
   }
 
+  latestExecutionPlans(strategyId: string, launchId: string): readonly ExecutionPlan[] {
+    const rows = this.#database
+      .prepare(
+        `SELECT current.payload_json AS value
+           FROM execution_plans current
+           JOIN (
+             SELECT plan_id, MAX(revision) AS revision
+             FROM execution_plans
+             WHERE strategy_id = ? AND launch_id = ?
+             GROUP BY plan_id
+           ) latest ON latest.plan_id = current.plan_id AND latest.revision = current.revision
+           ORDER BY current.wallet_address, CAST(current.nonce AS INTEGER)`,
+      )
+      .all(strategyId, launchId) as unknown as readonly TextRow[];
+    return Object.freeze(rows.map((row) => Object.freeze(parseStored<ExecutionPlan>(row.value))));
+  }
+
   saveFeeBandPlan(plan: FeeBandPlan): boolean {
     return (
       run(
@@ -702,6 +833,48 @@ export class SqliteStore {
         canonicalJson(attempt),
         attempt.updatedAt,
       );
+  }
+
+  latestTxAttempts(strategyId: string, launchId?: string): readonly TxAttempt[] {
+    const rows = (launchId === undefined
+      ? this.#database
+          .prepare(
+            `SELECT current.payload_json AS value
+               FROM tx_attempts current
+               JOIN (
+                 SELECT attempt_id, MAX(revision) AS revision
+                 FROM tx_attempts WHERE strategy_id = ? GROUP BY attempt_id
+               ) latest
+               ON latest.attempt_id = current.attempt_id AND latest.revision = current.revision
+               ORDER BY current.updated_at, current.attempt_id`,
+          )
+          .all(strategyId)
+      : this.#database
+          .prepare(
+            `SELECT current.payload_json AS value
+               FROM tx_attempts current
+               JOIN (
+                 SELECT attempt_id, MAX(revision) AS revision
+                 FROM tx_attempts
+                 WHERE strategy_id = ? AND launch_id = ? GROUP BY attempt_id
+               ) latest
+               ON latest.attempt_id = current.attempt_id AND latest.revision = current.revision
+               ORDER BY current.updated_at, current.attempt_id`,
+          )
+          .all(strategyId, launchId)) as unknown as readonly TextRow[];
+    return Object.freeze(rows.map((row) => Object.freeze(parseStored<TxAttempt>(row.value))));
+  }
+
+  unresolvedTxAttempts(strategyId: string): readonly TxAttempt[] {
+    const terminal = new Set<TxAttempt["state"]>([
+      "CONFIRMED_SUCCESS",
+      "CONFIRMED_REVERTED",
+      "DROPPED_PROVEN",
+      "EXPIRED_UNRESOLVED",
+    ]);
+    return Object.freeze(
+      this.latestTxAttempts(strategyId).filter((attempt) => !terminal.has(attempt.state)),
+    );
   }
 
   saveEffectRecord(effect: EffectRecord): void {
@@ -791,6 +964,55 @@ export class SqliteStore {
         canonicalJson(plan),
         plan.updatedAt,
       );
+  }
+
+  latestRouteQuotes(strategyId: string, launchId: string): readonly RouteQuote[] {
+    const rows = this.#database
+      .prepare(
+        `SELECT current.payload_json AS value
+           FROM route_quotes current
+           JOIN (
+             SELECT quote_id, MAX(revision) AS revision
+             FROM route_quotes
+             WHERE strategy_id = ? AND launch_id = ?
+             GROUP BY quote_id
+           ) latest ON latest.quote_id = current.quote_id AND latest.revision = current.revision
+           ORDER BY current.observed_at, current.quote_id`,
+      )
+      .all(strategyId, launchId) as unknown as readonly TextRow[];
+    return Object.freeze(rows.map((row) => Object.freeze(parseStored<RouteQuote>(row.value))));
+  }
+
+  latestExitPlans(strategyId: string, launchId?: string): readonly ExitPlan[] {
+    const rows = (launchId === undefined
+      ? this.#database
+          .prepare(
+            `SELECT current.payload_json AS value
+               FROM exit_plans current
+               JOIN (
+                 SELECT exit_plan_id, MAX(revision) AS revision
+                 FROM exit_plans WHERE strategy_id = ? GROUP BY exit_plan_id
+               ) latest
+               ON latest.exit_plan_id = current.exit_plan_id
+               AND latest.revision = current.revision
+               ORDER BY current.updated_at, current.exit_plan_id`,
+          )
+          .all(strategyId)
+      : this.#database
+          .prepare(
+            `SELECT current.payload_json AS value
+               FROM exit_plans current
+               JOIN (
+                 SELECT exit_plan_id, MAX(revision) AS revision
+                 FROM exit_plans
+                 WHERE strategy_id = ? AND launch_id = ? GROUP BY exit_plan_id
+               ) latest
+               ON latest.exit_plan_id = current.exit_plan_id
+               AND latest.revision = current.revision
+               ORDER BY current.updated_at, current.exit_plan_id`,
+          )
+          .all(strategyId, launchId)) as unknown as readonly TextRow[];
+    return Object.freeze(rows.map((row) => Object.freeze(parseStored<ExitPlan>(row.value))));
   }
 
   claimWalletEntryIntent(input: {
@@ -1047,7 +1269,8 @@ export class SqliteStore {
     const row = this.#database
       .prepare(
         `SELECT COUNT(*) AS value FROM wallet_nonce_slots
-         WHERE wallet_address = ? AND state IN ('POSSIBLY_SUBMITTED', 'UNKNOWN')`,
+         WHERE wallet_address = ?
+           AND state IN ('RESERVED', 'SIGNED', 'POSSIBLY_SUBMITTED', 'UNKNOWN')`,
       )
       .get(walletAddress.toLowerCase()) as unknown as CountRow;
     return Number(row.value) > 0;
@@ -1068,6 +1291,32 @@ export class SqliteStore {
       )
       .all(strategyId, launchId) as unknown as readonly TextRow[];
     return Object.freeze(rows.map((row) => Object.freeze(parseStored<PositionLot>(row.value))));
+  }
+
+  latestOpenPositionLots(strategyId: string): readonly PositionLot[] {
+    const rows = this.#database
+      .prepare(
+        `SELECT current.payload_json AS value
+           FROM position_lots current
+           JOIN (
+             SELECT lot_id, MAX(revision) AS revision
+             FROM position_lots WHERE strategy_id = ? GROUP BY lot_id
+           ) latest ON latest.lot_id = current.lot_id AND latest.revision = current.revision
+           WHERE current.state IN ('OPEN', 'PARTIALLY_EXITED', 'EXIT_PENDING', 'UNKNOWN')
+           ORDER BY current.updated_at, current.lot_id`,
+      )
+      .all(strategyId) as unknown as readonly TextRow[];
+    return Object.freeze(rows.map((row) => Object.freeze(parseStored<PositionLot>(row.value))));
+  }
+
+  latestLaunchIdentities(strategyId: string): readonly LaunchIdentity[] {
+    const rows = this.#database
+      .prepare(
+        `SELECT payload_json AS value FROM launch_identities
+         WHERE strategy_id = ? ORDER BY frozen_at, launch_id`,
+      )
+      .all(strategyId) as unknown as readonly TextRow[];
+    return Object.freeze(rows.map((row) => Object.freeze(parseStored<LaunchIdentity>(row.value))));
   }
 
   latestEffectRecords(strategyId: string, launchId: string): readonly EffectRecord[] {
@@ -1173,6 +1422,74 @@ export class SqliteStore {
         .run(resourceKey, ownerId, epoch, expiresAt, now);
       return epoch;
     });
+  }
+
+  renewServiceLease(
+    resourceKey: string,
+    ownerId: string,
+    fencingEpoch: number,
+    expiresAt: IsoTimestamp,
+    now: IsoTimestamp,
+  ): void {
+    if (expiresAt <= now) throw new RangeError("renewed service lease must expire in the future");
+    const changed = run(
+      this.#database.prepare(
+        `UPDATE service_leases SET expires_at = ?, updated_at = ?
+         WHERE resource_key = ? AND owner_id = ? AND fencing_epoch = ? AND expires_at > ?`,
+      ),
+      expiresAt,
+      now,
+      resourceKey,
+      ownerId,
+      fencingEpoch,
+      now,
+    );
+    if (changed !== 1) {
+      throw new CanonicalInvariantError(
+        "NONCE_CONFLICT",
+        `resource ${resourceKey} lease is not owned`,
+      );
+    }
+  }
+
+  ownsServiceLease(
+    resourceKey: string,
+    ownerId: string,
+    fencingEpoch: number,
+    now: IsoTimestamp,
+  ): boolean {
+    const row = this.#database
+      .prepare(
+        `SELECT COUNT(*) AS value FROM service_leases
+         WHERE resource_key = ? AND owner_id = ? AND fencing_epoch = ? AND expires_at > ?`,
+      )
+      .get(resourceKey, ownerId, fencingEpoch, now) as unknown as CountRow;
+    return Number(row.value) === 1;
+  }
+
+  releaseServiceLease(
+    resourceKey: string,
+    ownerId: string,
+    fencingEpoch: number,
+    now: IsoTimestamp,
+  ): void {
+    const changed = run(
+      this.#database.prepare(
+        `UPDATE service_leases SET expires_at = ?, updated_at = ?
+         WHERE resource_key = ? AND owner_id = ? AND fencing_epoch = ?`,
+      ),
+      now,
+      now,
+      resourceKey,
+      ownerId,
+      fencingEpoch,
+    );
+    if (changed !== 1) {
+      throw new CanonicalInvariantError(
+        "NONCE_CONFLICT",
+        `resource ${resourceKey} lease cannot be released by a foreign owner`,
+      );
+    }
   }
 
   tableCount(table: string): number {

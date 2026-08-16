@@ -6,7 +6,7 @@ Robinhood Chain (`chainId=4663`) 上的 ClockIn / Stonk Launcher 生产架构实
 
 仓库已经实现并测试 v2 的 Canonical Model、SQLite WAL 状态、Known/Unknown Factory Control Sentinel、10 个独立 one-shot EOA、40%→floor 十档入场、1U–5U cap 缩量、canary 校准、7 天 scope-bound 授权、same-raw 广播与 UNKNOWN 恢复、双阶段退出与 5%/20% 分离滑点、readiness、只读 Dashboard、告警、systemd 模板和发布边界。
 
-当前状态是 `NOT_HOT_ARMED`，不是“已部署”或“已成交”。截至 2026-08-16，官方尚未公开最终主网 Launcher Factory、ClockIn CA 和最终 buy/sell/finalize ABI；10 个本地执行钱包也尚未注资，云区域/主机尚未确定。默认 `npm run live` 因而只输出 blocker 并以非零状态失败关闭，不读取私钥、不签名、不广播。
+当前状态是 `NOT_HOT_ARMED`，不是“已成交”。截至 2026-08-17，10 个生产钱包已逐个注资并保持 `latest/pending nonce = 0/0`，无私钥 Control 已部署到生产主机，三项资金服务及其 watchdog/systemd 运行边界也已实现；但官方仍未公开最终主网 Launcher Factory、ClockIn CA 和最终 buy/sell/finalize ABI，因此没有当前 profile/授权，资金服务保持未启动且不存在 arm marker。默认 `npm run live` 继续只输出 blocker 并以非零状态失败关闭，不读取私钥、不签名、不广播。
 
 ## 证据边界
 
@@ -28,7 +28,7 @@ npm ci
 npm run verify
 ```
 
-2026-08-16 本地证据：207/207 tests；line `89.58%`、branch `72.27%`、function `94.70%`。CI 强制最低 line 85%、branch 60%、function 80%，并执行格式、lint、strict typecheck、仓库与 Git 历史 secret scan、production dependency audit 和 package audit。
+2026-08-17 本地证据：225/225 tests；line `88.71%`、branch `68.05%`、function `91.76%`。CI 强制最低 line 85%、branch 60%、function 80%，并执行格式、lint、strict typecheck、仓库与 Git 历史 secret scan、production dependency audit 和 package audit。
 
 ## 文档
 

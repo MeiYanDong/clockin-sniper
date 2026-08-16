@@ -52,7 +52,7 @@ function readinessInput(
     database: { walEnabled: true, leaseOwned: true, schemaVersion: 3 },
     identity: { level: "L3", caState: "PENDING" },
     strategy: { entryEnabled: true, exitEnabled: true, entryState: "ARMED", exitState: "WATCHING" },
-    exposure: { unknownAttemptCount: 0, openPositionCount: 0, verifiedExitRouteCount: 0 },
+    exposure: { unknownAttemptCount: 0, openPositionCount: 0, verifiedExitRouteCount: 1 },
     ...overrides,
   };
 }

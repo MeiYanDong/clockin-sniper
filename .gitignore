@@ -16,6 +16,8 @@
 
 # Runtime state and local databases
 **/runtime/
+!clockin-sniper/src/runtime/
+!clockin-sniper/src/runtime/**
 **/*.sqlite
 **/*.sqlite-shm
 **/*.sqlite-wal
