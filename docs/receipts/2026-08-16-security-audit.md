@@ -11,7 +11,7 @@
 | Check | Result |
 | --- | --- |
 | Current repository tree secret scan | PASS |
-| Pre-existing Git history scan | PASS, 89 unique text blobs; scanner reports only path/rule and never secret contents |
+| Git history scan after implementation commit | PASS, 192 unique text blobs; scanner reports only path/rule and never secret contents |
 | Git diff whitespace/error check | PASS |
 | Biome format/lint and strict TypeScript | PASS |
 | Tests and coverage gates | PASS, 197/197; line 89.46%, branch 72.68%, function 94.62% |

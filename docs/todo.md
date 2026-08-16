@@ -29,7 +29,7 @@
 - [x] 新代码通过格式化、lint、typecheck、测试和覆盖率门槛。
 - [x] Capability manifest 与真实能力一致，不把 `planned/tested` 写成 `verified_current`。
 - [x] CHANGELOG、Tech Spec 或 ADR 按变更性质更新。
-- [ ] 提交信息使用 Conventional Commits，并只包含当前故事卡范围。
+- [x] 提交信息使用 Conventional Commits；本次紧密耦合的 v2 schema/modules/tests/docs 作为一个交付单元。
 - [x] 如果产生链上动作，保存 txHash、receipt、资产变化和 EffectRecord；本次未签名/广播任何有效交易。
 
 ### 0.2 优先级

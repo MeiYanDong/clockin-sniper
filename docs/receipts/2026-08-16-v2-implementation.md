@@ -3,6 +3,7 @@
 ## Outcome
 
 - Evidence level: `implemented + locally_tested + package_boundary_verified`
+- Implementation commit: `eb38052c487b8cf1b14460a7b8dce87c766f5d20`
 - Production state: `NOT_HOT_ARMED`
 - Test result: `197/197` passing.
 - Coverage: line `89.46%`, branch `72.68%`, function `94.62%`.
@@ -22,7 +23,7 @@ The implementation includes the canonical v2 model and state machine, SQLite WAL
 
 An actual `npm pack` archive was built and extracted. The audit required build metadata, capability manifest, `dist/v2-index.js`, and `dist/live-v2.js`; it rejected legacy live entrypoints, `src/`, `test/`, secret-shaped filenames, authenticated RPC endpoints, private keys, seed phrases, and signed raw transactions. The resulting local archive passed with 247 files; CI repeats the check against the committed tree.
 
-The current source tree and pre-existing Git history secret scans passed. Release metadata records source commit, Node version, package version, capability manifest revision, and its SHA-256.
+The committed source tree and Git history secret scans passed. Release metadata records source commit, Node version, package version, capability manifest revision, and its SHA-256.
 
 ## Evidence boundary
 
