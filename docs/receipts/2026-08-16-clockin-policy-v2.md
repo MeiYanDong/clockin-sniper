@@ -2,9 +2,11 @@
 
 ## Outcome
 
-- Evidence level: `implemented + locally_tested + public_pr_opened`
+- Evidence level: `implemented + locally_tested + public_ci_verified + merged`
 - Implementation commit: `48bd5161a00176306af674f219a5ddbdb09fc9a6`
-- Public PR: [#8](https://github.com/MeiYanDong/clockin-sniper/pull/8)
+- Public PR: [#8](https://github.com/MeiYanDong/clockin-sniper/pull/8), merged
+- Squash merge commit: `041062e379a0f233333cfab38a7cde6716bfa1ac`
+- Required CI: [run 31942535381](https://github.com/MeiYanDong/clockin-sniper/actions/runs/31942535381), both jobs passed
 - Strategy config: `clockin-policy-v2`, revision `2`
 - Config hash: `sha256:a03505b3f0da3a92a5c45f70ff584ab26326ba9940996446325449392f7fb121`
 - Capability manifest: revision `3`
@@ -20,6 +22,8 @@
 - Biome format/lint and strict TypeScript checks passed;
 - production dependency audit found 0 vulnerabilities;
 - build and `npm pack --dry-run` passed with capability manifest revision 3 and the new downside-policy export.
+
+The protected-branch workflow independently repeated the complete quality gate on PR head `d7a0794a7de04dafd81418c2bc3601fc36110a93`. The conventional-title job and the format/lint/typecheck/test/package-audit job both completed successfully before merge.
 
 ## Policy evidence
 

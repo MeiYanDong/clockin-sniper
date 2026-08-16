@@ -313,6 +313,7 @@
 - [x] 预算或身份授权变化必须产生新 config hash。
 - [x] ADR 0006、strategy config、单元测试与 readiness 文档使用同一组参数。
 - [x] 保存 `clockin-policy-v2` 本地验证与 Public PR 实现回执。
+- [x] Public PR #8 required checks 通过并合并到 `main`；保存 CI run 与 merge commit 回读。
 
 ---
 
