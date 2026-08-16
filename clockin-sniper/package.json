@@ -20,7 +20,8 @@
     "deploy/",
     "README.md",
     "capability-manifest.json",
-    "BUILD-METADATA.json"
+    "BUILD-METADATA.json",
+    "npm-shrinkwrap.json"
   ],
   "scripts": {
     "secrets:check": "node --import tsx src/check-repo-secrets.ts",
