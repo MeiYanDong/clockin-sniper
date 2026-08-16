@@ -2,6 +2,8 @@
 Description=ClockIn Control Sentinel (keyless)
 Wants=network-online.target time-sync.target
 After=network-online.target time-sync.target
+StartLimitIntervalSec=60s
+StartLimitBurst=8
 
 [Service]
 Type=simple
@@ -16,8 +18,6 @@ LoadCredential=rpc_wss:/etc/clockin-sniper/credentials/rpc_wss
 ExecStart=@CONTROL_EXECUTABLE@
 Restart=on-failure
 RestartSec=2s
-StartLimitIntervalSec=60s
-StartLimitBurst=8
 TimeoutStopSec=30s
 KillSignal=SIGTERM
 UMask=0077
