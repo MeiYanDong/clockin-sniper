@@ -458,7 +458,7 @@ describe("exit plan, effect, independent control and restart", () => {
       validityEnvelopeId: "validity-1",
       now: LATER,
     });
-    assert.equal(plan.minOutputRaw, "4560");
+    assert.equal(plan.minOutputRaw, "4674");
     const effect = buildExitEffect({
       strategyId: "clockin",
       intentId: "exit-intent-1",

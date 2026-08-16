@@ -115,6 +115,36 @@ export class TenLaneOrchestrator {
     lane.reason = reason;
   }
 
+  restoreLane(input: {
+    readonly laneId: string;
+    readonly state: Extract<
+      LaneExecutionState,
+      "DISPATCHED" | "UNKNOWN" | "FAILED_FINAL" | "EFFECT_CONFIRMED"
+    >;
+    readonly dispatchedPrincipalRaw: bigint;
+    readonly reason: string;
+  }): void {
+    const lane = this.#lanes.find((candidate) => candidate.laneId === input.laneId);
+    if (lane === undefined) throw new Error(`lane ${input.laneId} is unknown`);
+    if (lane.state !== "WAITING") throw new Error(`lane ${input.laneId} was already restored`);
+    if (input.dispatchedPrincipalRaw <= 0n) {
+      throw new RangeError("restored lane principal must be positive");
+    }
+    const alreadyDispatched = this.#lanes.reduce(
+      (total, candidate) => total + candidate.dispatchedPrincipalRaw,
+      0n,
+    );
+    if (alreadyDispatched + input.dispatchedPrincipalRaw > this.#config.aggregatePrincipalCapRaw) {
+      throw new CanonicalInvariantError(
+        "BUDGET_EXCEEDED",
+        "restored lanes exceed the aggregate principal cap",
+      );
+    }
+    lane.state = input.state;
+    lane.dispatchedPrincipalRaw = input.dispatchedPrincipalRaw;
+    lane.reason = input.reason;
+  }
+
   observe(
     observation: PoolObservation,
     identityLevel: IdentityLevel,

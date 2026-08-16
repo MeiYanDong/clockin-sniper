@@ -53,9 +53,16 @@ export function buildExitPlan(input: {
   if (input.tokenInputRaw <= 0n || input.tokenInputRaw > BigInt(input.lot.remainingRaw)) {
     throw new RangeError("exit token input is outside the lot remainder");
   }
-  const proportionalNet =
-    (BigInt(input.quote.netOutputRaw) * input.tokenInputRaw) / BigInt(input.quote.tokenInputRaw);
-  const minOutputRaw = (proportionalNet * BigInt(10_000 - input.maximumSlippageBps)) / 10_000n;
+  const protocolDeductions = BigInt(input.quote.sellTaxRaw) + BigInt(input.quote.priceImpactRaw);
+  const executableProtocolOutput =
+    BigInt(input.quote.grossOutputRaw) > protocolDeductions
+      ? BigInt(input.quote.grossOutputRaw) - protocolDeductions
+      : 0n;
+  const proportionalExecutableOutput =
+    (executableProtocolOutput * input.tokenInputRaw) / BigInt(input.quote.tokenInputRaw);
+  // Gas belongs in route selection and economic net value, not in an on-chain amountOutMin.
+  const minOutputRaw =
+    (proportionalExecutableOutput * BigInt(10_000 - input.maximumSlippageBps)) / 10_000n;
   if (minOutputRaw <= 0n) throw new Error("exit plan minOutput is not economically executable");
   const exitPlanId = `exit-plan:${stableHash({
     positionId: input.position.positionId,

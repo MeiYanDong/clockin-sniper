@@ -293,6 +293,40 @@ describe("wallet nonce coordinator and signed transaction vault", () => {
     store.close();
   });
 
+  it("releases a pre-broadcast nonce only after every same-raw route rejects deterministically", () => {
+    const store = new SqliteStore(":memory:");
+    const coordinator = new WalletTransactionCoordinator(store);
+    const address = nonSecretManifest(1).entries[0]?.address as `0x${string}`;
+    const epoch = coordinator.acquire(
+      address,
+      "executor-a",
+      0n,
+      0n,
+      NOW,
+      "2026-08-16T00:01:00.000Z",
+    );
+    const slot = coordinator.reserve(address, "executor-a", epoch, 0n, "ENTRY", "plan-reject");
+    const submitted = coordinator.transition(slot, "POSSIBLY_SUBMITTED");
+    assert.throws(
+      () =>
+        coordinator.releaseAfterDeterministicRejection(submitted, {
+          allRoutesRejected: false,
+          signedHashUnchanged: true,
+        }),
+      (error: unknown) =>
+        error instanceof CanonicalInvariantError && error.reasonCode === "TRANSPORT_UNKNOWN",
+    );
+    assert.equal(
+      coordinator.releaseAfterDeterministicRejection(submitted, {
+        allRoutesRejected: true,
+        signedHashUnchanged: true,
+      }).state,
+      "RELEASED",
+    );
+    assert.doesNotThrow(() => coordinator.assertExitAllowed(address));
+    store.close();
+  });
+
   it("rejects startup when latest and pending nonce disagree", () => {
     const store = new SqliteStore(":memory:");
     const coordinator = new WalletTransactionCoordinator(store);

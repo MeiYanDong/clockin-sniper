@@ -180,6 +180,26 @@ describe("exact-block observation and quote validity", () => {
     );
   });
 
+  it("accepts the zero address as the canonical native ETH quote asset", async () => {
+    const adapter: PoolReadAdapter = {
+      adapterId: "native-eth-adapter",
+      readBlock: async (blockNumber) => ({
+        blockNumber,
+        blockHash: HASH_A,
+        blockTimestamp: 1_000n,
+      }),
+      readFeeBps: async () => 4_000,
+      readWindow: async () => true,
+      readCap: async () => ({ value: 5_000n, scope: "PER_WALLET" }),
+      readCooldown: async () => ({ seconds: 0, scope: "NONE" }),
+      readEoaOnly: async () => true,
+      readQuoteAsset: async () => "0x0000000000000000000000000000000000000000",
+      readCurveStateHash: async () => "native-curve",
+    };
+    const result = await observePoolAt(adapter, 1, 100n, ["native-quote-evidence"]);
+    assert.equal(result.quoteAsset, "0x0000000000000000000000000000000000000000");
+  });
+
   it("fails closed on impossible state and provider split brain", async () => {
     const adapter: PoolReadAdapter = {
       adapterId: "bad-adapter",
@@ -432,6 +452,40 @@ describe("ten independent entry lanes", () => {
     orchestrator.recordLaneOutcome(later[0]?.laneId ?? "", "REVERTED", "cap changed");
     assert.equal(orchestrator.snapshot()[1]?.state, "FAILED_FINAL");
     assert.equal(orchestrator.snapshot()[2]?.state, "DISPATCHED");
+  });
+
+  it("restores dispatched and terminal lanes after restart without creating a second intent", () => {
+    const orchestrator = engine();
+    orchestrator.restoreLane({
+      laneId: "clockin-entry-01",
+      state: "EFFECT_CONFIRMED",
+      dispatchedPrincipalRaw: 5_000n,
+      reason: "restored canonical receipt",
+    });
+    orchestrator.applyCanaryCalibration(false);
+    const nextObservation = observation({
+      observationId: "restart-observation",
+      block: { blockNumber: 101n, blockHash: HASH_B, blockTimestamp: 1_001n },
+      currentFeeBps: 3_500,
+    });
+    const quotes = new Map([
+      ["clockin-entry-02", quote("clockin-entry-02", 900n, 101n, HASH_B, "restart-observation")],
+    ]);
+    assert.deepEqual(
+      orchestrator.observe(nextObservation, "L3", quotes).map((decision) => decision.trancheNumber),
+      [2],
+    );
+    assert.equal(orchestrator.snapshot()[0]?.state, "EFFECT_CONFIRMED");
+    assert.throws(
+      () =>
+        orchestrator.restoreLane({
+          laneId: "clockin-entry-01",
+          state: "DISPATCHED",
+          dispatchedPrincipalRaw: 5_000n,
+          reason: "duplicate restore",
+        }),
+      /already restored/,
+    );
   });
 
   it("falls back to one lane per block when trustworthy catch-up quotes are absent", () => {

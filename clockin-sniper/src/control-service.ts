@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
 import { join } from "node:path";
 
 import { createOpsServer } from "./ops/http-server.js";
@@ -18,6 +19,12 @@ import {
 } from "./rpc/robinhood.js";
 import { WebSocketNewHeadsClient, type NewHeadsSubscription } from "./rpc/websocket-new-heads.js";
 import { hexToBigInt } from "./rpc/hex.js";
+import {
+  readProductionServiceStatus,
+  writeProductionServiceStatus,
+  type ProductionServiceReadback,
+} from "./runtime/service-status.js";
+import { SystemdWatchdog } from "./runtime/systemd-watchdog.js";
 import { freezePriceSnapshot, type PriceObservation } from "./wallets/price-snapshot.js";
 import { inspectWalletReadiness, type WalletReadinessReport } from "./wallets/readiness.js";
 import type { WalletManifest } from "./wallets/wallet-manifest.js";
@@ -29,6 +36,7 @@ const PRICE_MAXIMUM_AGE_MS = 30_000;
 const PRICE_MAXIMUM_DEVIATION_BPS = 200;
 const USD_MICROS_PER_BATCH = 5_000_000n;
 const USD_MICROS_ALL_IN = 60_000_000n;
+const STATUS_MAXIMUM_AGE_MS = 15_000;
 
 interface ControlEvent {
   readonly time: string;
@@ -46,6 +54,7 @@ interface RuntimeState {
   priceExpiresAtMs: number | null;
   lastRefreshAt: string | null;
   websiteHashes: Map<string, string>;
+  serviceReadbacks: Map<"executor" | "reconciler" | "exit", ProductionServiceReadback>;
   events: ControlEvent[];
 }
 
@@ -155,6 +164,12 @@ function recordEvent(state: RuntimeState, kind: ControlEvent["kind"], message: s
 
 function readinessInput(state: RuntimeState): OperationalReadinessInput {
   const walletReport = state.walletReport;
+  const executorReadback = state.serviceReadbacks.get("executor");
+  const reconcilerReadback = state.serviceReadbacks.get("reconciler");
+  const exitReadback = state.serviceReadbacks.get("exit");
+  const executor = executorReadback?.state === "CURRENT" ? executorReadback.status : null;
+  const reconciler = reconcilerReadback?.state === "CURRENT" ? reconcilerReadback.status : null;
+  const exit = exitReadback?.state === "CURRENT" ? exitReadback.status : null;
   const chain = state.httpReady
     ? Object.freeze({
         connected: true,
@@ -187,42 +202,76 @@ function readinessInput(state: RuntimeState): OperationalReadinessInput {
       sequencerReady: state.sequencerReady,
       providerIds: Object.freeze(["production-http", "production-wss", "official-sequencer"]),
     }),
-    factory: Object.freeze({ state: "UNKNOWN" as const }),
+    factory:
+      executor !== null &&
+      executor.profileId !== undefined &&
+      executor.profileRevision !== undefined &&
+      executor.profileRevision > 0 &&
+      ["WATCHING", "READY", "ACTIVE"].includes(executor.state)
+        ? Object.freeze({
+            state: "HOT_ARMED" as const,
+            profileId: executor.profileId,
+            profileRevision: executor.profileRevision,
+          })
+        : Object.freeze({ state: "UNKNOWN" as const }),
     wallets: Object.freeze({
       expected: EXPECTED_WALLETS,
-      signerReady: 0,
+      signerReady: executor?.signerReady ?? 0,
       nonceReady: walletReport?.nonceCleanWallets ?? 0,
       fundingReady: walletReport?.readyWallets ?? 0,
     }),
     priceSnapshot,
-    database: Object.freeze({ walEnabled: false, leaseOwned: false, schemaVersion: 0 }),
+    database: Object.freeze({
+      walEnabled: executor?.database.walEnabled ?? false,
+      leaseOwned: executor?.database.leaseOwned ?? false,
+      schemaVersion: executor?.database.schemaVersion ?? 0,
+    }),
     identity: Object.freeze({ level: "L0" as const, caState: "UNKNOWN" as const }),
     strategy: Object.freeze({
-      entryEnabled: false,
-      exitEnabled: false,
-      entryState: "FAIL_CLOSED_AWAITING_FINAL_PROFILE",
-      exitState: "NO_VERIFIED_MAINNET_ROUTE",
+      entryEnabled: executor?.entryEnabled ?? false,
+      exitEnabled: (exit?.exitEnabled ?? false) && reconciler !== null,
+      entryState:
+        executor === null ? "FAIL_CLOSED_AWAITING_EXECUTOR" : `${executor.state}_EXECUTOR`,
+      exitState:
+        exit === null
+          ? "NO_CURRENT_EXIT_SERVICE"
+          : reconciler === null
+            ? "NO_CURRENT_RECONCILER"
+            : `${exit.state}_EXIT_${reconciler.state}_RECONCILER`,
     }),
     exposure: Object.freeze({
-      unknownAttemptCount: 0,
-      openPositionCount: 0,
-      verifiedExitRouteCount: 0,
+      unknownAttemptCount: Math.max(
+        executor?.unresolvedAttemptCount ?? 0,
+        reconciler?.unresolvedAttemptCount ?? 0,
+        exit?.unresolvedAttemptCount ?? 0,
+      ),
+      openPositionCount: Math.max(
+        executor?.openPositionCount ?? 0,
+        reconciler?.openPositionCount ?? 0,
+        exit?.openPositionCount ?? 0,
+      ),
+      verifiedExitRouteCount: exit?.verifiedExitRouteCount ?? 0,
     }),
   });
 }
 
 function dashboard(state: RuntimeState): DashboardModel {
   const rows = state.walletReport?.rows ?? [];
+  const readiness = evaluateOperationalReadiness(readinessInput(state));
+  const executorReadback = state.serviceReadbacks.get("executor");
+  const exitReadback = state.serviceReadbacks.get("exit");
+  const executor = executorReadback?.state === "CURRENT" ? executorReadback.status : null;
+  const exit = exitReadback?.state === "CURRENT" ? exitReadback.status : null;
   return Object.freeze({
     title: "ClockIn Production Sentinel",
-    phase: "WATCHING / NOT_HOT_ARMED",
+    phase: readiness.hotArmed ? "HOT_ARMED / WAITING_FACTORY_EVENT" : "WATCHING / NOT_HOT_ARMED",
     latestBlock: state.latestBlock.toString(),
     lagBlocks: 0,
     factory: Object.freeze({
       candidateCount: 0,
-      profileId: "UNPUBLISHED",
-      revision: 0,
-      state: "UNKNOWN",
+      profileId: executor?.profileId ?? "UNPUBLISHED",
+      revision: executor?.profileRevision ?? 0,
+      state: readiness.snapshot.factory.state,
     }),
     identity: Object.freeze({
       token: "UNKNOWN",
@@ -237,7 +286,7 @@ function dashboard(state: RuntimeState): DashboardModel {
         return Object.freeze({
           laneId: String(index + 1),
           walletLabel: row?.walletId ?? `entry-${String(index + 1).padStart(2, "0")}`,
-          targetFeeBps: 0,
+          targetFeeBps: Math.round(4_000 - (4_000 * index) / (EXPECTED_WALLETS - 1)),
           principalRaw: row?.balanceWei.toString() ?? "0",
           signed: false,
         });
@@ -248,9 +297,21 @@ function dashboard(state: RuntimeState): DashboardModel {
       gasRaw: "0",
       tokenRemainingRaw: "0",
       recoveredPrincipalRaw: "0",
-      runnerState: "NO_POSITION",
+      runnerState:
+        (exit?.openPositionCount ?? 0) > 0
+          ? `${exit?.state ?? "UNKNOWN"}_EXIT_POLICY`
+          : "NO_POSITION",
     }),
-    routes: Object.freeze([]),
+    routes: Object.freeze(
+      Array.from({ length: exit?.verifiedExitRouteCount ?? 0 }, (_, index) =>
+        Object.freeze({
+          routeId: `verified-route-${index + 1}`,
+          kind: "PROFILE_BOUND",
+          netOutputRaw: "AWAITING_POSITION_QUOTE",
+          state: exit?.state ?? "UNKNOWN",
+        }),
+      ),
+    ),
     recentEvents: Object.freeze([...state.events]),
   });
 }
@@ -330,6 +391,10 @@ async function monitorWebsite(state: RuntimeState): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  const ownerId = process.env.CLOCKIN_CONTROL_ID?.trim() || `clockin-control:${hostname()}`;
+  const watchdog = new SystemdWatchdog();
+  const statusDirectory = process.env.CLOCKIN_STATUS_DIR?.trim() || "/run/clockin-status";
+  let statusSequence = 0;
   const manifestPath = process.env.CLOCKIN_MANIFEST_PATH?.trim();
   if (manifestPath === undefined || manifestPath.length === 0) {
     throw new Error("CLOCKIN_MANIFEST_PATH is required");
@@ -375,6 +440,7 @@ async function main(): Promise<void> {
     priceExpiresAtMs: null,
     lastRefreshAt: null,
     websiteHashes: new Map(),
+    serviceReadbacks: new Map(),
     events: [],
   };
   let subscription: NewHeadsSubscription | null = null;
@@ -385,6 +451,19 @@ async function main(): Promise<void> {
     if (refreshRunning || stopping) return;
     refreshRunning = true;
     try {
+      const peerReadbacks = await Promise.all(
+        (["executor", "reconciler", "exit"] as const).map(async (service) =>
+          Object.freeze({
+            service,
+            readback: await readProductionServiceStatus(
+              statusDirectory,
+              service,
+              STATUS_MAXIMUM_AGE_MS,
+            ),
+          }),
+        ),
+      );
+      for (const peer of peerReadbacks) state.serviceReadbacks.set(peer.service, peer.readback);
       const nowMs = Date.now();
       const [identity, gasPriceHex, priceSnapshot] = await Promise.all([
         verifyRobinhoodMainnet(http),
@@ -434,6 +513,40 @@ async function main(): Promise<void> {
     try {
       const currentReadiness = evaluateOperationalReadiness(readinessInput(state));
       await writeSnapshot(stateDirectory, currentReadiness, state);
+      const executorReadback = state.serviceReadbacks.get("executor");
+      const executor = executorReadback?.state === "CURRENT" ? executorReadback.status : undefined;
+      statusSequence += 1;
+      await writeProductionServiceStatus(statusDirectory, {
+        formatVersion: 1,
+        service: "control",
+        state: currentReadiness.hotArmed ? "READY" : "WATCHING",
+        pid: process.pid,
+        ownerId,
+        sequence: statusSequence,
+        observedAt: new Date().toISOString(),
+        ...(executor?.profileId === undefined ? {} : { profileId: executor.profileId }),
+        ...(executor?.profileRevision === undefined
+          ? {}
+          : { profileRevision: executor.profileRevision }),
+        ...(executor?.profileHash === undefined ? {} : { profileHash: executor.profileHash }),
+        signerReady: 0,
+        database: Object.freeze({ schemaVersion: 0, walEnabled: false, leaseOwned: false }),
+        entryEnabled: false,
+        exitEnabled: false,
+        unresolvedAttemptCount: currentReadiness.snapshot.exposure.unknownAttemptCount,
+        openPositionCount: currentReadiness.snapshot.exposure.openPositionCount,
+        verifiedExitRouteCount: currentReadiness.snapshot.exposure.verifiedExitRouteCount,
+        details: Object.freeze(
+          currentReadiness.hotArmed
+            ? ["KEYLESS_CONTROL_HOT_ARMED_READBACK"]
+            : currentReadiness.reasons,
+        ),
+      });
+      await watchdog.status(
+        currentReadiness.hotArmed
+          ? "control observed HOT_ARMED peers"
+          : "control watching fail-closed",
+      );
     } finally {
       refreshRunning = false;
     }
@@ -491,6 +604,7 @@ async function main(): Promise<void> {
 
   await refresh();
   await monitorWebsite(state);
+  await watchdog.ready("control sentinel ready");
   const refreshTimer = setInterval(() => void refresh(), REFRESH_MS);
   const websiteTimer = setInterval(() => void monitorWebsite(state), WEBSITE_REFRESH_MS);
   void connectWss();
@@ -503,6 +617,7 @@ async function main(): Promise<void> {
     clearInterval(websiteTimer);
     subscription?.close();
     await new Promise<void>((resolve) => ops.server.close(() => resolve()));
+    await watchdog.stopping(`control stopping after ${signal}`);
   };
   process.once("SIGTERM", () => void shutdown("SIGTERM"));
   process.once("SIGINT", () => void shutdown("SIGINT"));

@@ -2,7 +2,7 @@
 
 ## Status and stop boundary
 
-This runbook describes a reproducible deployment, but it is not a deployment receipt. As of 2026-08-16, owner strategy bounds are frozen in `clockin-policy-v2`, but production activation remains blocked by the unpublished final mainnet Launcher Factory/ABI, unfunded entry wallets, missing current price/authorization artifacts, missing region measurements, and the absence of an approved cloud host. Do not create `PRODUCTION_ARM_APPROVED` until `docs/receipts/production-readiness.md` reports `HOT_ARMED` with evidence for every gate.
+This runbook describes a reproducible deployment, but it is not a deployment receipt. As of 2026-08-17, owner strategy bounds are frozen in `clockin-policy-v2`, all ten wallets are funded with clean nonces, and the keyless Control service runs on the selected production host. Production activation remains blocked by the unpublished final mainnet Launcher Factory/ABI, missing immutable profile/current authorization, missing fork/replay proof for both exit routes, and missing active-region benchmark. Do not create `PRODUCTION_ARM_APPROVED` until `docs/receipts/production-readiness.md` reports `HOT_ARMED` with evidence for every gate.
 
 Never point the v2 systemd services at the legacy single-wallet `npm run live` entrypoint.
 
@@ -29,7 +29,16 @@ Install `deploy/systemd/clockin-sniper.tmpfiles.conf`, create the two users with
 
 ## Render and verify units
 
-Render each `.service.in` placeholder to an absolute path inside the checksum-verified release. Install the result in `/etc/systemd/system`, then run:
+Render each `.service.in` placeholder to an absolute path inside the checksum-verified release. The checked renderer rejects relative paths, whitespace/shell syntax, missing build entrypoints, and unresolved placeholders:
+
+```bash
+node deploy/render-systemd.mjs \
+  --artifact-dir /opt/clockin-sniper/releases/<commit-sha> \
+  --node /opt/clockin-sniper/runtime/node-v24.19.0-linux-x64/bin/node \
+  --output-dir /tmp/clockin-rendered-units
+```
+
+Install the result in `/etc/systemd/system`, then run:
 
 ```bash
 systemd-analyze verify /etc/systemd/system/clockin-*.service
@@ -47,8 +56,8 @@ Save the redacted output in the private deployment receipt. Confirm that no cred
 2. Require current chain ID 4663, genesis fingerprint, Factory code hash, final adapter capability revision, time sync, WSS/HTTP health, and SQLite migration success.
 3. Verify all ten public wallet addresses, key correspondence, latest/pending nonce equality, principal balance, one-entry/one-approval/three-sell Gas reserves and 30% Gas margin; aggregate requirements must fit the frozen 60U all-in cap.
 4. Verify the <=30-second dual-source price snapshot with <=2% deviation, the scope-bound <=7-day authorization, zero unresolved `UNKNOWN` attempts, single-writer lease ownership, and current quote/validity-envelope semantics.
-5. Start `clockin-reconciler` and `clockin-exit`; they must not create a second entry intent.
-6. Only after the signed production-readiness receipt says `HOT_ARMED`, atomically create the root-owned `PRODUCTION_ARM_APPROVED` marker and start `clockin-executor`.
+5. Start `clockin-reconciler` and `clockin-exit`; wait for fresh local status files proving matching profile/authorization, WAL, signer and exit readiness. They must not create a second entry intent.
+6. Only after the signed production-readiness receipt says `HOT_ARMED`, atomically create the root-owned `PRODUCTION_ARM_APPROVED` marker and start `clockin-executor`. Executor independently rechecks Reconciler/Exit before every lane signature.
 7. Read back `/ready`, service state, active lease, database schema, artifact SHA, and capability revision. Save this as the deployment receipt.
 
 The marker is a deployment interlock, not proof by itself. Removing it blocks the executor at the next service start; the application-level entry switch remains the immediate stop mechanism.

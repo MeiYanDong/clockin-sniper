@@ -6,9 +6,12 @@ StartLimitIntervalSec=60s
 StartLimitBurst=8
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=all
+WatchdogSec=30s
 User=clockin-observer
 Group=clockin-observer
+SupplementaryGroups=clockin-status
 WorkingDirectory=@ARTIFACT_DIR@/clockin-sniper
 EnvironmentFile=/etc/clockin-sniper/strategy.env
 Environment=CLOCKIN_MANIFEST_PATH=/etc/clockin-sniper/public/entry-manifest.json
@@ -48,7 +51,7 @@ RestrictRealtime=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 AmbientCapabilities=
-ReadWritePaths=/var/lib/clockin-control /run/clockin-control
+ReadWritePaths=/var/lib/clockin-control /run/clockin-control /run/clockin-status
 
 [Install]
 WantedBy=multi-user.target
