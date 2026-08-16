@@ -15,5 +15,7 @@ ADRs record decisions that materially change system boundaries, money movement, 
 - [0001 — Public repository and external secret boundary](0001-public-repository-and-secret-boundary.md)
 - [0002 — Ten one-shot EOA entry lanes](0002-ten-one-shot-eoa-entry-lanes.md)
 - [0003 — Separate Control and Execution planes](0003-control-and-execution-plane-separation.md)
+- [0004 — SQLite WAL as canonical runtime state](0004-sqlite-wal-canonical-state.md)
+- [0005 — Initial ClockIn strategy policy](0005-initial-strategy-policy.md)
 
 ADRs are append-only historical records. Correct factual errors with a follow-up note or superseding ADR rather than silently rewriting the original decision context.

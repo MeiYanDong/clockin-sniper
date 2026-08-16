@@ -1,0 +1,52 @@
+[Unit]
+Description=ClockIn Control Sentinel (keyless)
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=simple
+User=clockin-observer
+Group=clockin-observer
+WorkingDirectory=@ARTIFACT_DIR@/clockin-sniper
+EnvironmentFile=/etc/clockin-sniper/strategy.env
+LoadCredential=rpc_http:/etc/clockin-sniper/credentials/rpc_http
+LoadCredential=rpc_wss:/etc/clockin-sniper/credentials/rpc_wss
+ExecStart=@CONTROL_EXECUTABLE@
+Restart=on-failure
+RestartSec=2s
+StartLimitIntervalSec=60s
+StartLimitBurst=8
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+UMask=0077
+RuntimeDirectory=clockin-control
+RuntimeDirectoryMode=0700
+StateDirectory=clockin-sniper
+StateDirectoryMode=0700
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=clockin-control
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=500
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/clockin-sniper /run/clockin-control
+
+[Install]
+WantedBy=multi-user.target

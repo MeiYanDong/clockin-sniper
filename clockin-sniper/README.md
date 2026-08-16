@@ -1,119 +1,76 @@
-# ClockIn Robinhood Mainnet LIVE Sniper
+# ClockIn Sniper v2
 
-这是 Robinhood Chain 主网（chain ID `4663`）的 Factory-first 真实资金执行器。`npm run live` 没有 Shadow、dry-run 或模拟分支：配置完成并捕获到满足身份策略的正式 launch 后，第一笔交易会真实签名和广播。
+ClockIn Sniper v2 是 Robinhood Chain (`chainId=4663`) 的事件驱动、10 EOA 生产架构实现。核心预算为 10 个独立 one-shot wallet，每 lane 名义 5U，总本金上限 50U；目标费率由最终 Pool 的实际 `initial/floor/decay` 证据动态生成，不在代码里把 40%/2min 猜成永久事实。
 
-截至 2026-08-15，代码与测试已完成，但 ClockIn/StonkBrokers 仍未在公开地址表发布最终主网 Launcher Factory、creator 和 ClockIn CA；当前官方 Launcher 页面也仍标记 `Coming soon`。因此仓库不会写死 rehearsal Factory，不具备当前已启动、已广播或已成交的证据。
+## 当前状态
 
-官方当前公开预览同时描述的是另一套 `99 分钟 / 99%` Safe Launch。这个执行器只授权已讨论的 ClockIn `≤40%`、约 2 分钟画像：若最终 pool 初始费高于 `4000 bps`，或捕获时已经超过本策略有效期，preflight 会停止，不会把两套机制混用。
+`capability-manifest.json` 当前声明 `NOT_HOT_ARMED`。官方尚未发布最终主网 Launcher Factory、ClockIn CA、launch/buy/sell/finalize ABI 和可验证退出路由，执行钱包未注资，云环境也未部署。因此：
 
-## 当前策略
+- `npm run live` 只读取公开 capability manifest，输出 blocker，返回 exit code 2；
+- 它不会读取 signer credential、构造交易、签名或广播；
+- `live:legacy-v0` 和 `live:known-target:legacy-v0` 只是旧实现审计/回放入口，不满足 v2 生产要求；
+- release build 只从 `v2-index.ts`、`live-v2.ts` 和钱包批量工具的依赖图生成，archive audit 明确拒绝旧 live 文件、源码、测试和 secret-shaped 内容。
 
-- 10 批，每批名义 `5U`，总名义 `50U`。
-- 发现模式：精确 Factory `TokenLaunched` 日志，不扫描全链同名 token。
-- 名称与 symbol 只在已经通过 Factory 地址和 runtime code hash 的事件里过滤。
-- 第一次有效事件原子冻结 `launchTx / creator / token CA / pool CA / block / logIndex`，后来的同名事件不能覆盖。
-- Factory 身份只授权第 1 笔 `5U`；第 2–10 笔必须由官方 CA 文件、官网字段或预填官方 CA 与冻结 CA 完全匹配后解锁。
-- 池子实际 `currentFeeBps()` 是费率真值。默认风险边界允许最高 `4000 bps`，计划终点为 `100 bps` 基础费；token 自身的 transfer tax 与 Launch Pool 交易费不能混称。
-- 读取实际 `buyCooldownSecs()` 并强制单钱包间隔。cooldown 从上一笔 canonical receipt 确认 token 到账后重新计时，避免把 launch 时间误当成首次成交时间。若为 20 秒，10 笔需要约 180 秒加首笔 inclusion/receipt 余量，执行 deadline 为 200 秒，而不是错误地强塞进 120 秒。
-- 每个新区块最多推进一批；第 `N+1` 批必须依次满足第 `N` 批 token 到账成功、随后 cooldown 已过。
-- Pool 规定最早合法外部买入为 launch block 的下一块；执行器在收到已挖出的 launch 日志后立即预置首笔，并记录当时 head，不能把“已广播”误报为“保证进入 N+1”。
+最终主网资料可用后，必须先更新 profile/adapter、完成 exact-block 身份核验、fork/replay、钱包 readiness 和 Production Readiness Receipt；只有所有 P0 gate 都是 `VERIFIED_CURRENT` 才能把默认入口改为真实执行编排。
 
-## 实盘闭环
+## 已实现模块
 
-```text
-prewarm wallet / nonce / funds / gas / Factory code hash
-  → WSS subscribe exact Factory + TokenLaunched topic
-  → subscribe-before-backfill closes startup/disconnect gaps
-  → name/symbol + optional creator/metadata + vanity suffix
-  → freeze token CA and pool CA
-  → read pool fee/cooldown/EOA window/quote asset at launch block
-  → require native-ETH quote and build buy(minTokensOut, refCode)
-  → sign nonce N only
-  → immediately fan out the exact same tranche 1 bytes to the official
-     write-only Sequencer plus configured production RPCs
-     (earliest legal inclusion is launch block + 1)
-  → sign nonce N+1...N+9 off the hot path
-  → official CA match unlocks tranches 2...10
-  → each next tranche waits for previous token-delivery receipt, then cooldown
-  → receipt/event/balance reconciliation
-```
+- Canonical Model、显式 Knowledge/Authorization/Validity/Effect 状态机；
+- SQLite migrations、WAL/FULL、预算/nonce 原子 reservation、service fencing、NDJSON 审计迁移；
+- subscribe-before-backfill Known Factory channel、topic-wide discovery、地址集群、官网/JSON/bundle fallback、profile registry；
+- immutable Launch Identity、L0–L4 授权、official-first/ClockIn 双策略隔离；
+- exact-block mechanism read、40→0 / 40→1 / 99% 反例 profile；
+- 10 个 repository-external 0600 key、public manifest、funding/nonce/Gas readiness、5U price snapshot；
+- 十档 planner、lane-1 speed canary、lanes 2–10 独立调度、cap/cooldown/EOA-only/catch-up/minOut；
+- same-raw 多 provider fanout、UNKNOWN encrypted vault recovery、receipt/balance/log reconciliation、reorg revision；
+- PositionLots、launch/external route registry、net liquidation、2× 本金优先、3× 第二止盈、runner 退出；
+- entry/exit 独立开关、health/readiness、证据型 Dashboard、异步 redacted alerts；
+- active/keyless-observer single-writer failover、region benchmark primitives、hardened systemd/release templates。
 
-Factory WSS 是当前可验证的生产发现通道。Robinhood 官方 Sequencer Feed 是 Nitro node feed；官方尚未发布适合本执行器直接解析的稳定应用层 transaction JSON schema，所以代码没有伪造一个 decoder。写入侧则已接入官方 `https://sequencer.mainnet.chain.robinhood.com`：启动时用无效空 payload 探测 `eth_sendRawTransaction`，真实执行时把同一份签名 bytes 与生产 RPC 并行发送。若直连探测暂时失败，会记录降级并继续使用已验证的标准 RPC，不会因此退出等待。未来接入 Feed 时只替换 discovery adapter，不改变身份冻结、nonce、same-raw 和 receipt 真值循环。
+接口和 fixture 的“实现/测试通过”不等于最终主网 adapter 已验证。`sell-adapter.ts`、route/finalize interfaces 仍需绑定官方最终 ABI 后才能实盘使用。
 
-## 协议绑定
+## 验证和构建
 
-当前前端公开 bundle 暴露的核心 ABI 为：
-
-```solidity
-event TokenLaunched(
-  address indexed creator,
-  address indexed memeToken,
-  address indexed pool,
-  string name,
-  string symbol,
-  string metadataURI,
-  bytes32 imageHash
-);
-
-function buy(uint256 minTokensOut, bytes32 refCode)
-  payable returns (uint256 tokensOut);
-function currentFeeBps() view returns (uint16);
-function inSniperWindow() view returns (bool);
-function buyCooldownSecs() view returns (uint32);
-function eoaOnlySecs() view returns (uint32);
-function windowMaxBuyBps() view returns (uint16);
-function currentWindowCap() view returns (uint256);
-function quoteAsset() view returns (address);
-```
-
-启动时仍必须用最终 Factory code hash 绑定这套 ABI。若最终 pool 使用 ERC-20 quote，执行器会停止，因为当前 live adapter 只实现 native-ETH payable `buy`，不会把 `buyWithQuote` 猜成同一路径。
-
-`CLOCKIN_MIN_TOKENS_OUT_RAW=1` 是 5U 小额、速度优先画像的最小非零输出，并不是完整价格保护。最大本金暴露由每批 5U 和 sequential receipt gate 限制；若上线前能从 launch parameters 推导稳定的首块价格，应提高该值。
-
-## 生产配置
-
-真实配置不再放在项目目录。复制 [live.env.example](live.env.example) 到项目外的
-`~/.Codex/secrets/clockin-sniper/live.env` 并填写；目录权限设为 `0700`，文件权限设为
-`0600`。服务器通过 `CLOCKIN_ENV_FILE=/etc/clockin-sniper/live.env` 指向独立的
-systemd `EnvironmentFile`；`CLOCKIN_PRIVATE_KEY_FILE` 再指向独立的 mode-`0600`
-signer 文件或 systemd credential，不要把 secrets 复制进代码部署目录。
-
-- Chainstack/其他生产 HTTP 与 WSS，只保存在本机环境文件；
-- Robinhood 官方 direct Sequencer 默认开启，可在环境变量中显式留空关闭；
-- 专用钱包私钥和预期 signer 地址；
-- 最终 Factory 地址与 runtime code hash；
-- 实际 `5U` 对应的 native wei；
-- gas limit 与 EIP-1559 费用上界；
-- 可选官方 creator、metadata 绑定；
-- 官方 CA 文件或官网字段来源。
-
-不要把私钥、RPC 凭证、完整 signed raw transaction 写进日志或仓库。`.gitignore`
-只是第二道防线；`npm run verify` 会先运行仓库 secret 检查，项目目录内出现真实
-ClockIn 私钥、钱包备份或带凭证的 Chainstack URL 时直接失败。账本只记录交易哈希、
-nonce、payload hash、receipt 与资产变化，文件权限强制为 `0600`。
-
-## 命令
+要求 Node.js 24 LTS：
 
 ```bash
-npm install
+npm ci
 npm run verify
-npm run smoke:rpc
-npm run smoke:wss
-npm run smoke:sequencer
+npm run build
 npm run live
-npm run live:reconcile
 ```
 
-- `smoke:rpc` / `smoke:wss`：只读验证主网传输，不读取私钥、不签名、不广播。
-- `smoke:sequencer`：向官方写入端发送无效空 payload，必须得到确定性解析拒绝；不读取私钥，也不生成或发送有效交易。
-- `npm run live`：Factory-first 实盘入口；`CLOCKIN_LIVE=true` 后没有二次确认。
-- `npm run live:known-target`：保留的已知 CA/Pool 兼容入口，不是首发推荐路径。
-- `npm run live:reconcile`：只恢复账本里已经尝试广播的交易，不读取私钥、不补发新 nonce。
+2026-08-16 本地基线：197/197 tests；line `89.46%`、branch `72.68%`、function `94.62%`。`verify` 包含：
 
-## 已实现与未证明
+- current tree 与完整 Git history secret scan；
+- Biome format/lint；
+- strict TypeScript typecheck；
+- 显式 v2 source include 的覆盖率门槛；
+- production dependency audit；
+- `npm pack --dry-run`。
 
-已经通过本地测试：Factory 精确日志订阅、启动边界补扫、事件 ABI、身份过滤、code-hash 漂移阻断、动态 pool 状态、官方 CA 双门、20 秒 cooldown 调度、分阶段动态签名、官方直连 Sequencer 探测、same-raw fanout、UNKNOWN 重播、上一批 receipt gate、token 到账核账、钱包锁与崩溃恢复。
+正式 artifact 还会解包检查，要求包含 `BUILD-METADATA.json`、capability manifest、`dist/v2-index.js` 和 `dist/live-v2.js`，并拒绝旧 live、`src/`、`test/`、env、key、authenticated RPC 和 raw signed transaction。
 
-尚未证明：最终 Factory/creator/CA、最终 ClockIn pool 参数、真实 5U→wei 换算、生产机器到 Sequencer 的延迟、真实交易 receipt、可卖出路径与正期望。买入后会把实际 token 余额记为残余 Position，但自动卖出明确为 `unsupported`；代码存在和测试通过不等于已成交。
+## Wallet 与部署
 
-官方参考：[ClockIn 官方 X](https://x.com/clockincoin)、[StonkBrokers Launcher](https://www.stonkbrokers.cash/launcher)、[StonkBrokers 文档](https://www.stonkbrokers.cash/docs)、[Robinhood Chain](https://docs.robinhood.com/chain/)、[连接说明](https://docs.robinhood.com/chain/connecting/)。
+钱包只能生成到仓库外路径：
+
+```bash
+npm run wallets:create -- --output /absolute/external/secret/directory
+```
+
+工具只在终端输出可验证 public address；private key 保持在 mode-0600 文件，manifest 不记录 key path。资金准备必须逐 wallet 核对：5U principal、entry Gas、保留 exit Gas、`latestNonce===pendingNonce`、chainId 和 key/address correspondence。
+
+生产部署按 `../docs/runbooks/production-deployment.md` 执行。Control Sentinel 使用独立无私钥账户；executor/exit 只通过 systemd `LoadCredential` 接收 10 个 key。模板存在不代表云部署完成，只有 artifact SHA、systemd readback、目录权限和 `/ready` 回执齐全才算部署证据。
+
+## 解锁实盘所需输入
+
+1. 官方最终主网 Factory/ClockIn CA、部署者及 evidence URL；
+2. exact-block runtime/proxy/implementation hashes；
+3. 最终 launch、mechanism getter、buy/sell、finalize 和 external router ABI；
+4. 用户确认的价格 freshness/deviation、最长持仓/动量、止损和 `EXIT_NOW` 最大滑点；
+5. 10 个钱包注资以及独立 exit Gas reserve；
+6. 云候选区域、provider 列表和可重复 benchmark；
+7. historical fork/replay、chaos、readiness 和人工批准回执。
+
+详细实现边界见 `../docs/plan.md`、`../docs/todo.md` 和 `capability-manifest.json`。
