@@ -136,8 +136,8 @@
 
 验收：
 
-- [ ] Public GitHub 仓库可看到 CI workflow。
-- [ ] 首次 main run 全部通过。
+- [x] Public GitHub 仓库可看到 CI workflow。
+- [x] 首次 main run 全部通过。
 - [ ] 故意破坏格式或测试的临时分支能使 CI 失败，验证门禁有效后删除临时分支。
 
 ### STORY-004：建立 Continuous Delivery（P1）
@@ -1339,21 +1339,21 @@
 - [x] 初始化根 Git 仓库并使用 `main`。
 - [x] 确认 `git status` 只包含预期文件。
 - [x] 运行完整 verify/coverage/package audit。
-- [ ] 创建清晰的首次提交。
-- [ ] 创建 `MeiYanDong/clockin-sniper` Public 仓库。
-- [ ] 添加并验证 `origin`。
-- [ ] push `main`。
-- [ ] 回读 repository visibility = PUBLIC。
-- [ ] 回读 default branch = main。
-- [ ] 回读 GitHub Actions 首次 CI 状态。
-- [ ] 设置分支保护：PR、CI required、禁止 force push、至少一次 review（如个人仓库策略允许）。
+- [x] 创建清晰的首次提交。
+- [x] 创建 `MeiYanDong/clockin-sniper` Public 仓库。
+- [x] 添加并验证 `origin`。
+- [x] push `main`。
+- [x] 回读 repository visibility = PUBLIC。
+- [x] 回读 default branch = main。
+- [x] 回读 GitHub Actions 首次 CI 状态。
+- [x] 设置分支保护：PR、CI required、禁止 force push；个人仓库使用 0 次强制 approval，但必须走 PR。
 - [x] 在 README 放置 CI 状态链接。
 
 验收：
 
-- [ ] Public URL 可访问。
-- [ ] GitHub 文件范围与本地 staged scope 一致。
-- [ ] 首次 CI 通过。
+- [x] Public URL 可访问。
+- [x] GitHub 文件范围与本地 staged scope 一致。
+- [x] 首次 CI 通过。
 
 ### STORY-116：首个版本发布（P1）
 

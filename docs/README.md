@@ -3,6 +3,7 @@
 - [plan.md](plan.md): complete product and technical specification.
 - [todo.md](todo.md): executable phased backlog and story cards.
 - [adr/](adr/README.md): architecture decision records.
+- [receipts/](receipts/README.md): publication, CI, deployment, and runtime evidence receipts.
 - [../clockin-sniper/README.md](../clockin-sniper/README.md): current executor behavior, configuration, and evidence boundary.
 - [../CHANGELOG.md](../CHANGELOG.md): user-visible and engineering changes.
 - [../CONTRIBUTING.md](../CONTRIBUTING.md): branches, commits, tests, reviews, and evidence rules.
