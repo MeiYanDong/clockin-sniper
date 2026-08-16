@@ -12,6 +12,7 @@
 **/release/
 **/*.tgz
 **/*.log
+**/BUILD-METADATA.json
 
 # Runtime state and local databases
 **/runtime/

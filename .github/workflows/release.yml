@@ -16,10 +16,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -42,20 +44,23 @@ jobs:
         run: |
           mkdir -p "$GITHUB_WORKSPACE/release"
           npm pack --pack-destination "$GITHUB_WORKSPACE/release"
+          node ../scripts/check-package-archive.mjs "$GITHUB_WORKSPACE"/release/*.tgz
+          cp BUILD-METADATA.json "$GITHUB_WORKSPACE/release/BUILD-METADATA.json"
           cd "$GITHUB_WORKSPACE/release"
-          sha256sum ./*.tgz > SHA256SUMS
+          sha256sum ./*.tgz ./BUILD-METADATA.json > SHA256SUMS
 
       - name: Upload verified artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clockin-sniper-${{ github.sha }}
           path: |
             release/*.tgz
             release/SHA256SUMS
+            release/BUILD-METADATA.json
           if-no-files-found: error
 
       - name: Create tagged GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/*.tgz release/SHA256SUMS --verify-tag --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" release/*.tgz release/SHA256SUMS release/BUILD-METADATA.json --verify-tag --generate-notes

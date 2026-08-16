@@ -1,0 +1,66 @@
+[Unit]
+Description=ClockIn active ten-lane executor
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target clockin-control.service
+ConditionPathExists=/etc/clockin-sniper/PRODUCTION_ARM_APPROVED
+
+[Service]
+Type=simple
+User=clockin
+Group=clockin
+WorkingDirectory=@ARTIFACT_DIR@/clockin-sniper
+EnvironmentFile=/etc/clockin-sniper/strategy.env
+LoadCredential=rpc_http:/etc/clockin-sniper/credentials/rpc_http
+LoadCredential=rpc_wss:/etc/clockin-sniper/credentials/rpc_wss
+LoadCredential=sequencer_http:/etc/clockin-sniper/credentials/sequencer_http
+LoadCredential=vault_key:/etc/clockin-sniper/credentials/vault_key
+LoadCredential=wallet_manifest:/etc/clockin-sniper/credentials/entry-manifest.json
+LoadCredential=entry_01:/etc/clockin-sniper/wallets/entry-01.key
+LoadCredential=entry_02:/etc/clockin-sniper/wallets/entry-02.key
+LoadCredential=entry_03:/etc/clockin-sniper/wallets/entry-03.key
+LoadCredential=entry_04:/etc/clockin-sniper/wallets/entry-04.key
+LoadCredential=entry_05:/etc/clockin-sniper/wallets/entry-05.key
+LoadCredential=entry_06:/etc/clockin-sniper/wallets/entry-06.key
+LoadCredential=entry_07:/etc/clockin-sniper/wallets/entry-07.key
+LoadCredential=entry_08:/etc/clockin-sniper/wallets/entry-08.key
+LoadCredential=entry_09:/etc/clockin-sniper/wallets/entry-09.key
+LoadCredential=entry_10:/etc/clockin-sniper/wallets/entry-10.key
+ExecStart=@EXECUTOR_EXECUTABLE@
+Restart=on-failure
+RestartSec=2s
+StartLimitIntervalSec=60s
+StartLimitBurst=8
+TimeoutStopSec=45s
+KillSignal=SIGTERM
+UMask=0077
+RuntimeDirectory=clockin-executor
+RuntimeDirectoryMode=0700
+StateDirectory=clockin-sniper
+StateDirectoryMode=0700
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=clockin-executor
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=500
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/clockin-sniper /run/clockin-executor
+
+[Install]
+WantedBy=multi-user.target

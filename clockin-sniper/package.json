@@ -4,27 +4,47 @@
   "private": true,
   "type": "module",
   "description": "ClockIn Robinhood mainnet live dynamic-fee tranche executor",
+  "main": "./dist/v2-index.js",
+  "types": "./dist/v2-index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/v2-index.d.ts",
+      "import": "./dist/v2-index.js"
+    }
+  },
   "engines": {
     "node": ">=24 <26"
   },
+  "files": [
+    "dist/",
+    "deploy/",
+    "README.md",
+    "capability-manifest.json",
+    "BUILD-METADATA.json"
+  ],
   "scripts": {
     "secrets:check": "node --import tsx src/check-repo-secrets.ts",
-    "format": "biome format --write src test package.json tsconfig.json biome.json",
-    "format:check": "biome format src test package.json tsconfig.json biome.json",
+    "secrets:history": "node ../scripts/check-git-history-secrets.mjs",
+    "format": "biome format --write src test package.json tsconfig.json tsconfig.build.json biome.json",
+    "format:check": "biome format src test package.json tsconfig.json tsconfig.build.json biome.json",
     "lint": "biome lint src test",
     "typecheck": "tsc --noEmit",
+    "build": "node ../scripts/clean-build.mjs && tsc -p tsconfig.build.json",
     "test": "tsx --test test/**/*.test.ts",
-    "coverage": "tsx --test --experimental-test-coverage --test-coverage-lines=85 --test-coverage-branches=60 --test-coverage-functions=80 test/**/*.test.ts",
+    "coverage": "tsx --test --experimental-test-coverage --test-coverage-include='src/{adapters,broadcast,config,control,core,effects,entry,exit,identity,observability,ops,persistence,positions,strategies,wallets}/**/*.ts' --test-coverage-lines=85 --test-coverage-branches=60 --test-coverage-functions=80 test/**/*.test.ts",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "package:audit": "npm pack --dry-run",
+    "prepack": "npm run build && node ../scripts/build-release-metadata.mjs",
     "smoke:rpc": "node --import tsx --import ./src/load-secrets.ts src/smoke-rpc.ts",
     "smoke:wss": "node --import tsx --import ./src/load-secrets.ts src/smoke-wss.ts",
     "smoke:sequencer": "node --import tsx src/smoke-sequencer.ts",
     "wallet:create": "node --import tsx src/create-wallet.ts",
-    "live": "node --import tsx --import ./src/load-secrets.ts src/live-factory.ts",
-    "live:known-target": "node --import tsx --import ./src/load-secrets.ts src/live.ts",
+    "wallets:create": "node --import tsx src/create-wallet-batch.ts",
+    "live": "node --import tsx src/live-v2.ts",
+    "live:legacy-v0": "node --import tsx --import ./src/load-secrets.ts src/live-factory.ts",
+    "live:known-target:legacy-v0": "node --import tsx --import ./src/load-secrets.ts src/live.ts",
     "live:reconcile": "node --import tsx --import ./src/load-secrets.ts src/reconcile-live.ts",
-    "verify": "npm run secrets:check && npm run format:check && npm run lint && npm run typecheck && npm run coverage && npm run audit:prod && npm run package:audit"
+    "verify": "npm run secrets:check && npm run secrets:history && npm run format:check && npm run lint && npm run typecheck && npm run coverage && npm run audit:prod && npm run package:audit"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.8",

@@ -24,10 +24,12 @@ jobs:
         working-directory: clockin-sniper
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -40,7 +42,24 @@ jobs:
         run: node ../scripts/check-public-scope.mjs
 
       - name: Run the complete quality gate
-        run: npm run verify
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run verify 2>&1 | tee verify.log
+
+      - name: Publish test and coverage summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## ClockIn quality evidence"
+            echo
+            echo '```text'
+            grep -E '^(.*tests [0-9]+|.*pass [0-9]+|.*fail [0-9]+|.*all files.*|.*start of coverage report|.*end of coverage report)' verify.log || true
+            echo '```'
+            echo
+            echo "Source commit: \`${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   pull-request-title:
     name: Conventional pull-request title
