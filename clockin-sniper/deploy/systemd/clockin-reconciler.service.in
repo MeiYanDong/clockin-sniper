@@ -2,6 +2,8 @@
 Description=ClockIn UNKNOWN and receipt reconciler
 Wants=network-online.target time-sync.target
 After=network-online.target time-sync.target
+StartLimitIntervalSec=60s
+StartLimitBurst=8
 
 [Service]
 Type=simple
@@ -14,8 +16,6 @@ LoadCredential=vault_key:/etc/clockin-sniper/credentials/vault_key
 ExecStart=@RECONCILER_EXECUTABLE@
 Restart=on-failure
 RestartSec=3s
-StartLimitIntervalSec=60s
-StartLimitBurst=8
 TimeoutStopSec=45s
 KillSignal=SIGTERM
 UMask=0077

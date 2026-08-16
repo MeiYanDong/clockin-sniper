@@ -2,6 +2,8 @@
 Description=ClockIn active ten-lane executor
 Wants=network-online.target time-sync.target
 After=network-online.target time-sync.target clockin-control.service
+StartLimitIntervalSec=60s
+StartLimitBurst=8
 ConditionPathExists=/etc/clockin-sniper/PRODUCTION_ARM_APPROVED
 
 [Service]
@@ -28,8 +30,6 @@ LoadCredential=entry_10:/etc/clockin-sniper/wallets/entry-10.key
 ExecStart=@EXECUTOR_EXECUTABLE@
 Restart=on-failure
 RestartSec=2s
-StartLimitIntervalSec=60s
-StartLimitBurst=8
 TimeoutStopSec=45s
 KillSignal=SIGTERM
 UMask=0077
