@@ -25,14 +25,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Pre-principal executable-net stop/holding policy and a separately authorized 20% break-glass exit path while routine exits remain capped at 5%.
 - Immutable production protocol profiles and seven-day authorizations, exact configured Factory/Pool adapters, dynamic launch-bound exit targets, and production Executor/Reconciler/Exit entrypoints.
 - Append-only execution/attempt/route/exit revisions, deterministic pre-broadcast cleanup, UNKNOWN same-raw recovery, cross-service readiness interlocks, redacted status exchange, watchdog heartbeats, and deterministic systemd rendering.
+- Fail-closed production deployment receipt covering all four entrypoint hashes, unit state, 30-second watchdog readback, OS secret boundary, failed-start containment and recoverable rollback.
 
 ### Changed
 
 - Extended the verification command to include formatting, linting, coverage, production dependency audit, and package-content audit.
 - Changed the default live entrypoint to fail closed while required mainnet evidence is unavailable; legacy single-wallet commands are explicitly audit/replay-only.
 - Reserved per-wallet Gas for one entry, one approval and three sells plus 30% margin; aggregate readiness now enforces the all-in cap and rejects automatic top-up.
-- Raised the tested baseline to 225 passing tests with line `88.71%`, branch `68.05%`, and function `91.76%` coverage.
-- Updated operational truth: all ten production wallets hold `0.0032 ETH` with clean `0/0` nonces and keyless Control is deployed; execution remains deliberately unarmed while the final mainnet Factory/ABI/profile is unavailable.
+- Raised the tested baseline to 226 passing tests with line `88.75%`, branch `68.07%`, and function `91.78%` coverage.
+- Updated operational truth: all ten production wallets hold `0.0032 ETH` with clean `0/0` nonces; keyless Control is enabled/active with a progressing watchdog; Executor/Reconciler/Exit are installed but disabled/inactive while the final mainnet Factory/ABI/profile is unavailable.
 
 ### Security
 

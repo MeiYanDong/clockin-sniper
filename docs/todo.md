@@ -1206,7 +1206,7 @@
 
 目标：云机以非 root、可重启、仓库外 credentials 运行。
 
-`CONTROL_DEPLOYED; EXECUTION_RUNTIME_IMPLEMENTED; EXECUTION_PLANE_BLOCKED_BY_FINAL_PROTOCOL_EVIDENCE`。`47.251.28.201` 上的无私钥 Control 已完成真实 systemd、`/proc`、journal、钱包和 artifact 回读；Executor/Reconciler/Exit entrypoint、状态 interlock、watchdog 和 deterministic renderer 已实现，仍因最终 Factory/ABI/route 未冻结而不授权、不启动。
+`CONTROL_DEPLOYED; EXECUTION_UNITS_INSTALLED_DISABLED_INACTIVE; EXECUTION_PLANE_BLOCKED_BY_FINAL_PROTOCOL_EVIDENCE`。`47.251.28.201` 上的无私钥 Control 已完成真实 systemd、`/proc`、journal、钱包、artifact 与 30 秒 watchdog 回读；Executor/Reconciler/Exit entrypoint 和 unit 已安装并核对 artifact SHA，但保持 `disabled/inactive`，仍因最终 Factory/ABI/route 未冻结而不授权、不启动。
 
 - [x] 创建 Control Sentinel unit。
 - [x] 创建 Executor unit。
@@ -1224,7 +1224,8 @@
 - [x] Executor 在启动和每次签名前要求 current Reconciler/Exit、匹配 profile/auth、WAL、10 signer 和零 unresolved attempt。
 - [x] 实现独立 production Executor/Reconciler/Exit entrypoint，release build 生成对应 `dist/*-service.js`。
 - [x] Control 服务实际 readback 与 artifact SHA 对齐，见 [2026-08-16-control-deployment.md](./receipts/2026-08-16-control-deployment.md)。
-- [ ] Executor/Reconciler/Exit 在最终协议证据完成后部署并回读。
+- [x] 四个 production unit 指向同一 immutable release；Control enabled/active，Executor/Reconciler/Exit installed、disabled、inactive，arm marker absent，见 [2026-08-17-production-runtime-deployment.md](./receipts/2026-08-17-production-runtime-deployment.md)。
+- [ ] Executor/Reconciler/Exit 在最终协议证据完成后授权、启动并回读 canonical state。
 
 验收：
 
@@ -1383,6 +1384,7 @@
 - [ ] inner/outer exit adapter readiness。
 - [ ] open UNKNOWN/positions。
 - [x] keyless Control deployed artifact SHA/systemd readback。
+- [x] Executor/Reconciler/Exit 的未武装 artifact SHA 和 installed/disabled/inactive systemd readback。
 - [ ] Hot Executor/Reconciler/Exit artifact SHA/systemd readback。
 
 验收：
@@ -1425,6 +1427,7 @@
 - [x] CD run `31940616256` 生成并发布 tgz、`SHA256SUMS` 与 `BUILD-METADATA.json`。
 - [x] GitHub Release v0.1.0 附 Tech Spec、ADRs、known limitations、测试/覆盖率与 checksum。
 - [x] 云机 Control 仅部署用户批准、可追溯到 commit `61d9be5` 的 artifact SHA；该批准不授权资金执行。
+- [x] 生产运行时升级到 commit `fcbd70f`；四服务 artifact SHA、Control watchdog 与三项资金服务 disabled/inactive 状态已回读。
 - [ ] Hot Executor 仅部署最终 `HOT_ARMED` 后批准的 release artifact。
 
 验收：
@@ -1503,10 +1506,10 @@
 - [x] 当前私钥加载边界已迁到仓库外，并已有 secret scan/npm ignore 基础。
 - [x] 已测得当前质量基线：line 87.41%、branch 65.69%、function 88.61%。
 - [x] 本可执行 todo 已按小故事卡、阶段、测试和验收拆解。
-- [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现；生产 profile/adapters/三服务/interlock/watchdog 已补齐并通过 225 项测试。
+- [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现；生产 profile/adapters/三服务/interlock/watchdog 已补齐并通过 226 项测试。
 - [x] 默认 live 入口在主网证据不完整时失败关闭，旧单钱包入口不进入 release artifact。
 - [x] 已生成 10 个仓库外 one-shot EOA，完成本地与服务器 10/10 key/address correspondence，并为每个钱包注入 `0.0032 ETH`；生产回读 nonce 均为 `0/0`。
-- [x] 已在 `47.251.28.201` 部署 keyless Control Sentinel，生产 HTTP/WSS/Sequencer、钱包 readiness、systemd 重启和 artifact SHA 回读通过；资金服务代码已完成但保持未启动、未授权。
+- [x] 已在 `47.251.28.201` 部署 keyless Control Sentinel，生产 HTTP/WSS/Sequencer、钱包 readiness、30 秒 watchdog 和 artifact SHA 回读通过；Executor/Reconciler/Exit unit 已安装但保持 disabled/inactive、未授权，arm marker absent。
 
 ### 下一批必须先完成
 

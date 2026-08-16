@@ -26,7 +26,7 @@ The deployment receipt must include command exit status and a readback of the in
 - `/etc/clockin-sniper/wallets`: ten entry key files; root-owned mode `0700`, files `0400`.
 - `/var/lib/clockin-sniper`: canonical SQLite database and encrypted signed-transaction vault; mode `0700`.
 
-Create the two disabled-login users and the `clockin-status` system group before installing `deploy/systemd/clockin-sniper.tmpfiles.conf`, then apply `systemd-tmpfiles --create`. The parent `/etc/clockin-sniper` is `root:clockin-status 0750`, but `credentials/` and `wallets/` remain `root:root 0700`; this lets Control traverse to its public manifest without granting secret access. Do not put a secret in a shell argument, environment value, unit file, process title, or journal.
+Create the two disabled-login users and the `clockin-status` system group before installing `deploy/systemd/clockin-sniper.tmpfiles.conf`, then apply `systemd-tmpfiles --create` **before** starting or restarting any unit. Verify `/run/clockin-status` is `3770 root:clockin-status`; `2750` is insufficient because both service identities must atomically create their own status file. The parent `/etc/clockin-sniper` is `root:clockin-status 0750`, but `credentials/` and `wallets/` remain `root:root 0700`; this lets Control traverse to its public manifest without granting secret access. Do not tighten the parent to `0750` until the candidate and rollback Control units both have a compatible supplementary group, or preserve the old parent mode while rolling back. Do not put a secret in a shell argument, environment value, unit file, process title, or journal.
 
 ## Render and verify units
 
@@ -50,6 +50,8 @@ systemctl show clockin-control clockin-executor clockin-reconciler clockin-exit 
 ```
 
 Save the redacted output in the private deployment receipt. Confirm that no credential value, raw signed transaction, or authenticated RPC URL appears.
+
+On Ubuntu 24.04, do not assume `systemd-notify --watchdog` exists. The portable heartbeat is `systemd-notify --pid=<main-pid> WATCHDOG=1`; the service must contain notification rejection and let systemd enforce the timeout. Confirm `WatchdogTimestamp` advances across at least two full watchdog intervals before declaring Control stable.
 
 ## Fail-closed startup sequence
 
@@ -76,6 +78,8 @@ Alert transport failure cannot block the execution hot path. Required critical e
 3. Confirm there is no unresolved signed/broadcast/`UNKNOWN` attempt before changing the active executor artifact.
 4. Point `current` to the previous checksum-verified release, reload systemd, and restart only affected services.
 5. Re-run the full readiness sequence and record old/new artifact hashes and canonical state counts.
+
+Before step 4, confirm the previous unit can traverse the current `/etc/clockin-sniper` parent and write to `/run/clockin-status`. If the previous unit predates `clockin-status`, temporarily restore its recorded parent-mode boundary during rollback; never loosen `credentials/` or `wallets/`, and reapply the hardened parent only after the compatible unit is active.
 
 If schema rollback is not explicitly supported by the migration ADR, restore neither an older binary nor an older database over current state. Use a forward fix.
 
