@@ -157,8 +157,8 @@
 
 验收：
 
-- [ ] 手动 workflow 能生成 artifact。
-- [ ] 测试 tag 能创建可下载 release，并能校验 checksum。
+- [x] 手动 workflow run `31940510895` 生成 artifact；下载回验 checksum 和 247 文件边界/secret scan 通过。
+- [x] 受保护 tag `v0.1.0` 触发 run `31940616256`，创建可下载 Release；回下载后 checksum 通过。
 - [x] release artifact 通过独立 secret scan。
 
 ### STORY-005：建立贡献、PR、ADR 和变更文档（P0）
@@ -1393,14 +1393,14 @@
 - [x] 更新 CHANGELOG。
 - [x] 更新 capability manifest。
 - [x] 创建 release PR #5：`feat(v2): implement evidence-bound ten-lane architecture`；required checks 已通过。
-- [ ] 合并后打签名或受保护 tag。
-- [ ] CD 生成 artifact/checksum。
-- [ ] GitHub Release 附 tech spec/ADRs/known limitations。
-- [ ] 云机仅部署经过批准的 artifact SHA。
+- [x] 合并后创建受 ruleset `20907328` 保护的 tag `v0.1.0`。
+- [x] CD run `31940616256` 生成并发布 tgz、`SHA256SUMS` 与 `BUILD-METADATA.json`。
+- [x] GitHub Release v0.1.0 附 Tech Spec、ADRs、known limitations、测试/覆盖率与 checksum。
+- [ ] 云机仅部署经过批准的 artifact SHA。`BLOCKED_BY: CLOUD_HOST_AND_REGION_NOT_PROVIDED; RELEASE_IS_NOT_HOT_ARMED`。
 
 验收：
 
-- [ ] release artifact 能追溯到 commit、tests、coverage 和 manifest。
+- [x] release artifact 可追溯到 commit `47cc18d`、197 项测试、覆盖率和 capability manifest revision 2；发布回执已保存。
 
 ---
 
