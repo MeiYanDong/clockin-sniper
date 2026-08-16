@@ -1,6 +1,6 @@
 {
-  "manifest_revision": 4,
-  "generated_at": "2026-08-17T00:45:00.000Z",
+  "manifest_revision": 5,
+  "generated_at": "2026-08-16T16:59:26.000Z",
   "network": "eip155:4663",
   "production_state": "NOT_HOT_ARMED",
   "mode": "real_funds_only_no_shadow_branch",
@@ -30,16 +30,16 @@
     "pre_principal_downside_exit": "TESTED_NO_FINAL_EXECUTABLE_ROUTE",
     "routine_and_break_glass_slippage": "TESTED_FIVE_AND_TWENTY_PERCENT_NO_LIVE_EXIT_RECEIPT",
     "append_only_execution_revisions": "TESTED_PLAN_ATTEMPT_QUOTE_EXIT_AND_LEASE_RECOVERY",
-    "production_service_entrypoints": "TESTED_EXECUTOR_RECONCILER_EXIT_NOT_ARMED_OR_STARTED",
+    "production_service_entrypoints": "TESTED_AND_INSTALLED_DISABLED_INACTIVE_NOT_ARMED",
     "production_service_interlock": "TESTED_REQUIRES_CURRENT_RECONCILER_EXIT_PROFILE_AUTH_WAL_AND_ZERO_UNKNOWN",
-    "systemd_templates": "TESTED_WATCHDOG_RENDERER_CONTROL_DEPLOYED_EXECUTION_UNITS_NOT_YET_INSTALLED",
+    "systemd_templates": "VERIFIED_CONTROL_NOTIFY_WATCHDOG_EXECUTION_UNITS_INSTALLED_DISABLED_INACTIVE",
     "live_effect": "NO_REAL_CANONICAL_ENTRY_OR_EXIT_RECEIPT"
   },
   "blockers": [
     "OFFICIAL_MAINNET_LAUNCHER_FACTORY_AND_FINAL_ABI_NOT_PUBLISHED",
     "FINAL_MAINNET_POOL_BUY_SELL_FINALIZE_ADAPTERS_NOT_VERIFIED_CURRENT",
     "BOUND_PRODUCTION_PROFILE_AND_AUTHORIZATION_NOT_CREATED",
-    "EXECUTION_UNITS_NOT_INSTALLED_STARTED_OR_ARMED",
+    "EXECUTION_SERVICES_DISABLED_INACTIVE_NO_PROFILE_AUTHORIZATION_OR_ARM_MARKER",
     "ACTIVE_REGION_PERFORMANCE_NOT_BENCHMARKED",
     "NO_V2_CANONICAL_ENTRY_OR_EXIT_RECEIPT"
   ],
@@ -54,6 +54,7 @@
     "docs/adr/0004-sqlite-wal-canonical-state.md",
     "docs/adr/0005-initial-strategy-policy.md",
     "docs/adr/0006-clockin-policy-v2-risk-and-authorization.md",
-    "docs/adr/0007-production-runtime-interlock-and-route-binding.md"
+    "docs/adr/0007-production-runtime-interlock-and-route-binding.md",
+    "docs/receipts/2026-08-17-production-runtime-deployment.md"
   ]
 }

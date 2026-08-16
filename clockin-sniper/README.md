@@ -4,7 +4,7 @@ ClockIn Sniper v2 是 Robinhood Chain (`chainId=4663`) 的事件驱动、10 EOA 
 
 ## 当前状态
 
-`capability-manifest.json` 当前声明 `NOT_HOT_ARMED`。10 个外部 key 钱包已完成生产链地址/余额/nonce 回读，无私钥 Control 已部署，Executor/Reconciler/Exit 生产 entrypoint 也已实现；但官方尚未发布最终主网 Launcher Factory、ClockIn CA、launch/buy/sell/finalize ABI 和可验证退出路由，所以不存在可用的 production profile 与当前授权，资金服务保持未启动。因此：
+`capability-manifest.json` 当前声明 `NOT_HOT_ARMED`。10 个外部 key 钱包已完成生产链地址/余额/nonce 回读，无私钥 Control 已部署，Executor/Reconciler/Exit 生产 entrypoint 和 unit 也已安装；但官方尚未发布最终主网 Launcher Factory、ClockIn CA、launch/buy/sell/finalize ABI 和可验证退出路由，所以不存在可用的 production profile 与当前授权，资金服务保持 `disabled/inactive`。因此：
 
 - `npm run live` 只读取公开 capability manifest，输出 blocker，返回 exit code 2；
 - 它不会读取 signer credential、构造交易、签名或广播；
@@ -42,7 +42,7 @@ npm run build
 npm run live
 ```
 
-2026-08-17 本地基线：225/225 tests；line `88.71%`、branch `68.05%`、function `91.76%`。`verify` 包含：
+2026-08-17 本地基线：226/226 tests；line `88.75%`、branch `68.07%`、function `91.78%`。`verify` 包含：
 
 - current tree 与完整 Git history secret scan；
 - Biome format/lint；
