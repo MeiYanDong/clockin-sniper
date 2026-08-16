@@ -1,0 +1,34 @@
+.DS_Store
+
+# This public repository intentionally contains only docs/ and clockin-sniper/.
+/analysis/
+/sniper-engineering/
+/sniper-engineering-v1.5/
+
+# Dependencies and generated artifacts
+**/node_modules/
+**/dist/
+**/coverage/
+**/release/
+**/*.tgz
+**/*.log
+
+# Runtime state and local databases
+**/runtime/
+**/*.sqlite
+**/*.sqlite-shm
+**/*.sqlite-wal
+**/*.db
+
+# Credentials and wallet material
+**/.env
+**/.env.*
+!**/.env.example
+**/wallet-backup*
+**/*private-key*
+**/*.keystore
+**/*.pem
+**/*.p12
+**/*.pfx
+**/id_rsa
+**/id_ed25519

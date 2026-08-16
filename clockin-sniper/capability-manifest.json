@@ -1,0 +1,70 @@
+{
+  "adapter_id": "clockin.robinhood-factory-live.v0.7",
+  "network": "eip155:4663",
+  "mode": "real_funds_only",
+  "capabilities": {
+    "transport": "verified_current",
+    "factory_wss_discovery": "tested",
+    "sequencer_feed_discovery": "planned_schema_not_published",
+    "identity": "tested_factory_codehash_event_creator_name_metadata_suffix",
+    "official_ca_confirmation": "tested_async_dual_gate",
+    "pool_state": "tested_exact_block",
+    "quote": "unsupported_speed_first_fixed_5u_bound",
+    "calldata": "tested_native_buy_uint256_bytes32",
+    "sign": "tested_staged_after_dynamic_discovery_first_nonce_before_remaining_nine",
+    "nonce_and_idempotency": "tested",
+    "broadcast": "tested_same_raw_standard_rpc_plus_official_direct_sequencer_no_live_receipt",
+    "reconcile": "tested_with_crash_recovery_entrypoint",
+    "token_delivery_accounting": "tested",
+    "residual_position_accounting": "implemented_balance_snapshot_no_automated_exit",
+    "sell_exit": "unsupported"
+  },
+  "fixed_capital_policy": {
+    "batch_count": 10,
+    "nominal_usd_per_batch": 5,
+    "chain_authorized_tranche_count": 1,
+    "remaining_tranches_require_official_ca": true
+  },
+  "runtime_pool_policy": {
+    "fee_source": "currentFeeBps() at an exact block",
+    "default_max_initial_fee_bps": 4000,
+    "default_floor_fee_bps": 100,
+    "default_fee_window_ms": 120000,
+    "cooldown_source": "buyCooldownSecs()",
+    "execution_deadline": "max(fee window, buy cooldown multiplied by batch count)",
+    "external_buy_activation": "preposition after mined TokenLaunched log; earliest legal inclusion is the following block",
+    "quote_asset": "native ETH only"
+  },
+  "limitations": [
+    "ClockIn final mainnet Factory, creator, CA and pool configuration are not yet in the public official address table.",
+    "The current public Launcher preview describes a separate 99-minute, 99-percent Safe Launch; this adapter remains authorized only for the discussed ClockIn initial fee at or below 4000 bps and will reject that public preview mechanism.",
+    "Factory address and runtime code hash are required at startup and are never inferred by name scanning.",
+    "The Robinhood Nitro Sequencer Feed decoder is not implemented because no stable application-layer transaction schema is published for this client.",
+    "The official direct Sequencer is write-only for this client, so chain identity is bound by its exact official HTTPS hostname plus chain ID 4663 in every signed transaction; an invalid empty payload probes method availability at startup.",
+    "The live adapter supports only payable native-ETH buy(uint256,bytes32); ERC-20 quote pools fail closed.",
+    "minTokensOut defaults to one raw token unit under the explicitly small 5U speed-first risk budget.",
+    "No real transaction has been broadcast and no live receipt exists.",
+    "Automatic sell or executable-exit validation is not implemented."
+  ],
+  "evidence": [
+    {
+      "kind": "verified_current",
+      "observed_at": "2026-08-15T13:29:26.253Z",
+      "claim": "Configured production HTTP returned Robinhood chain ID 4663, block 37151071 and an EIP-1559 base fee; authenticated WSS emitted block 37151073 through newHeads. No signing or broadcast method was called."
+    },
+    {
+      "kind": "verified_current",
+      "observed_at": "2026-08-15T13:07:30.500Z",
+      "claim": "The configured authenticated WSS endpoint accepted a standard exact-address/topic eth_subscribe logs request. No signing or broadcast method was called."
+    },
+    {
+      "kind": "verified_current",
+      "observed_at": "2026-08-15T13:29:26.641Z",
+      "claim": "Robinhood's official direct Sequencer exposed eth_sendRawTransaction and deterministically rejected the invalid empty probe as typed transaction too short. No private key, signed transaction or valid transaction was sent."
+    },
+    {
+      "kind": "tested",
+      "claim": "70 local tests cover exact TokenLaunched topic decoding, Factory code-hash drift, subscribe-before-backfill discovery, identity rejection, 99-percent mechanism rejection, official CA confirmation/mismatch, pool ABI reads, cooldown and dual authorization scheduling, staged dynamic signing, direct Sequencer probing, resilient broadcast-route degradation, same-raw fanout, UNKNOWN rebroadcast, receipt-gated sequential nonce use, token delivery reconciliation, recovery and wallet locking."
+    }
+  ]
+}

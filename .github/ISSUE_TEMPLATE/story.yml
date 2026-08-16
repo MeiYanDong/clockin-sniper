@@ -1,0 +1,65 @@
+name: Story card
+description: Propose one small, testable implementation story from docs/todo.md
+title: "[STORY-000] "
+labels:
+  - story
+body:
+  - type: input
+    id: story_id
+    attributes:
+      label: Story ID
+      description: Reference the exact STORY ID in docs/todo.md.
+      placeholder: STORY-060
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: One sentence describing the independently valuable result.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and exclusions
+      description: List what this story includes and what it deliberately leaves for later.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Use observable behavior, state, amounts, reason codes, or EffectRecords.
+      placeholder: |
+        - [ ] Criterion one
+        - [ ] Criterion two
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Test plan
+      description: Include normal, boundary, failure, and recovery paths as appropriate.
+    validations:
+      required: true
+  - type: dropdown
+    id: money_movement
+    attributes:
+      label: Money-movement impact
+      options:
+        - None
+        - Read-only chain behavior
+        - Entry planning
+        - Signing or broadcast
+        - Receipt or position accounting
+        - Exit or treasury behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Required completion evidence
+      description: Distinguish tests, fork/replay, deployment readback, and live receipt.
+    validations:
+      required: true

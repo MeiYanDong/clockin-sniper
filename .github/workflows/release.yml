@@ -1,0 +1,61 @@
+name: Release delivery
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Verify and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: clockin-sniper/package-lock.json
+
+      - name: Install locked dependencies
+        working-directory: clockin-sniper
+        run: npm ci
+
+      - name: Check public repository scope
+        working-directory: clockin-sniper
+        run: node ../scripts/check-public-scope.mjs
+
+      - name: Run the complete quality gate
+        working-directory: clockin-sniper
+        run: npm run verify
+
+      - name: Build release artifact and checksum
+        working-directory: clockin-sniper
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/release"
+          npm pack --pack-destination "$GITHUB_WORKSPACE/release"
+          cd "$GITHUB_WORKSPACE/release"
+          sha256sum ./*.tgz > SHA256SUMS
+
+      - name: Upload verified artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clockin-sniper-${{ github.sha }}
+          path: |
+            release/*.tgz
+            release/SHA256SUMS
+          if-no-files-found: error
+
+      - name: Create tagged GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/*.tgz release/SHA256SUMS --verify-tag --generate-notes
