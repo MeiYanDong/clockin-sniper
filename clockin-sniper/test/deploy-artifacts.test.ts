@@ -89,6 +89,7 @@ describe("hardened production service templates", () => {
 
   it("defines owner-only secret/state directories and bounded journal retention", async () => {
     const tmpfiles = await readFile(`${systemdRoot}clockin-sniper.tmpfiles.conf`, "utf8");
+    assert.match(tmpfiles, /^d \/etc\/clockin-sniper 0750 root clockin-status -$/mu);
     assert.match(tmpfiles, /^d \/etc\/clockin-sniper\/credentials 0700 root root -$/mu);
     assert.match(tmpfiles, /^d \/etc\/clockin-sniper\/wallets 0700 root root -$/mu);
     assert.match(tmpfiles, /^d \/var\/lib\/clockin-sniper 0700 clockin clockin -$/mu);
