@@ -11,16 +11,16 @@ This receipt proves that the production runtime artifact and all four systemd un
 | Item | Verified readback |
 | --- | --- |
 | Host | `47.251.28.201`, SSH management port `2222` |
-| Source commit | `fcbd70ff4c34f8c7d77e24e056de21cdf54434e0` |
-| Immutable release | `/opt/clockin-sniper/releases/fcbd70ff4c34f8c7d77e24e056de21cdf54434e0` |
-| Uploaded artifact SHA-256 | `7a23dfd2ff43df325e4dada0164daeb761d95cda5b93202987f084807360fab0` |
+| Source commit | `16d02f05a54a33bfd0bb8bbce627b1aef892a689` |
+| Immutable release | `/opt/clockin-sniper/releases/16d02f05a54a33bfd0bb8bbce627b1aef892a689` |
+| Uploaded artifact SHA-256 | `3152cd2a48ad4cd614fbd6d3ca5fd3e45d1cba1d978c75f3be15384de80844d7` |
 | Package version | `0.1.0` |
 | Build Node | `v25.9.0` |
 | Production runtime Node | `v24.19.0` from a versioned absolute path |
-| Capability manifest | revision `4`, SHA-256 `a8143d497ae4505679c10064f881e75de82678b5b40461a9fd0f97e8142fc022` in this deployed artifact |
-| Readback window | `2026-08-16T16:55:44Z` through `2026-08-16T16:59:56Z` |
+| Capability manifest | revision `5`, SHA-256 `ef2cf99ae60c35c6a1102f8c0c22d0cf2f54b4177ff3e23b6419f9c14e7e194a` |
+| Readback window | `2026-08-16T17:07:09Z` through `2026-08-16T17:08:31Z` |
 
-The artifact was built before this receipt advanced the repository capability manifest to revision 5. Revision 5 records the verified operational state below; it does not add execution authority or change the deployed service code.
+The first stable four-unit deployment used commit `fcbd70ff4c34f8c7d77e24e056de21cdf54434e0` and artifact SHA-256 `7a23dfd2ff43df325e4dada0164daeb761d95cda5b93202987f084807360fab0`. It was then replaced by the metadata-aligned revision 5 artifact above. The entrypoint hashes did not change; only the documented operational capability state advanced.
 
 ## Entrypoint integrity
 
@@ -37,7 +37,7 @@ Every installed unit points directly to one of these entrypoints and uses the ab
 
 ## Live service readback
 
-At `2026-08-16T16:59:56Z`:
+At `2026-08-16T17:08:31Z`:
 
 | Unit | Enabled state | Active state | Authority boundary |
 | --- | --- | --- | --- |
@@ -49,11 +49,11 @@ At `2026-08-16T16:59:56Z`:
 Control readback:
 
 - `Type=notify`, `NotifyAccess=all`, `WatchdogUSec=30s`;
-- main PID `16742`, `NRestarts=0`;
-- watchdog timestamp advanced through `2026-08-17 00:59:55 CST`;
+- main PID `21794`, `NRestarts=0`;
+- watchdog timestamp advanced from `2026-08-17 01:07:30 CST` through `01:08:30 CST`, spanning two full watchdog intervals;
 - `/health` returned HTTP `200` with `{"status":"alive"}`;
 - `/ready` returned HTTP `503`, `ready=false`, `hotArmed=false`;
-- chain ID `4663`, head `38138108`, lag `0` for this observation;
+- chain ID `4663`, head `38143268`, lag `0` for the final observation;
 - HTTP, WSS and direct Sequencer probes were ready without sending a valid signed transaction;
 - wallet readiness was `expected=10`, `fundingReady=10`, `nonceReady=10`, `signerReady=0`;
 - Factory was `UNKNOWN`, identity was `L0`, entry and exit were disabled;
@@ -86,6 +86,7 @@ Deployment exposed three host-specific assumptions and one rollback interaction.
 2. The next start failed with `EACCES`: mode `2750` did not grant status writers group write access. The runtime directory was changed to setgid, sticky, group-writable mode `3770`, then the previous release was restored again.
 3. Ubuntu 24.04's installed `systemd-notify` does not implement the `--watchdog` option. The runtime was changed to send portable `WATCHDOG=1` notifications with the current PID; a rejected notification is contained so systemd remains the watchdog authority.
 4. During rollback, the older Control unit could not traverse the newly tightened `0750` parent because it lacked the new supplementary group. The old parent mode was restored for rollback, then the final unit was installed with `clockin-status` and the hardened `0750` parent reapplied.
+5. Invoking the versioned `bin/npm` directly still used its `/usr/bin/env node` shebang and selected the host's Node 18. The locked production dependency install was repeated by running the versioned Node `v24.19.0` against that installation's `npm-cli.js`; the final install audited 10 packages with zero vulnerabilities.
 
 The stable deployment then remained active across multiple 30-second watchdog intervals with `NRestarts=0`. The previous immutable release and unit backup remain available for recoverable rollback. No database, nonce, position, signed payload, or chain state existed to migrate or discard.
 
