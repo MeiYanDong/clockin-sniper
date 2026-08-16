@@ -59,6 +59,22 @@ const HASH_A = `0x${"a".repeat(64)}` as Hex;
 const HASH_B = `0x${"b".repeat(64)}` as Hex;
 const TX_HASH = `0x${"c".repeat(64)}` as Hex;
 const NOW = "2026-08-16T00:00:00.000Z";
+const AUTHORIZATION_SCOPE = {
+  chainId: 4663,
+  profileId: "factory-profile-1",
+  profileRevision: 1,
+  strategyConfigHash: "sha256:clockin-policy-v2",
+  walletIds: ["entry-01", "entry-02"],
+  identityGate: "HYBRID_CA_GATE",
+} as const;
+const AUTHORIZATION_RISK = {
+  clockInBudgetUsdMicros: "50000000",
+  allInRiskCapUsdMicros: "60000000",
+  maximumLaneUsdMicros: "5000000",
+  minimumLaneUsdMicros: "1000000",
+  routineExitMaximumSlippageBps: 500,
+  breakGlassExitMaximumSlippageBps: 2_000,
+} as const;
 
 function candidate(overrides: Partial<LaunchCandidate> = {}): LaunchCandidate {
   return Object.freeze({
@@ -693,10 +709,11 @@ describe("identity, mechanism and strategy authorization", () => {
         officialCaConfirmed: false,
         preapprovedStrongBinding: false,
         source: "DETERMINISTIC_POLICY",
-        scope: { token: TOKEN },
-        riskEnvelope: { max: "5000000" },
+        scope: AUTHORIZATION_SCOPE,
+        riskEnvelope: AUTHORIZATION_RISK,
         issuedAt: NOW,
         expiresAt: "2026-08-16T00:02:00.000Z",
+        maximumTtlMs: 604_800_000,
         evidenceIds: ["ev-1"],
       }).level,
       "L2",
@@ -711,10 +728,11 @@ describe("identity, mechanism and strategy authorization", () => {
           officialCaConfirmed: false,
           preapprovedStrongBinding: false,
           source: "DETERMINISTIC_POLICY",
-          scope: { token: TOKEN },
-          riskEnvelope: { max: "5000000" },
+          scope: AUTHORIZATION_SCOPE,
+          riskEnvelope: AUTHORIZATION_RISK,
           issuedAt: NOW,
           expiresAt: "2026-08-16T00:02:00.000Z",
+          maximumTtlMs: 604_800_000,
           evidenceIds: ["ev-1"],
         }),
       /requires L3/,
@@ -729,13 +747,48 @@ describe("identity, mechanism and strategy authorization", () => {
           officialCaConfirmed: true,
           preapprovedStrongBinding: true,
           source: "AI_CANDIDATE",
-          scope: {},
-          riskEnvelope: {},
+          scope: { ...AUTHORIZATION_SCOPE, identityGate: "FACTORY_FULL" },
+          riskEnvelope: AUTHORIZATION_RISK,
           issuedAt: NOW,
           expiresAt: "2026-08-16T00:02:00.000Z",
+          maximumTtlMs: 604_800_000,
           evidenceIds: [],
         }),
       /AI candidate/,
+    );
+  });
+
+  it("accepts exactly one week of pre-authorization and rejects one millisecond more", () => {
+    const base = {
+      strategyId: CLOCKIN_STRATEGY_ID,
+      laneNumber: 1,
+      identityLevel: "L2" as const,
+      gateMode: "HYBRID_CA_GATE" as const,
+      officialCaConfirmed: false,
+      preapprovedStrongBinding: false,
+      source: "DETERMINISTIC_POLICY" as const,
+      scope: AUTHORIZATION_SCOPE,
+      riskEnvelope: AUTHORIZATION_RISK,
+      issuedAt: NOW,
+      maximumTtlMs: 604_800_000,
+      evidenceIds: ["owner-policy-v2"],
+    };
+    assert.equal(
+      authorizeEntryLane({ ...base, expiresAt: "2026-08-23T00:00:00.000Z" }).mode,
+      "AUTO_POLICY",
+    );
+    assert.throws(
+      () => authorizeEntryLane({ ...base, expiresAt: "2026-08-23T00:00:00.001Z" }),
+      /maximum TTL/,
+    );
+    assert.throws(
+      () =>
+        authorizeEntryLane({
+          ...base,
+          scope: { ...AUTHORIZATION_SCOPE, profileId: "" },
+          expiresAt: "2026-08-23T00:00:00.000Z",
+        }),
+      /authorization scope must bind/,
     );
   });
 

@@ -1,6 +1,6 @@
 {
-  "manifest_revision": 2,
-  "generated_at": "2026-08-16T00:00:00.000Z",
+  "manifest_revision": 3,
+  "generated_at": "2026-08-16T10:40:02.000Z",
   "network": "eip155:4663",
   "production_state": "NOT_HOT_ARMED",
   "mode": "real_funds_only_no_shadow_branch",
@@ -13,11 +13,12 @@
     "address_cluster_discovery": "TESTED",
     "website_json_html_bundle_fallback": "TESTED",
     "factory_profile_registry": "TESTED",
-    "identity_l0_l4_authorization": "TESTED",
+    "identity_l0_l4_authorization": "TESTED_SEVEN_DAY_MAXIMUM_TTL",
+    "owner_policy_v2": "TESTED_OWNER_POLICY_COMPLETE_NOT_PROTOCOL_READY",
     "mechanism_profile_reader": "TESTED_GENERIC_ADAPTER_NO_FINAL_MAINNET_ABI",
     "ten_eoa_wallet_generation": "VERIFIED_LOCAL_KEYS_EXTERNAL_UNFUNDED",
-    "wallet_readiness": "TESTED_NOT_CURRENTLY_FUNDED",
-    "ten_fee_band_entry": "TESTED",
+    "wallet_readiness": "TESTED_THREE_SELL_GAS_MARGIN_NOT_CURRENTLY_FUNDED",
+    "ten_fee_band_entry": "TESTED_SHRINK_TO_CAP_WITH_ONE_U_MINIMUM",
     "canary_economic_reconciliation": "TESTED",
     "same_raw_broadcast": "TESTED_NO_V2_LIVE_RECEIPT",
     "unknown_recovery": "TESTED",
@@ -25,6 +26,8 @@
     "launch_pool_sell": "SUPPORTED_INTERFACE_FINAL_ABI_UNPUBLISHED",
     "external_amm_exit": "SUPPORTED_INTERFACE_FINAL_ROUTE_UNPUBLISHED",
     "principal_first_exit": "TESTED_POLICY_NO_LIVE_EXIT_RECEIPT",
+    "pre_principal_downside_exit": "TESTED_NO_FINAL_EXECUTABLE_ROUTE",
+    "routine_and_break_glass_slippage": "TESTED_FIVE_AND_TWENTY_PERCENT_NO_LIVE_EXIT_RECEIPT",
     "systemd_templates": "TESTED_NOT_DEPLOYED",
     "live_effect": "UNSUPPORTED_UNTIL_REAL_CANONICAL_RECEIPT"
   },
@@ -32,7 +35,7 @@
     "OFFICIAL_MAINNET_LAUNCHER_FACTORY_AND_FINAL_ABI_NOT_PUBLISHED",
     "FINAL_MAINNET_POOL_BUY_SELL_FINALIZE_ADAPTERS_NOT_VERIFIED_CURRENT",
     "ENTRY_WALLETS_NOT_FUNDED",
-    "PRICE_AND_EXIT_RISK_BOUNDS_NOT_FULLY_DECIDED",
+    "FRESH_PRICE_SNAPSHOT_AND_BOUND_AUTHORIZATION_NOT_CREATED",
     "CLOUD_REGION_AND_HOST_NOT_SELECTED_OR_DEPLOYED",
     "NO_V2_CANONICAL_ENTRY_OR_EXIT_RECEIPT"
   ],
@@ -45,6 +48,7 @@
   "evidence_ids": [
     "docs/evidence/2026-08-16-launcher-mainnet-status.md",
     "docs/adr/0004-sqlite-wal-canonical-state.md",
-    "docs/adr/0005-initial-strategy-policy.md"
+    "docs/adr/0005-initial-strategy-policy.md",
+    "docs/adr/0006-clockin-policy-v2-risk-and-authorization.md"
   ]
 }

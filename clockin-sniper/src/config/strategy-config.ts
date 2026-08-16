@@ -1,7 +1,13 @@
 import { stableHash } from "../core/canonical.js";
-import type { CaGateMode } from "../identity/authorization.js";
 import type { CapPolicy, CatchUpPolicy } from "../entry/lane-orchestrator.js";
+import type { CaGateMode } from "../identity/authorization.js";
 import type { FirstLaunchMode } from "../strategies/strategy-router.js";
+
+export type PriceSourcePolicy = "DUAL_SOURCE_WITH_FROZEN_MANUAL_FALLBACK";
+export type InitialStopLossBasis = "POST_ENTRY_EXECUTABLE_NET_BASELINE";
+export type NoLiquidityPolicy = "ALERT_AND_RETRY_VERIFIED_ROUTES";
+export type AutomaticTopUpPolicy = "DISABLED";
+export type DeploymentTopology = "ONE_ACTIVE_ONE_KEYLESS_OBSERVER";
 
 export interface ProductionStrategyConfig {
   readonly configId: string;
@@ -9,8 +15,10 @@ export interface ProductionStrategyConfig {
   readonly owner: string;
   readonly chainId: 4663;
   readonly clockInBudgetUsdMicros: bigint;
+  readonly allInRiskCapUsdMicros: bigint;
   readonly laneCount: 10;
   readonly nominalLaneUsdMicros: bigint;
+  readonly minimumShrunkLaneUsdMicros: bigint;
   readonly firstLaunchMode: FirstLaunchMode;
   readonly caGateMode: CaGateMode;
   readonly capPolicy: CapPolicy;
@@ -20,26 +28,37 @@ export interface ProductionStrategyConfig {
   readonly secondProfitMultipleBps: number;
   readonly secondProfitTokenShareBps: number;
   readonly runnerDrawdownBps: number;
-  readonly priceMaximumAgeMs: number | null;
-  readonly priceMaximumDeviationBps: number | null;
-  readonly maximumHoldingMs: number | null;
-  readonly momentumFailurePolicyId: string | null;
-  readonly initialStopLossBps: number | null;
-  readonly manualExitMaximumSlippageBps: number | null;
-  readonly noLiquidityPolicy: "ALERT_AND_HOLD";
+  readonly priceSourcePolicy: PriceSourcePolicy;
+  readonly priceMaximumAgeMs: number;
+  readonly priceMaximumDeviationBps: number;
+  readonly prePrincipalMaximumHoldingMs: number;
+  readonly runnerMaximumHoldingMs: number;
+  readonly momentumFailurePolicyId: "DISABLED_UNTIL_REPLAY_V1";
+  readonly initialStopLossBasis: InitialStopLossBasis;
+  readonly initialStopLossBps: number;
+  readonly stopLossConfirmationBlocks: number;
+  readonly routineExitMaximumSlippageBps: number;
+  readonly breakGlassExitMaximumSlippageBps: number;
+  readonly noLiquidityPolicy: NoLiquidityPolicy;
+  readonly authorizationMaximumTtlMs: number;
+  readonly maximumSellTransactionsPerWallet: number;
+  readonly gasSafetyMarginBps: number;
+  readonly automaticTopUpPolicy: AutomaticTopUpPolicy;
+  readonly deploymentTopology: DeploymentTopology;
   readonly changedAt: string;
 }
 
 export interface FrozenStrategyConfig extends ProductionStrategyConfig {
-  readonly configHash: string;
+  /** Owner policy completeness only; protocol evidence and funding have separate readiness gates. */
   readonly productionArmable: boolean;
+  readonly configHash: string;
   readonly blockers: readonly string[];
 }
 
 export interface StrategyParameterDefinition {
   readonly key: keyof ProductionStrategyConfig;
   readonly owner: "PROJECT_OWNER" | "PROTOCOL_EVIDENCE";
-  readonly defaultValue: string | number | null;
+  readonly defaultValue: string | number;
   readonly allowed: string;
   readonly changeControl: string;
 }
@@ -51,15 +70,15 @@ export const STRATEGY_PARAMETER_SCHEMA = Object.freeze([
   {
     key: "configId",
     owner: "PROJECT_OWNER",
-    defaultValue: "clockin-policy-v1",
-    allowed: "non-empty stable ID",
+    defaultValue: "clockin-policy-v2",
+    allowed: "clockin-policy-v2",
     changeControl: ownerChange,
   },
   {
     key: "revision",
     owner: "PROJECT_OWNER",
-    defaultValue: 1,
-    allowed: "integer >= 1",
+    defaultValue: 2,
+    allowed: "exactly 2",
     changeControl: ownerChange,
   },
   {
@@ -80,133 +99,217 @@ export const STRATEGY_PARAMETER_SCHEMA = Object.freeze([
     key: "clockInBudgetUsdMicros",
     owner: "PROJECT_OWNER",
     defaultValue: "50000000",
-    allowed: "exactly 50000000 in policy v1",
+    allowed: "exactly 50000000",
+    changeControl: ownerChange,
+  },
+  {
+    key: "allInRiskCapUsdMicros",
+    owner: "PROJECT_OWNER",
+    defaultValue: "60000000",
+    allowed: "exactly 60000000",
     changeControl: ownerChange,
   },
   {
     key: "laneCount",
     owner: "PROJECT_OWNER",
     defaultValue: 10,
-    allowed: "exactly 10 in policy v1",
+    allowed: "exactly 10",
     changeControl: ownerChange,
   },
   {
     key: "nominalLaneUsdMicros",
     owner: "PROJECT_OWNER",
     defaultValue: "5000000",
-    allowed: "exactly 5000000 in policy v1",
+    allowed: "exactly 5000000",
+    changeControl: ownerChange,
+  },
+  {
+    key: "minimumShrunkLaneUsdMicros",
+    owner: "PROJECT_OWNER",
+    defaultValue: "1000000",
+    allowed: "exactly 1000000",
     changeControl: ownerChange,
   },
   {
     key: "firstLaunchMode",
     owner: "PROJECT_OWNER",
     defaultValue: "MONITOR_ONLY",
-    allowed: "MONITOR_ONLY in policy v1",
+    allowed: "MONITOR_ONLY",
     changeControl: ownerChange,
   },
   {
     key: "caGateMode",
     owner: "PROJECT_OWNER",
     defaultValue: "HYBRID_CA_GATE",
-    allowed: "HYBRID_CA_GATE in policy v1",
+    allowed: "HYBRID_CA_GATE",
     changeControl: ownerChange,
   },
   {
     key: "capPolicy",
     owner: "PROJECT_OWNER",
-    defaultValue: "STRICT_5U",
-    allowed: "STRICT_5U in policy v1",
+    defaultValue: "SHRINK_TO_CAP",
+    allowed: "SHRINK_TO_CAP",
     changeControl: ownerChange,
   },
   {
     key: "catchUpPolicy",
     owner: "PROJECT_OWNER",
     defaultValue: "QUOTE_RANKED_BOUNDED",
-    allowed: "QUOTE_RANKED_BOUNDED in policy v1",
+    allowed: "QUOTE_RANKED_BOUNDED",
     changeControl: ownerChange,
   },
   {
     key: "maxConcurrentCatchUpLanes",
     owner: "PROJECT_OWNER",
     defaultValue: 2,
-    allowed: "exactly 2 in policy v1",
+    allowed: "exactly 2",
     changeControl: ownerChange,
   },
   {
     key: "principalRecoveryMultipleBps",
     owner: "PROJECT_OWNER",
-    defaultValue: 20000,
-    allowed: "0..100000 bps",
+    defaultValue: 20_000,
+    allowed: "exactly 20000 bps",
     changeControl: ownerChange,
   },
   {
     key: "secondProfitMultipleBps",
     owner: "PROJECT_OWNER",
-    defaultValue: 30000,
-    allowed: "0..100000 bps",
+    defaultValue: 30_000,
+    allowed: "exactly 30000 bps",
     changeControl: ownerChange,
   },
   {
     key: "secondProfitTokenShareBps",
     owner: "PROJECT_OWNER",
-    defaultValue: 1000,
-    allowed: "0..10000 bps",
+    defaultValue: 1_000,
+    allowed: "exactly 1000 bps",
     changeControl: ownerChange,
   },
   {
     key: "runnerDrawdownBps",
     owner: "PROJECT_OWNER",
-    defaultValue: 2500,
-    allowed: "0..10000 bps",
+    defaultValue: 2_500,
+    allowed: "exactly 2500 bps",
+    changeControl: ownerChange,
+  },
+  {
+    key: "priceSourcePolicy",
+    owner: "PROJECT_OWNER",
+    defaultValue: "DUAL_SOURCE_WITH_FROZEN_MANUAL_FALLBACK",
+    allowed: "dual source; manual fallback frozen before arming",
     changeControl: ownerChange,
   },
   {
     key: "priceMaximumAgeMs",
     owner: "PROJECT_OWNER",
-    defaultValue: null,
-    allowed: "null (blocked) or integer > 0",
+    defaultValue: 30_000,
+    allowed: "exactly 30000 ms",
     changeControl: ownerChange,
   },
   {
     key: "priceMaximumDeviationBps",
     owner: "PROJECT_OWNER",
-    defaultValue: null,
-    allowed: "null (blocked) or 0..10000 bps",
+    defaultValue: 200,
+    allowed: "exactly 200 bps",
     changeControl: ownerChange,
   },
   {
-    key: "maximumHoldingMs",
+    key: "prePrincipalMaximumHoldingMs",
     owner: "PROJECT_OWNER",
-    defaultValue: null,
-    allowed: "null (blocked) or integer > 0",
+    defaultValue: 3_600_000,
+    allowed: "exactly 60 minutes",
+    changeControl: ownerChange,
+  },
+  {
+    key: "runnerMaximumHoldingMs",
+    owner: "PROJECT_OWNER",
+    defaultValue: 86_400_000,
+    allowed: "exactly 24 hours",
     changeControl: ownerChange,
   },
   {
     key: "momentumFailurePolicyId",
     owner: "PROJECT_OWNER",
-    defaultValue: null,
-    allowed: "null (blocked) or versioned policy ID",
+    defaultValue: "DISABLED_UNTIL_REPLAY_V1",
+    allowed: "DISABLED_UNTIL_REPLAY_V1",
+    changeControl: ownerChange,
+  },
+  {
+    key: "initialStopLossBasis",
+    owner: "PROJECT_OWNER",
+    defaultValue: "POST_ENTRY_EXECUTABLE_NET_BASELINE",
+    allowed: "POST_ENTRY_EXECUTABLE_NET_BASELINE",
     changeControl: ownerChange,
   },
   {
     key: "initialStopLossBps",
     owner: "PROJECT_OWNER",
-    defaultValue: null,
-    allowed: "null (blocked) or 0..10000 bps",
+    defaultValue: 3_000,
+    allowed: "exactly 3000 bps",
     changeControl: ownerChange,
   },
   {
-    key: "manualExitMaximumSlippageBps",
+    key: "stopLossConfirmationBlocks",
     owner: "PROJECT_OWNER",
-    defaultValue: null,
-    allowed: "null (blocked) or 0..9999 bps",
+    defaultValue: 2,
+    allowed: "exactly 2 canonical blocks",
+    changeControl: ownerChange,
+  },
+  {
+    key: "routineExitMaximumSlippageBps",
+    owner: "PROJECT_OWNER",
+    defaultValue: 500,
+    allowed: "exactly 500 bps",
+    changeControl: ownerChange,
+  },
+  {
+    key: "breakGlassExitMaximumSlippageBps",
+    owner: "PROJECT_OWNER",
+    defaultValue: 2_000,
+    allowed: "exactly 2000 bps; explicit second confirmation only",
     changeControl: ownerChange,
   },
   {
     key: "noLiquidityPolicy",
     owner: "PROJECT_OWNER",
-    defaultValue: "ALERT_AND_HOLD",
-    allowed: "ALERT_AND_HOLD in policy v1",
+    defaultValue: "ALERT_AND_RETRY_VERIFIED_ROUTES",
+    allowed: "ALERT_AND_RETRY_VERIFIED_ROUTES",
+    changeControl: ownerChange,
+  },
+  {
+    key: "authorizationMaximumTtlMs",
+    owner: "PROJECT_OWNER",
+    defaultValue: 604_800_000,
+    allowed: "at most 7 days",
+    changeControl: ownerChange,
+  },
+  {
+    key: "maximumSellTransactionsPerWallet",
+    owner: "PROJECT_OWNER",
+    defaultValue: 3,
+    allowed: "exactly 3",
+    changeControl: ownerChange,
+  },
+  {
+    key: "gasSafetyMarginBps",
+    owner: "PROJECT_OWNER",
+    defaultValue: 3_000,
+    allowed: "exactly 3000 bps",
+    changeControl: ownerChange,
+  },
+  {
+    key: "automaticTopUpPolicy",
+    owner: "PROJECT_OWNER",
+    defaultValue: "DISABLED",
+    allowed: "DISABLED",
+    changeControl: ownerChange,
+  },
+  {
+    key: "deploymentTopology",
+    owner: "PROJECT_OWNER",
+    defaultValue: "ONE_ACTIVE_ONE_KEYLESS_OBSERVER",
+    allowed: "ONE_ACTIVE_ONE_KEYLESS_OBSERVER",
     changeControl: ownerChange,
   },
   {
@@ -224,119 +327,142 @@ function bps(name: string, value: number, maximum = 100_000): void {
   }
 }
 
+function positiveSafeInteger(name: string, value: number): void {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new RangeError(`${name} must be a positive safe integer`);
+  }
+}
+
+function assertExact<T>(name: string, actual: T, expected: T): void {
+  if (actual !== expected) throw new RangeError(`${name} must be ${String(expected)} in policy v2`);
+}
+
 export function freezeStrategyConfig(config: ProductionStrategyConfig): FrozenStrategyConfig {
-  if (config.revision < 1 || !Number.isSafeInteger(config.revision)) {
-    throw new RangeError("config revision must be a positive integer");
-  }
-  if (config.clockInBudgetUsdMicros !== 50_000_000n) {
-    throw new RangeError("ClockIn budget must be exactly 50U for policy v1");
-  }
-  if (
-    config.laneCount !== 10 ||
-    config.nominalLaneUsdMicros !== 5_000_000n ||
-    config.nominalLaneUsdMicros * BigInt(config.laneCount) !== config.clockInBudgetUsdMicros
-  ) {
+  if (config.configId !== "clockin-policy-v2")
+    throw new Error("policy v2 requires its stable config ID");
+  assertExact("revision", config.revision, 2);
+  if (config.owner.trim().length === 0) throw new RangeError("strategy owner is required");
+  assertExact("chainId", config.chainId, 4663);
+  assertExact("clockInBudgetUsdMicros", config.clockInBudgetUsdMicros, 50_000_000n);
+  assertExact("allInRiskCapUsdMicros", config.allInRiskCapUsdMicros, 60_000_000n);
+  assertExact("laneCount", config.laneCount, 10);
+  assertExact("nominalLaneUsdMicros", config.nominalLaneUsdMicros, 5_000_000n);
+  assertExact("minimumShrunkLaneUsdMicros", config.minimumShrunkLaneUsdMicros, 1_000_000n);
+  if (config.nominalLaneUsdMicros * BigInt(config.laneCount) !== config.clockInBudgetUsdMicros) {
     throw new RangeError("ClockIn policy must be 10 one-shot lanes of nominal 5U");
   }
-  if (config.firstLaunchMode !== "MONITOR_ONLY") {
-    throw new Error("policy v1 keeps the first-official-launch strategy monitor-only");
-  }
-  if (config.caGateMode !== "HYBRID_CA_GATE") {
-    throw new Error("policy v1 requires HYBRID_CA_GATE");
-  }
-  if (config.capPolicy !== "STRICT_5U") throw new Error("policy v1 requires strict 5U cap");
-  if (config.catchUpPolicy !== "QUOTE_RANKED_BOUNDED") {
-    throw new Error("policy v1 requires quote-ranked bounded catch-up");
-  }
-  if (config.maxConcurrentCatchUpLanes !== 2) {
-    throw new RangeError("policy v1 permits at most two catch-up lanes per block");
-  }
+  assertExact("firstLaunchMode", config.firstLaunchMode, "MONITOR_ONLY");
+  assertExact("caGateMode", config.caGateMode, "HYBRID_CA_GATE");
+  assertExact("capPolicy", config.capPolicy, "SHRINK_TO_CAP");
+  assertExact("catchUpPolicy", config.catchUpPolicy, "QUOTE_RANKED_BOUNDED");
+  assertExact("maxConcurrentCatchUpLanes", config.maxConcurrentCatchUpLanes, 2);
+  assertExact("principalRecoveryMultipleBps", config.principalRecoveryMultipleBps, 20_000);
+  assertExact("secondProfitMultipleBps", config.secondProfitMultipleBps, 30_000);
+  assertExact("secondProfitTokenShareBps", config.secondProfitTokenShareBps, 1_000);
+  assertExact("runnerDrawdownBps", config.runnerDrawdownBps, 2_500);
   bps("principalRecoveryMultipleBps", config.principalRecoveryMultipleBps);
   bps("secondProfitMultipleBps", config.secondProfitMultipleBps);
   bps("secondProfitTokenShareBps", config.secondProfitTokenShareBps, 10_000);
   bps("runnerDrawdownBps", config.runnerDrawdownBps, 10_000);
-  if (config.priceMaximumAgeMs !== null && config.priceMaximumAgeMs <= 0) {
-    throw new RangeError("priceMaximumAgeMs must be positive when configured");
+  assertExact(
+    "priceSourcePolicy",
+    config.priceSourcePolicy,
+    "DUAL_SOURCE_WITH_FROZEN_MANUAL_FALLBACK",
+  );
+  assertExact("priceMaximumAgeMs", config.priceMaximumAgeMs, 30_000);
+  assertExact("priceMaximumDeviationBps", config.priceMaximumDeviationBps, 200);
+  assertExact("prePrincipalMaximumHoldingMs", config.prePrincipalMaximumHoldingMs, 3_600_000);
+  assertExact("runnerMaximumHoldingMs", config.runnerMaximumHoldingMs, 86_400_000);
+  assertExact(
+    "momentumFailurePolicyId",
+    config.momentumFailurePolicyId,
+    "DISABLED_UNTIL_REPLAY_V1",
+  );
+  assertExact(
+    "initialStopLossBasis",
+    config.initialStopLossBasis,
+    "POST_ENTRY_EXECUTABLE_NET_BASELINE",
+  );
+  assertExact("initialStopLossBps", config.initialStopLossBps, 3_000);
+  assertExact("stopLossConfirmationBlocks", config.stopLossConfirmationBlocks, 2);
+  assertExact("routineExitMaximumSlippageBps", config.routineExitMaximumSlippageBps, 500);
+  assertExact("breakGlassExitMaximumSlippageBps", config.breakGlassExitMaximumSlippageBps, 2_000);
+  assertExact("noLiquidityPolicy", config.noLiquidityPolicy, "ALERT_AND_RETRY_VERIFIED_ROUTES");
+  assertExact("authorizationMaximumTtlMs", config.authorizationMaximumTtlMs, 604_800_000);
+  assertExact("maximumSellTransactionsPerWallet", config.maximumSellTransactionsPerWallet, 3);
+  assertExact("gasSafetyMarginBps", config.gasSafetyMarginBps, 3_000);
+  assertExact("automaticTopUpPolicy", config.automaticTopUpPolicy, "DISABLED");
+  assertExact("deploymentTopology", config.deploymentTopology, "ONE_ACTIVE_ONE_KEYLESS_OBSERVER");
+  positiveSafeInteger("priceMaximumAgeMs", config.priceMaximumAgeMs);
+  bps("priceMaximumDeviationBps", config.priceMaximumDeviationBps, 10_000);
+  positiveSafeInteger("prePrincipalMaximumHoldingMs", config.prePrincipalMaximumHoldingMs);
+  positiveSafeInteger("runnerMaximumHoldingMs", config.runnerMaximumHoldingMs);
+  bps("initialStopLossBps", config.initialStopLossBps, 10_000);
+  positiveSafeInteger("stopLossConfirmationBlocks", config.stopLossConfirmationBlocks);
+  bps("routineExitMaximumSlippageBps", config.routineExitMaximumSlippageBps, 9_999);
+  bps("breakGlassExitMaximumSlippageBps", config.breakGlassExitMaximumSlippageBps, 9_999);
+  if (config.routineExitMaximumSlippageBps >= config.breakGlassExitMaximumSlippageBps) {
+    throw new RangeError("routine exit slippage must remain below break-glass slippage");
   }
-  if (config.priceMaximumDeviationBps !== null) {
-    bps("priceMaximumDeviationBps", config.priceMaximumDeviationBps, 10_000);
-  }
-  if (config.maximumHoldingMs !== null && config.maximumHoldingMs <= 0) {
-    throw new RangeError("maximumHoldingMs must be positive when configured");
-  }
-  if (config.initialStopLossBps !== null)
-    bps("initialStopLossBps", config.initialStopLossBps, 10_000);
-  if (config.manualExitMaximumSlippageBps !== null) {
-    bps("manualExitMaximumSlippageBps", config.manualExitMaximumSlippageBps, 9_999);
-  }
-  const blockers: string[] = [];
-  if (config.priceMaximumAgeMs === null) blockers.push("priceMaximumAgeMs is not decided");
-  if (config.priceMaximumDeviationBps === null) {
-    blockers.push("priceMaximumDeviationBps is not decided");
-  }
-  if (config.maximumHoldingMs === null) blockers.push("maximumHoldingMs is not decided");
-  if (config.momentumFailurePolicyId === null)
-    blockers.push("momentum failure policy is not decided");
-  if (config.initialStopLossBps === null) blockers.push("initial stop-loss policy is not decided");
-  if (config.manualExitMaximumSlippageBps === null) {
-    blockers.push("manual EXIT_NOW maximum slippage is not decided");
-  }
+  positiveSafeInteger("authorizationMaximumTtlMs", config.authorizationMaximumTtlMs);
+  positiveSafeInteger("maximumSellTransactionsPerWallet", config.maximumSellTransactionsPerWallet);
+  bps("gasSafetyMarginBps", config.gasSafetyMarginBps, 10_000);
+  if (!Number.isFinite(Date.parse(config.changedAt)))
+    throw new TypeError("changedAt must be ISO-8601");
+
+  const canonical = {
+    ...config,
+    clockInBudgetUsdMicros: config.clockInBudgetUsdMicros.toString(),
+    allInRiskCapUsdMicros: config.allInRiskCapUsdMicros.toString(),
+    nominalLaneUsdMicros: config.nominalLaneUsdMicros.toString(),
+    minimumShrunkLaneUsdMicros: config.minimumShrunkLaneUsdMicros.toString(),
+  };
   return Object.freeze({
     ...config,
-    configHash: stableHash({
-      configId: config.configId,
-      revision: config.revision,
-      owner: config.owner,
-      chainId: config.chainId,
-      clockInBudgetUsdMicros: config.clockInBudgetUsdMicros.toString(),
-      laneCount: config.laneCount,
-      nominalLaneUsdMicros: config.nominalLaneUsdMicros.toString(),
-      firstLaunchMode: config.firstLaunchMode,
-      caGateMode: config.caGateMode,
-      capPolicy: config.capPolicy,
-      catchUpPolicy: config.catchUpPolicy,
-      maxConcurrentCatchUpLanes: config.maxConcurrentCatchUpLanes,
-      principalRecoveryMultipleBps: config.principalRecoveryMultipleBps,
-      secondProfitMultipleBps: config.secondProfitMultipleBps,
-      secondProfitTokenShareBps: config.secondProfitTokenShareBps,
-      runnerDrawdownBps: config.runnerDrawdownBps,
-      priceMaximumAgeMs: config.priceMaximumAgeMs,
-      priceMaximumDeviationBps: config.priceMaximumDeviationBps,
-      maximumHoldingMs: config.maximumHoldingMs,
-      momentumFailurePolicyId: config.momentumFailurePolicyId,
-      initialStopLossBps: config.initialStopLossBps,
-      manualExitMaximumSlippageBps: config.manualExitMaximumSlippageBps,
-      noLiquidityPolicy: config.noLiquidityPolicy,
-      changedAt: config.changedAt,
-    }),
-    productionArmable: blockers.length === 0,
-    blockers: Object.freeze(blockers),
+    configHash: stableHash(canonical),
+    productionArmable: true,
+    blockers: Object.freeze([]),
   });
 }
 
-export const INITIAL_CLOCKIN_POLICY = freezeStrategyConfig({
-  configId: "clockin-policy-v1",
-  revision: 1,
+export const CLOCKIN_POLICY_V2 = freezeStrategyConfig({
+  configId: "clockin-policy-v2",
+  revision: 2,
   owner: "project-owner",
   chainId: 4663,
   clockInBudgetUsdMicros: 50_000_000n,
+  allInRiskCapUsdMicros: 60_000_000n,
   laneCount: 10,
   nominalLaneUsdMicros: 5_000_000n,
+  minimumShrunkLaneUsdMicros: 1_000_000n,
   firstLaunchMode: "MONITOR_ONLY",
   caGateMode: "HYBRID_CA_GATE",
-  capPolicy: "STRICT_5U",
+  capPolicy: "SHRINK_TO_CAP",
   catchUpPolicy: "QUOTE_RANKED_BOUNDED",
   maxConcurrentCatchUpLanes: 2,
   principalRecoveryMultipleBps: 20_000,
   secondProfitMultipleBps: 30_000,
   secondProfitTokenShareBps: 1_000,
   runnerDrawdownBps: 2_500,
-  priceMaximumAgeMs: null,
-  priceMaximumDeviationBps: null,
-  maximumHoldingMs: null,
-  momentumFailurePolicyId: null,
-  initialStopLossBps: null,
-  manualExitMaximumSlippageBps: null,
-  noLiquidityPolicy: "ALERT_AND_HOLD",
+  priceSourcePolicy: "DUAL_SOURCE_WITH_FROZEN_MANUAL_FALLBACK",
+  priceMaximumAgeMs: 30_000,
+  priceMaximumDeviationBps: 200,
+  prePrincipalMaximumHoldingMs: 3_600_000,
+  runnerMaximumHoldingMs: 86_400_000,
+  momentumFailurePolicyId: "DISABLED_UNTIL_REPLAY_V1",
+  initialStopLossBasis: "POST_ENTRY_EXECUTABLE_NET_BASELINE",
+  initialStopLossBps: 3_000,
+  stopLossConfirmationBlocks: 2,
+  routineExitMaximumSlippageBps: 500,
+  breakGlassExitMaximumSlippageBps: 2_000,
+  noLiquidityPolicy: "ALERT_AND_RETRY_VERIFIED_ROUTES",
+  authorizationMaximumTtlMs: 604_800_000,
+  maximumSellTransactionsPerWallet: 3,
+  gasSafetyMarginBps: 3_000,
+  automaticTopUpPolicy: "DISABLED",
+  deploymentTopology: "ONE_ACTIVE_ONE_KEYLESS_OBSERVER",
   changedAt: "2026-08-16T00:00:00.000Z",
 });
+
+/** Compatibility alias for callers that previously imported the initial policy. */
+export const INITIAL_CLOCKIN_POLICY = CLOCKIN_POLICY_V2;

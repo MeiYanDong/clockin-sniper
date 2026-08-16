@@ -20,6 +20,12 @@ export function freezeQuoteBoundedEntryPlan(input: {
       "quote profile revision does not match execution plan",
     );
   }
+  if (BigInt(input.draft.valueRaw) !== input.quote.principalRaw) {
+    throw new CanonicalInvariantError(
+      "QUOTE_STALE",
+      "quote principal does not match execution plan value",
+    );
+  }
   if (input.minOutputRaw <= 0n || input.minOutputRaw > input.quote.expectedTokenOutRaw) {
     throw new RangeError("execution plan minOut is outside its quote bound");
   }

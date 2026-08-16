@@ -17,5 +17,6 @@ ADRs record decisions that materially change system boundaries, money movement, 
 - [0003 — Separate Control and Execution planes](0003-control-and-execution-plane-separation.md)
 - [0004 — SQLite WAL as canonical runtime state](0004-sqlite-wal-canonical-state.md)
 - [0005 — Initial ClockIn strategy policy](0005-initial-strategy-policy.md)
+- [0006 — ClockIn policy v2 risk, authorization and execution bounds](0006-clockin-policy-v2-risk-and-authorization.md)
 
 ADRs are append-only historical records. Correct factual errors with a follow-up note or superseding ADR rather than silently rewriting the original decision context.

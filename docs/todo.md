@@ -289,24 +289,30 @@
 
 目标：完成 `plan.md` 第 31 节所有资金与策略选择。
 
-`BLOCKED_BY: OWNER_DECISION_REQUIRED_FOR_PRICE_HOLDING_AND_EXIT_BOUNDS`。未决参数保持 `null`，并使 `productionArmable=false`；不以开发者默认值代替用户的资金决策。
+`COMPLETED: OWNER_POLICY_CLOCKIN_V2`。用户于 2026-08-16 接受推荐方案，并明确选择 20% `BREAK_GLASS` 绝对上限和 7 天授权有效期。配置为 `clockin-policy-v2` revision 2，hash `sha256:a03505b3f0da3a92a5c45f70ff584ab26326ba9940996446325449392f7fb121`。这里的 `productionArmable=true` 仅表示 owner policy 完整，不替代协议、资金和部署 readiness。
 
-- [x] 决定首币策略：0U monitor-only 或额外独立 5U canary。
+- [x] 决定首币策略：0U monitor-only。
 - [x] 确认约 2× 本金回收阈值。
 - [x] 确认约 3× 第二止盈规模。
 - [x] 确认 runner 约 25% peak drawdown。
-- [ ] 确认最长持仓和动量失效条件。
-- [x] 确认 `STRICT_CA`、`FACTORY_FULL` 或 `HYBRID_CA_GATE`。
-- [x] 确认 5U 超过 cap 时跳过还是缩量。
-- [x] 确认 `ONE_PER_BLOCK`、`ALL_ELIGIBLE` 或 `QUOTE_RANKED_BOUNDED`。
-- [ ] 确认 5U→ETH 价格源、陈旧时间与偏差。
-- [ ] 确认初始止损、无流动性处置和 `EXIT_NOW` 最大滑点。
+- [x] 确认回本前最长持仓 60 分钟、runner 最长 24 小时；momentum 在 replay v1 前禁用。
+- [x] 确认 `HYBRID_CA_GATE`。
+- [x] 确认 `SHRINK_TO_CAP`：最多 5U、最少 1U，不拆分、不重分配。
+- [x] 确认 `QUOTE_RANKED_BOUNDED`：每块最多 2 lanes。
+- [x] 确认 5U→ETH 双价格源、30 秒陈旧时间、2% 最大偏差和 arming 前固定 wei 后备。
+- [x] 确认初始止损：入场后 executable-net 基线 -30%，税窗结束后连续两个 canonical blocks。
+- [x] 确认无流动性时告警并仅重试已验证 route，不自动扩大滑点。
+- [x] 确认普通自动/人工退出最大 5%，显式二次确认 `BREAK_GLASS` 最大 20%。
+- [x] 确认预授权最长 7 天，绑定 chain/profile/config/wallet/budget scope。
+- [x] 确认 50U principal、60U all-in cap、禁止自动补款。
 - [x] 把选择写入 ADR/strategy config，记录日期和 config revision。
 
 验收：
 
 - [x] 每个生产参数都有 owner、默认值、范围和变更方式。
 - [x] 预算或身份授权变化必须产生新 config hash。
+- [x] ADR 0006、strategy config、单元测试与 readiness 文档使用同一组参数。
+- [x] 保存 `clockin-policy-v2` 本地验证与 Public PR 实现回执。
 
 ---
 
@@ -559,6 +565,7 @@
 - [x] CA mismatch 停止未发 entry。
 - [x] 已持仓时 CA mismatch 不关闭 exit。
 - [x] AI 输出不能提升授权等级。
+- [x] 预授权 TTL 最大为 7 天，恰好 7 天通过，多 1ms 失败关闭。
 
 验收：
 
@@ -628,7 +635,7 @@
 
 目标：launch 前证明每个 wallet 的 principal、entry Gas 和 exit Gas 都可用。
 
-`BLOCKED_BY: WALLETS_NOT_FUNDED_AND_PRICE_POLICY_NOT_FULLY_FROZEN`。readiness 代码与测试完成；真实 10/10 资金状态需用户向新地址转入 ETH 后才能完成。
+`BLOCKED_BY: WALLETS_NOT_FUNDED`。价格和 Gas policy 已冻结；真实 10/10 资金状态仍需用户按最新冻结价格向新地址转入 ETH 后才能完成。
 
 - [x] 读取 chainId 4663。
 - [x] 读取每个 wallet native balance。
@@ -637,7 +644,10 @@
 - [x] 检查未知 pending transaction。
 - [x] 计算 5U principal raw。
 - [x] 计算 entry max Gas reservation。
-- [x] 计算 approve/sell Gas reservation。
+- [x] 计算 1 次 approve + 最多 3 次 sell 的 Gas reservation。
+- [x] 对 entry/approve/sell Gas 增加 30% safety margin。
+- [x] 校验 10 个钱包 aggregate principal + Gas 不超过 60U 换算后的 all-in cap。
+- [x] 禁止 readiness 或执行器自动补款。
 - [x] 输出 10/10 readiness 矩阵。
 - [x] 不在 readiness 输出 secret/RPC credential。
 
@@ -1097,7 +1107,11 @@
 - [x] 按确定性 lot 顺序逐钱包卖出。
 - [x] 3× 条件卖出一个 tranche 等价值。
 - [x] runner 维护 executable net peak。
-- [x] 25% drawdown/动量/时间三者最先触发退出。
+- [x] runner 使用 25% executable-net drawdown 或 24 小时上限；未 replay 的 momentum 信号不能触发。
+- [x] 回本前使用 60 分钟持仓上限。
+- [x] 初始止损基于入场后 executable-net baseline，而非含已知买税的 gross cost。
+- [x] 税窗关闭且 route 可执行后，连续两个 canonical blocks 低于 -30% 才退出。
+- [x] 无 route 时告警并重试已验证路线，不自动扩大滑点。
 - [x] dust 做经济性判断。
 - [x] 每次 exit 生成独立 EffectRecord。
 
@@ -1115,7 +1129,9 @@
 - [x] identity/profile drift 只停止未发 entry。
 - [x] open position 自动保持 exit service active。
 - [x] 人工 EXIT_NOW 有审计记录。
-- [x] EXIT_NOW 使用当前 quote 和最大滑点。
+- [x] 普通自动/人工 EXIT_NOW 使用当前 quote，最大滑点 5%。
+- [x] 独立 `BREAK_GLASS` 最大 20%，要求理由、第二确认和绑定 plan 的审计 ID。
+- [x] 常规退出不能自动升级为 `BREAK_GLASS`。
 - [x] 全局 shutdown 不静默遗留 position。
 
 验收：
@@ -1474,12 +1490,13 @@
 - [x] 当前私钥加载边界已迁到仓库外，并已有 secret scan/npm ignore 基础。
 - [x] 已测得当前质量基线：line 87.41%、branch 65.69%、function 88.61%。
 - [x] 本可执行 todo 已按小故事卡、阶段、测试和验收拆解。
-- [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 模块已实现并通过 197 项测试。
+- [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现并通过 207 项测试。
 - [x] 默认 live 入口在主网证据不完整时失败关闭，旧单钱包入口不进入 release artifact。
 - [x] 已生成 10 个仓库外 one-shot EOA 并验证 key/address correspondence，但未注资。
 
 ### 下一批必须先完成
 
 - [x] 完成 STORY-000～005 的仓库实现：Public 仓库、CI/CD 配置和工程质量基线。
-- [ ] 完成 STORY-010～014：最终 Factory/Pool/ABI/用户参数证据冻结。
+- [x] 完成 STORY-014：用户资金、价格、授权、cap 与退出参数冻结。
+- [ ] 完成 STORY-010～013：最终 Factory/Pool/ABI 主网证据冻结。
 - [x] 在不越过 `GATE-A` 授权的前提下完成通用资金执行核心；默认入口继续 fail closed。

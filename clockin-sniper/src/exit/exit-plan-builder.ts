@@ -6,6 +6,7 @@ import {
   type PositionLot,
   type RouteQuote,
 } from "../core/canonical.js";
+import { PRODUCTION_EXIT_SLIPPAGE_POLICY } from "./entry-exit-control.js";
 
 export function buildExitPlan(input: {
   position: AggregatePosition;
@@ -15,6 +16,7 @@ export function buildExitPlan(input: {
   policyStage: ExitPlan["policyStage"];
   maximumSlippageBps: number;
   validityEnvelopeId: string;
+  breakGlassAuthorizationId?: string;
   now: IsoTimestamp;
 }): ExitPlan {
   if (
@@ -23,6 +25,21 @@ export function buildExitPlan(input: {
     input.maximumSlippageBps >= 10_000
   ) {
     throw new RangeError("maximumSlippageBps must be between 0 and 9999");
+  }
+  const isBreakGlass = input.policyStage === "BREAK_GLASS";
+  const policyMaximum = isBreakGlass
+    ? PRODUCTION_EXIT_SLIPPAGE_POLICY.breakGlassMaximumSlippageBps
+    : PRODUCTION_EXIT_SLIPPAGE_POLICY.routineMaximumSlippageBps;
+  if (input.maximumSlippageBps > policyMaximum) {
+    throw new RangeError(
+      `${isBreakGlass ? "break-glass" : "routine"} exit plan exceeds policy slippage`,
+    );
+  }
+  if (isBreakGlass && (input.breakGlassAuthorizationId?.trim().length ?? 0) === 0) {
+    throw new Error("break-glass exit plan requires an explicit authorization audit ID");
+  }
+  if (!isBreakGlass && input.breakGlassAuthorizationId !== undefined) {
+    throw new Error("break-glass authorization cannot be attached to a routine exit plan");
   }
   if (
     input.quote.lotId !== input.lot.lotId ||
@@ -46,6 +63,7 @@ export function buildExitPlan(input: {
     quoteId: input.quote.quoteId,
     tokenInputRaw: input.tokenInputRaw.toString(),
     policyStage: input.policyStage,
+    breakGlassAuthorizationId: input.breakGlassAuthorizationId ?? null,
   })}`;
   return Object.freeze({
     exitPlanId,
@@ -55,6 +73,9 @@ export function buildExitPlan(input: {
     positionId: input.position.positionId,
     lotId: input.lot.lotId,
     policyStage: input.policyStage,
+    ...(input.breakGlassAuthorizationId === undefined
+      ? {}
+      : { breakGlassAuthorizationId: input.breakGlassAuthorizationId }),
     routeQuoteId: input.quote.quoteId,
     tokenInputRaw: input.tokenInputRaw.toString(),
     minOutputRaw: minOutputRaw.toString(),

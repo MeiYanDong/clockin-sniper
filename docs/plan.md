@@ -15,7 +15,7 @@
 
 1. 在 ClockIn CA 尚未公开、Factory 可能更换、创建和开启可能原子发生的情况下，提前监控官方 Factory、关联地址集群、新合约、全链目标事件、官网字段和外部流动性事件；
 2. 用 Factory 地址、runtime code hash、事件 ABI、creator、metadata、token/pool 代码和机制画像完成确定性身份绑定，名字只用于候选过滤；
-3. 以 `10 个独立 EOA × 每个 EOA 一次 5U` 的方式，在合约实际税率从初始值递减到实际 floor 的过程中分 10 档买入，总 ClockIn 本金预算固定为 50U，Gas 另计；
+3. 以 `10 个独立 EOA × 每个 EOA 一次、名义最多 5U` 的方式，在合约实际税率从初始值递减到实际 floor 的过程中分 10 档买入；ClockIn principal 固定上限 50U，principal 加预留 Gas 的 all-in 上限为 60U；
 4. 第一笔 5U 同时承担“最早库存”和“有界实盘 canary”两种职能，通过真实 receipt、token 到账、精确状态 quote/fork 反推出实际总摩擦，校准后续九笔；
 5. 买入后不能只留下残余仓位，必须同时支持发射池内盘卖出和 finalize/毕业后的外部 AMM 外盘卖出，按可执行净回款而非页面市值实施本金优先退出；
 6. `CLOCKIN_STRATEGY` 和 `FIRST_OFFICIAL_LAUNCH_STRATEGY` 必须完全隔离。当前 50U 只属于 ClockIn；“首币策略”默认只监控，不得把 ClockIn 预算当作 fallback 使用。
@@ -307,7 +307,7 @@ verified WSS log
 必须满足：
 
 - `strategyId = clockin-mainnet-v1`；
-- 预算 owner 为 ClockIn，principal cap = 50U；
+- 预算 owner 为 ClockIn，principal cap = 50U，all-in risk cap = 60U，禁止自动补款；
 - 10 个 lane，每个 principal cap = 5U；
 - name/symbol 可配置，但从不单独授权；
 - 预期 creator、metadata、token suffix、Factory/Profile 证据按最终公开信息填充；
@@ -1830,7 +1830,7 @@ Fork/replay 的目标是验证 calldata、状态变化和经济口径，不作�
 | “从 up 那个池子交叉验证” | external Pair/LP/finalize channel 与 Route Registry |
 | “网页监听最后保底” | 结构化官网/JSON/bundle watcher，保存 content hash，不能越过链上复核 |
 | “40% 两分钟递减” | actual fee getter、mechanism profile、10 档公式、chain state 驱动 |
-| “10 批，每次 5U” | 10 one-shot EOA、每 lane 5U、aggregate 50U、Gas 另计 |
+| “10 批，每次 5U” | 10 one-shot EOA、每 lane 名义最多 5U、principal 50U、all-in 60U |
 | “不用蚂蚁搬家，小钱包测税” | 第一笔 5U 同时做 canary，不额外无限 probe；0.25U adapter 仅后备 |
 | “实盘，不要模拟” | 生产 executor 仅真实路径；fork/replay 独立于生产 |
 | “云服务器实时准备” | Control/Execution services、systemd、readiness、外部 credentials、region benchmark |
@@ -1841,69 +1841,45 @@ Fork/replay 的目标是验证 calldata、状态变化和经济口径，不作�
 
 ---
 
-## 31. 仍需用户最终决策的参数
+## 31. 已冻结的用户决策（clockin-policy-v2）
 
-以下不会阻止先完成基础架构，但在生产资金授权前必须确认。
+2026-08-16，用户确认“退出最高滑点为 20%、授权有效一周，其余按推荐方案”。这里的 20% 被解释并实现为独立、二次确认的 `BREAK_GLASS` 绝对上限；常规自动/人工退出仍为 5%，且不能自动升级。完整决策由 [ADR 0006](./adr/0006-clockin-policy-v2-risk-and-authorization.md) 固化。
 
-### TBD_USER-01：首币策略是否投入额外资金
+| 决策域 | 最终值 | 执行语义 |
+|---|---:|---|
+| ClockIn principal | 50U | 10 个独立 one-shot EOA，每 lane 名义最多 5U |
+| 全包风险上限 | 60U | principal + entry/approval/最多三次 sell Gas + 30% Gas margin；禁止自动补款 |
+| 首币策略 | 0U | monitor-only，不借用 ClockIn 预算 |
+| 身份 gate | `HYBRID_CA_GATE` | lane 1 需要 L2；lanes 2–10 需要 L3 或 launch 前批准的强绑定 |
+| cap sizing | `SHRINK_TO_CAP` | 最多 5U、最少 1U；不足 1U 跳过；不拆分、不重分配；缩量后必须按同本金重报价 |
+| catch-up | `QUOTE_RANKED_BOUNDED` | 每个 canonical block 最多 2 lanes；无可信 quote 时最多一 lane |
+| 价格源 | 双源冻结 | 最大陈旧 30 秒，最大偏差 2%；固定 wei 仅能在 arming 前人工冻结 |
+| 授权 | 最长 7 天 | launch 前授权，事件后确定性自动执行；绑定 chain/profile/config/wallet/budget scope |
+| 初始止损 | -30% | 基于入场后可执行净清算基线；税窗结束且 route 可执行后，连续 2 个 canonical blocks 确认 |
+| 回本前最长持仓 | 60 分钟 | route 可执行时退出全部剩余仓位 |
+| 本金优先 | 2× | 基于可执行经济价值触发，并以实际回款更新进度 |
+| 第二止盈 | 3× | 卖出初始 token 数量的 10% |
+| runner | 25% drawdown / 24 小时 | momentum 在 replay 验证前禁用 |
+| 常规退出滑点 | 5% | 自动退出与普通 `EXIT_NOW` 的硬上限 |
+| 应急退出滑点 | 20% | 仅显式 `BREAK_GLASS`；新鲜 quote、理由、第二确认和审计 ID 缺一不可 |
+| 无流动性 | 告警并重试 | 只重试已验证 route，不用页面价格，不无限扩大滑点 |
+| 部署拓扑 | 1 active + 1 keyless observer | 区域由可重复 benchmark 决定；observer 无 signer credential |
+| micro probe | 默认禁用 | 不用无限小钱包买入来探税 |
 
-- 方案 A：0U，只监控和记录。**推荐默认。**
-- 方案 B：额外独立 5U，只做一笔 canary。
-- 方案 C：更多资金或复用 ClockIn 预算。首版不建议，也不支持。
-
-### TBD_USER-02：退出阈值
-
-- 推荐初值：约 2× 回收全部实际成本；约 3× 再卖一个 tranche；runner 约 25% peak drawdown。
-- 需要确认：是否接受这三个初值，以及最长持仓/动量失效时间。
-- 在确认前可实现参数化和 fork 校准，但不将其宣称为最优策略。
-
-### TBD_USER-03：后九笔的 CA 授权模式
-
-- `STRICT_CA`：第 2–10 笔必须等官网/官方文件 CA；最稳但可能错过 2 分钟。
-- `FACTORY_FULL`：完整 Factory identity 后十笔都可发；最快但对 Factory/creator 证据要求极高。
-- `HYBRID_CA_GATE`：第 1 笔 L2 即发；后九笔等 CA，或由 launch 前预批准的 Factory+creator+metadata 强绑定解锁。**推荐默认。**
-
-### TBD_USER-04：5U 是否允许因 cap 自动缩量
-
-- 方案 A：必须正好 5U；若 cap 不允许则跳过。**符合当前原始需求，默认。**
-- 方案 B：最多 5U，自动缩到合法 cap。
-- 不允许拆成多次买入，除非以后重新决策钱包/批次模型。
-
-### TBD_USER-05：跨 band 的 catch-up
-
-- `ONE_PER_BLOCK`；
-- `ALL_ELIGIBLE`；
-- `QUOTE_RANKED_BOUNDED`，默认每块最多 2 lanes。**推荐。**
-
-### TBD_USER-06：5U→ETH 的价格源和容差
-
-- 推荐：主价格源 + 独立交叉源，launch 前冻结，设置陈旧时间和偏差告警；
-- 备选：用户手工给固定 wei；
-- 需要确认 nominal 5U 可接受的换算偏差。
-
-### TBD_USER-07：下行退出
-
-当前推荐参数覆盖获利后的本金回收/止盈，但仍需确定：
-
-- 是否启用初始止损；
-- 最长持仓时间；
-- 没有流动性时只告警还是允许更大滑点；
-- 手动 `EXIT_NOW` 的最大滑点。
-
-默认不会为了“保证卖出”无限放大滑点。
+`clockin-policy-v2.productionArmable=true` 只表示上述 owner policy 已完整冻结。它不代表当前主网协议、钱包资金、云部署或退出 route 已就绪；系统总状态仍由独立 readiness gates 决定。
 
 ---
 
 ## 32. 开发开始前的最终确认清单
 
-在进入实现阶段前，建议用户只需要确认下面七句话：
+以下七项已完成确认，并作为后续实现与验收的不变量：
 
-1. ClockIn 使用 10 个独立 EOA，每个只买一次 5U，50U principal 总上限，Gas 另计；
+1. ClockIn 使用 10 个独立 EOA，每个只买一次、名义最多 5U，50U principal 上限与 60U all-in 上限同时生效；
 2. 首币策略默认只监控，不使用 ClockIn 的 50U；
 3. 主触发是已验证 Factory event，名字不能单独触发，官网 CA 是确认/冲突信号；
 4. 采用 `HYBRID_CA_GATE`，第一笔先发，后九笔由 CA 或预批准强身份组合解锁；
 5. 采用 fee getter + 第一笔 5U canary，不额外无限微量探测；
-6. 采用内盘/外盘双路、本金优先退出，接受或修改 2×/3×/25% 初始参数；
-7. 允许 cap 缩量与否、catch-up 并发、5U 换算容差和下行退出参数按第 31 节最终选择。
+6. 采用内盘/外盘双路、本金优先退出，并采用 2×/3×/25%、60 分钟/24 小时与双区块止损；
+7. cap 缩量、catch-up、价格容差、7 天授权、5% 常规与 20% `BREAK_GLASS` 参数按第 31 节冻结。
 
-确认后，开发应严格按 Phase 0 → Phase 7 推进，不先做界面、不先扩成通用机器人，也不在 exit 未闭合时把“买入完成”定义为项目完成。
+开发严格按 Phase 0 → Phase 12 的证据门推进，不先扩成通用机器人，也不在 exit 未闭合时把“买入完成”定义为项目完成。

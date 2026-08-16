@@ -26,6 +26,7 @@ export * from "./entry/micro-probe-policy.js";
 export * from "./entry/pool-observation.js";
 export * from "./entry/quote-policy.js";
 export * from "./exit/entry-exit-control.js";
+export * from "./exit/downside-policy.js";
 export * from "./exit/exit-plan-builder.js";
 export * from "./exit/principal-recovery.js";
 export * from "./exit/route-quote.js";

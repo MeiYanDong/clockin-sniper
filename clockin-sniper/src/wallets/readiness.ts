@@ -8,7 +8,10 @@ export interface WalletFundingPolicy {
   readonly approvalGasLimit: bigint;
   readonly sellGasLimit: bigint;
   readonly exitMaxFeePerGasWei: bigint;
-  readonly safetyMarginWei: bigint;
+  readonly maximumSellTransactions: number;
+  readonly gasSafetyMarginBps: number;
+  readonly aggregateAllInCapWei: bigint;
+  readonly automaticTopUpAllowed: boolean;
 }
 
 export interface WalletReadinessRow {
@@ -21,6 +24,7 @@ export interface WalletReadinessRow {
   readonly principalRequiredWei: bigint;
   readonly entryGasRequiredWei: bigint;
   readonly exitGasRequiredWei: bigint;
+  readonly gasSafetyMarginWei: bigint;
   readonly totalRequiredWei: bigint;
   readonly shortfallWei: bigint;
   readonly principalReady: boolean;
@@ -38,6 +42,10 @@ export interface WalletReadinessReport {
   readonly exitGasReadyWallets: number;
   readonly nonceCleanWallets: number;
   readonly readyWallets: number;
+  readonly aggregateRequiredWei: bigint;
+  readonly aggregateAllInCapWei: bigint;
+  readonly allInCapReady: boolean;
+  readonly automaticTopUpAllowed: false;
   readonly hotArmed: boolean;
 }
 
@@ -51,13 +59,44 @@ export async function inspectWalletReadiness(
   manifest: WalletManifest,
   policy: WalletFundingPolicy,
 ): Promise<WalletReadinessReport> {
+  if (
+    policy.batchValueWei <= 0n ||
+    policy.entryGasLimit <= 0n ||
+    policy.entryMaxFeePerGasWei <= 0n ||
+    policy.approvalGasLimit <= 0n ||
+    policy.sellGasLimit <= 0n ||
+    policy.exitMaxFeePerGasWei <= 0n ||
+    policy.aggregateAllInCapWei <= 0n
+  ) {
+    throw new RangeError("wallet funding quantities must be positive");
+  }
+  if (
+    !Number.isSafeInteger(policy.maximumSellTransactions) ||
+    policy.maximumSellTransactions <= 0
+  ) {
+    throw new RangeError("maximum sell transactions must be a positive safe integer");
+  }
+  if (
+    !Number.isSafeInteger(policy.gasSafetyMarginBps) ||
+    policy.gasSafetyMarginBps < 0 ||
+    policy.gasSafetyMarginBps > 10_000
+  ) {
+    throw new RangeError("gas safety margin must be between 0 and 10000 bps");
+  }
+  if (policy.automaticTopUpAllowed) {
+    throw new Error("automatic wallet top-up is disabled by production policy");
+  }
   const chainId = quantity(await requester.request<string>("eth_chainId"));
   if (chainId !== 4663n) throw new Error(`expected chainId 4663, received ${chainId}`);
   const entryGasRequiredWei = policy.entryGasLimit * policy.entryMaxFeePerGasWei;
   const exitGasRequiredWei =
-    (policy.approvalGasLimit + policy.sellGasLimit) * policy.exitMaxFeePerGasWei;
+    (policy.approvalGasLimit + policy.sellGasLimit * BigInt(policy.maximumSellTransactions)) *
+    policy.exitMaxFeePerGasWei;
+  const gasSafetyMarginWei =
+    ((entryGasRequiredWei + exitGasRequiredWei) * BigInt(policy.gasSafetyMarginBps) + 9_999n) /
+    10_000n;
   const totalRequiredWei =
-    policy.batchValueWei + entryGasRequiredWei + exitGasRequiredWei + policy.safetyMarginWei;
+    policy.batchValueWei + entryGasRequiredWei + exitGasRequiredWei + gasSafetyMarginWei;
 
   const rows = await Promise.all(
     manifest.entries.map(async (entry): Promise<WalletReadinessRow> => {
@@ -84,6 +123,7 @@ export async function inspectWalletReadiness(
         principalRequiredWei: policy.batchValueWei,
         entryGasRequiredWei,
         exitGasRequiredWei,
+        gasSafetyMarginWei,
         totalRequiredWei,
         shortfallWei: balanceWei >= totalRequiredWei ? 0n : totalRequiredWei - balanceWei,
         principalReady,
@@ -95,6 +135,8 @@ export async function inspectWalletReadiness(
     }),
   );
   const expectedWalletCount = manifest.entries.length;
+  const aggregateRequiredWei = totalRequiredWei * BigInt(expectedWalletCount);
+  const allInCapReady = aggregateRequiredWei <= policy.aggregateAllInCapWei;
   const report: WalletReadinessReport = Object.freeze({
     chainId,
     rows: Object.freeze(rows),
@@ -103,7 +145,11 @@ export async function inspectWalletReadiness(
     exitGasReadyWallets: rows.filter((row) => row.exitGasReady).length,
     nonceCleanWallets: rows.filter((row) => row.nonceClean).length,
     readyWallets: rows.filter((row) => row.ready).length,
-    hotArmed: expectedWalletCount === 10 && rows.every((row) => row.ready),
+    aggregateRequiredWei,
+    aggregateAllInCapWei: policy.aggregateAllInCapWei,
+    allInCapReady,
+    automaticTopUpAllowed: false,
+    hotArmed: expectedWalletCount === 10 && rows.every((row) => row.ready) && allInCapReady,
   });
   return report;
 }

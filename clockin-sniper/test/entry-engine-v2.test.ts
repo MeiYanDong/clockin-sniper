@@ -69,6 +69,7 @@ function quote(
   blockNumber = 100n,
   blockHash: `0x${string}` = HASH_A,
   poolObservationId = "observation-1",
+  principalRaw = 5_000n,
 ): QuoteSnapshot {
   return createQuoteSnapshot({
     laneId,
@@ -76,7 +77,7 @@ function quote(
     profileRevision: 1,
     blockNumber,
     blockHash,
-    principalRaw: 5_000n,
+    principalRaw,
     expectedTokenOutRaw: tokenOut,
     observedAtMs: 1_000_000,
     expiresAtMs: 2_000_000,
@@ -355,6 +356,7 @@ describe("ten independent entry lanes", () => {
   ) {
     return new TenLaneOrchestrator(plan(), {
       batchPrincipalRaw: 5_000n,
+      minimumShrunkPrincipalRaw: 1_000n,
       aggregatePrincipalCapRaw: 50_000n,
       catchUpPolicy,
       maxConcurrentCatchUpLanes: 2,
@@ -497,6 +499,75 @@ describe("ten independent entry lanes", () => {
     assert.ok(
       shrinking.snapshot().reduce((sum, lane) => sum + lane.dispatchedPrincipalRaw, 0n) <= 50_000n,
     );
+  });
+
+  it("skips dust-sized cap remnants and never redistributes unused principal", () => {
+    const shrinking = engine("ALL_ELIGIBLE", "SHRINK_TO_CAP");
+    assert.equal(shrinking.observe(observation({ capRaw: 999n }), "L2", new Map()).length, 0);
+    assert.equal(shrinking.snapshot()[0]?.state, "INCOMPATIBLE_5U_CAP");
+    assert.equal(
+      shrinking.snapshot().reduce((sum, lane) => sum + lane.dispatchedPrincipalRaw, 0n),
+      0n,
+    );
+  });
+
+  it("allocates a global cap once across lanes and requires a same-principal quote after shrink", () => {
+    const shrinking = engine("ALL_ELIGIBLE", "SHRINK_TO_CAP");
+    shrinking.observe(observation(), "L2", new Map());
+    shrinking.applyCanaryCalibration(false);
+    const next = observation({
+      observationId: "observation-global-cap",
+      block: { blockNumber: 101n, blockHash: HASH_B, blockTimestamp: 1_001n },
+      currentFeeBps: 0,
+      capScope: "GLOBAL",
+      capRaw: 8_000n,
+    });
+    const quotes = new Map([
+      [
+        "clockin-entry-02",
+        quote("clockin-entry-02", 10_000n, 101n, HASH_B, next.observationId, 5_000n),
+      ],
+      [
+        "clockin-entry-03",
+        quote("clockin-entry-03", 9_000n, 101n, HASH_B, next.observationId, 3_000n),
+      ],
+      ...Array.from({ length: 7 }, (_, index) => {
+        const laneId = `clockin-entry-${String(index + 4).padStart(2, "0")}`;
+        return [
+          laneId,
+          quote(laneId, 8_000n - BigInt(index), 101n, HASH_B, next.observationId, 5_000n),
+        ] as const;
+      }),
+    ]);
+    const dispatched = shrinking.observe(next, "L3", quotes);
+    assert.deepEqual(
+      dispatched.map((decision) => decision.principalRaw),
+      [5_000n, 3_000n],
+    );
+    assert.equal(
+      dispatched.reduce((sum, decision) => sum + decision.principalRaw, 0n),
+      8_000n,
+    );
+  });
+
+  it("defers a shrunk later lane when its quote was produced for nominal 5U", () => {
+    const shrinking = engine("ONE_PER_BLOCK", "SHRINK_TO_CAP");
+    shrinking.observe(observation(), "L2", new Map());
+    shrinking.applyCanaryCalibration(false);
+    const next = observation({
+      observationId: "observation-shrunk-requote",
+      block: { blockNumber: 101n, blockHash: HASH_B, blockTimestamp: 1_001n },
+      currentFeeBps: 0,
+      capRaw: 4_000n,
+    });
+    const quotes = new Map([
+      [
+        "clockin-entry-02",
+        quote("clockin-entry-02", 9_000n, 101n, HASH_B, next.observationId, 5_000n),
+      ],
+    ]);
+    assert.equal(shrinking.observe(next, "L3", quotes).length, 0);
+    assert.match(shrinking.snapshot()[1]?.reason ?? "", /QUOTE_PRINCIPAL_MISMATCH/);
   });
 
   it("enforces cap fixtures for per-tx, per-wallet and global scopes", () => {
@@ -721,6 +792,15 @@ describe("entry template and plan immutability", () => {
       quote: firstQuote,
       minOutputRaw: 9_500n,
     });
+    assert.throws(
+      () =>
+        freezeQuoteBoundedEntryPlan({
+          draft: { ...draft, valueRaw: "4000" },
+          quote: firstQuote,
+          minOutputRaw: 9_500n,
+        }),
+      /principal does not match/,
+    );
     const revisedQuote = reviseQuoteSnapshot(firstQuote, {
       poolObservationId: "observation-2",
       profileRevision: 1,

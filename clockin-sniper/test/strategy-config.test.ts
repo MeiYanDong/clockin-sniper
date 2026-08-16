@@ -7,14 +7,18 @@ import {
 } from "../src/config/strategy-config.js";
 
 describe("versioned production strategy configuration", () => {
-  it("freezes accepted parameters and exposes every unresolved production blocker", () => {
+  it("freezes the accepted v2 owner policy without claiming protocol readiness", () => {
     assert.equal(INITIAL_CLOCKIN_POLICY.clockInBudgetUsdMicros, 50_000_000n);
-    assert.equal(INITIAL_CLOCKIN_POLICY.productionArmable, false);
+    assert.equal(INITIAL_CLOCKIN_POLICY.allInRiskCapUsdMicros, 60_000_000n);
+    assert.equal(INITIAL_CLOCKIN_POLICY.routineExitMaximumSlippageBps, 500);
+    assert.equal(INITIAL_CLOCKIN_POLICY.breakGlassExitMaximumSlippageBps, 2_000);
+    assert.equal(INITIAL_CLOCKIN_POLICY.authorizationMaximumTtlMs, 604_800_000);
+    assert.equal(INITIAL_CLOCKIN_POLICY.productionArmable, true);
     assert.match(INITIAL_CLOCKIN_POLICY.configHash, /^sha256:/);
-    assert.equal(INITIAL_CLOCKIN_POLICY.blockers.length, 6);
+    assert.equal(INITIAL_CLOCKIN_POLICY.blockers.length, 0);
   });
 
-  it("becomes armable only after every owner-controlled bound is explicit", () => {
+  it("changes the immutable hash when reviewed metadata changes", () => {
     const {
       configHash: _hash,
       productionArmable: _armable,
@@ -23,13 +27,6 @@ describe("versioned production strategy configuration", () => {
     } = INITIAL_CLOCKIN_POLICY;
     const armed = freezeStrategyConfig({
       ...base,
-      revision: 2,
-      priceMaximumAgeMs: 30_000,
-      priceMaximumDeviationBps: 100,
-      maximumHoldingMs: 3_600_000,
-      momentumFailurePolicyId: "momentum-v1",
-      initialStopLossBps: 2_000,
-      manualExitMaximumSlippageBps: 500,
       changedAt: "2026-08-16T01:00:00.000Z",
     });
     assert.equal(armed.productionArmable, true);
@@ -37,7 +34,7 @@ describe("versioned production strategy configuration", () => {
     assert.notEqual(armed.configHash, INITIAL_CLOCKIN_POLICY.configHash);
   });
 
-  it("rejects a budget, identity or cap policy change instead of silently reusing v1", () => {
+  it("rejects budget, identity, cap or emergency-slippage drift instead of reusing v2", () => {
     const {
       configHash: _hash,
       productionArmable: _armable,
@@ -46,13 +43,17 @@ describe("versioned production strategy configuration", () => {
     } = INITIAL_CLOCKIN_POLICY;
     assert.throws(
       () => freezeStrategyConfig({ ...base, clockInBudgetUsdMicros: 55_000_000n }),
-      /50U/,
+      /50000000/,
     );
     assert.throws(
       () => freezeStrategyConfig({ ...base, caGateMode: "FACTORY_FULL" }),
       /HYBRID_CA_GATE/,
     );
-    assert.throws(() => freezeStrategyConfig({ ...base, capPolicy: "SHRINK_TO_CAP" }), /strict 5U/);
+    assert.throws(() => freezeStrategyConfig({ ...base, capPolicy: "STRICT_5U" }), /SHRINK_TO_CAP/);
+    assert.throws(
+      () => freezeStrategyConfig({ ...base, breakGlassExitMaximumSlippageBps: 2_001 }),
+      /2000/,
+    );
   });
 
   it("assigns an owner, default, range and change control to every production parameter", () => {
