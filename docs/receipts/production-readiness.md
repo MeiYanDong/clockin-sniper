@@ -10,7 +10,7 @@ This is a negative readiness receipt. The keyless Control Sentinel is active, an
 
 | Gate | Current evidence | Result |
 | --- | --- | --- |
-| Network identity | Production Control readback returned `chainId=4663`, head `38138108`, lag `0` at `2026-08-16T16:59:56Z` | PASS for that observation |
+| Network identity | Production Control readback returned `chainId=4663`, head `38143268`, lag `0` at `2026-08-16T17:08:31Z` | PASS for that observation |
 | Direct Sequencer write path | Production Control's invalid-transaction probe passed; no valid or signed transaction was sent | PASS for write-probe semantics only |
 | Production HTTP/WSS provider set | On `47.251.28.201` (`us-west-1`), authenticated HTTP and WSS plus the official Sequencer all reported ready; credentials were delivered through root-only files and were not logged | PASS for Control transport readiness |
 | Factory/Profile | Official mainnet Launcher Factory/final ABI not published; no current runtime/proxy hashes | BLOCKED |
@@ -23,7 +23,7 @@ This is a negative readiness receipt. The keyless Control Sentinel is active, an
 | DB/leases/vault | SQLite WAL, atomic lease/nonce/reservation and encrypted vault recovery tested locally; the keyless Control intentionally reports signer/DB lease not ready | PASS locally / BLOCKED for Execution Plane |
 | Inner/outer exit | Generic contracts, route registry, net quote and policy tested; final sell/router/finalize profile unavailable | BLOCKED |
 | UNKNOWN/open positions | Control reported zero unknown attempts and zero open positions; no Execution Plane database exists yet | PASS for Control / BLOCKED for executor evidence |
-| Artifact/systemd | Commit `fcbd70ff4c34f8c7d77e24e056de21cdf54434e0`, artifact SHA-256 `7a23dfd2ff43df325e4dada0164daeb761d95cda5b93202987f084807360fab0`, runtime Node `v24.19.0`; Control is enabled/active with `Type=notify`, a progressing 30s watchdog and `NRestarts=0`; Executor/Reconciler/Exit point to verified entrypoints but remain disabled/inactive | PASS for fail-closed runtime deployment; BLOCKED for execution activation |
+| Artifact/systemd | Commit `16d02f05a54a33bfd0bb8bbce627b1aef892a689`, artifact SHA-256 `3152cd2a48ad4cd614fbd6d3ca5fd3e45d1cba1d978c75f3be15384de80844d7`, capability revision `5`, runtime Node `v24.19.0`; Control is enabled/active with `Type=notify`, a progressing 30s watchdog and `NRestarts=0`; Executor/Reconciler/Exit point to verified entrypoints but remain disabled/inactive | PASS for fail-closed runtime deployment; BLOCKED for execution activation |
 | Canonical effects | No v2 entry or exit receipt/token delta/quote delta | BLOCKED |
 
 ## Blocking owners and evidence needed

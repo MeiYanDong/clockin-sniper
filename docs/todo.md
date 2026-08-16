@@ -1427,7 +1427,7 @@
 - [x] CD run `31940616256` 生成并发布 tgz、`SHA256SUMS` 与 `BUILD-METADATA.json`。
 - [x] GitHub Release v0.1.0 附 Tech Spec、ADRs、known limitations、测试/覆盖率与 checksum。
 - [x] 云机 Control 仅部署用户批准、可追溯到 commit `61d9be5` 的 artifact SHA；该批准不授权资金执行。
-- [x] 生产运行时升级到 commit `fcbd70f`；四服务 artifact SHA、Control watchdog 与三项资金服务 disabled/inactive 状态已回读。
+- [x] 生产运行时升级到 capability revision 5 / commit `16d02f0`；四服务 artifact SHA、Control watchdog 与三项资金服务 disabled/inactive 状态已回读。
 - [ ] Hot Executor 仅部署最终 `HOT_ARMED` 后批准的 release artifact。
 
 验收：

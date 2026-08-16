@@ -11,7 +11,7 @@ Never point the v2 systemd services at the legacy single-wallet `npm run live` e
 1. Select a successful release workflow run and record the source commit, package version, Node version, artifact name, and published SHA-256 checksum.
 2. Download the artifact and checksum through an authenticated administrative session.
 3. Verify the checksum on the target host before extracting it to a versioned directory such as `/opt/clockin-sniper/releases/<commit-sha>`.
-4. Run `npm ci --omit=dev` only when the release process deliberately ships source instead of a complete dependency bundle. Never allow an unrecorded lockfile update.
+4. Run `npm ci --omit=dev` only when the release process deliberately ships source instead of a complete dependency bundle. Invoke that installation's `npm-cli.js` with the versioned Node binary; calling `bin/npm` can still select the host Node through `/usr/bin/env`. Never allow an unrecorded lockfile update.
 5. Point `/opt/clockin-sniper/current` at the verified version only after the preflight below succeeds. Keep the previous version for rollback.
 
 The deployment receipt must include command exit status and a readback of the installed artifact hash. A local build or template render is not cloud deployment evidence.
