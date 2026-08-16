@@ -20,12 +20,13 @@ The deployment receipt must include command exit status and a readback of the in
 
 - `clockin-observer`: keyless Control Sentinel user. It receives only RPC credentials.
 - `clockin`: executor, reconciler, and exit user. It owns `/var/lib/clockin-sniper` but cannot read repository-external source keys directly after credentials are mounted.
+- `clockin-status`: non-login shared system group used only for traversing `/etc/clockin-sniper` and exchanging redacted status under `/run/clockin-status`; both units receive it through `SupplementaryGroups`.
 - `/etc/clockin-sniper/strategy.env`: non-secret, versioned strategy identifiers and paths only; mode `0640` or stricter.
 - `/etc/clockin-sniper/credentials`: RPC and vault credentials; root-owned mode `0700`, files `0400` or stricter.
 - `/etc/clockin-sniper/wallets`: ten entry key files; root-owned mode `0700`, files `0400`.
 - `/var/lib/clockin-sniper`: canonical SQLite database and encrypted signed-transaction vault; mode `0700`.
 
-Install `deploy/systemd/clockin-sniper.tmpfiles.conf`, create the two users with disabled login shells, and apply `systemd-tmpfiles --create`. Do not put a secret in a shell argument, environment value, unit file, process title, or journal.
+Create the two disabled-login users and the `clockin-status` system group before installing `deploy/systemd/clockin-sniper.tmpfiles.conf`, then apply `systemd-tmpfiles --create`. The parent `/etc/clockin-sniper` is `root:clockin-status 0750`, but `credentials/` and `wallets/` remain `root:root 0700`; this lets Control traverse to its public manifest without granting secret access. Do not put a secret in a shell argument, environment value, unit file, process title, or journal.
 
 ## Render and verify units
 
