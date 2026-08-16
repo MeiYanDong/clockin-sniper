@@ -113,7 +113,7 @@
 
 - [x] 覆盖率低于任一门槛时命令返回非零。
 - [x] 现有 70 个测试在覆盖率模式下仍全部通过。
-- [ ] 新故事卡 PR 显示测试数和覆盖率变化。
+- [x] 新故事卡 PR #5 的 CI job summary 显示测试数和覆盖率；远端 run `31940291085` 通过。
 
 ### STORY-003：建立 CI（P0）
 
@@ -138,7 +138,7 @@
 
 - [x] Public GitHub 仓库可看到 CI workflow。
 - [x] 首次 main run 全部通过。
-- [ ] 故意破坏格式或测试的临时分支能使 CI 失败，验证门禁有效后删除临时分支。
+- [x] 临时 PR #6 故意加入格式漂移；run `31940391409` 在 `format:check` 失败，随后已关闭 PR 并删除临时分支。
 
 ### STORY-004：建立 Continuous Delivery（P1）
 
@@ -1392,7 +1392,7 @@
 - [x] 更新 package version。
 - [x] 更新 CHANGELOG。
 - [x] 更新 capability manifest。
-- [ ] 创建 release PR。
+- [x] 创建 release PR #5：`feat(v2): implement evidence-bound ten-lane architecture`；required checks 已通过。
 - [ ] 合并后打签名或受保护 tag。
 - [ ] CD 生成 artifact/checksum。
 - [ ] GitHub Release 附 tech spec/ADRs/known limitations。
