@@ -683,12 +683,29 @@ describe("systemd credential and redacted service status boundary", () => {
       true,
     );
     assert.equal(
-      calls.some((args) => args.includes("--watchdog")),
+      calls.some((args) => args.includes("WATCHDOG=1") && args.includes(`--pid=${process.pid}`)),
       true,
     );
     assert.equal(
       calls.some((args) => args.includes("--stopping")),
       true,
     );
+  });
+
+  it("contains a failed watchdog notification so systemd owns the timeout decision", async () => {
+    let heartbeatCalls = 0;
+    const watchdog = new SystemdWatchdog(
+      { NOTIFY_SOCKET: "/run/systemd/notify", WATCHDOG_USEC: "500000" },
+      async (args) => {
+        if (args.includes("WATCHDOG=1")) {
+          heartbeatCalls += 1;
+          throw new Error("fixture notify failure");
+        }
+      },
+    );
+    await watchdog.ready("control ready");
+    await new Promise((resolve) => setTimeout(resolve, 275));
+    watchdog.stop();
+    assert.equal(heartbeatCalls, 1);
   });
 });
