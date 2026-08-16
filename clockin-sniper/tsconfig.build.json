@@ -8,6 +8,11 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["src/v2-index.ts", "src/live-v2.ts", "src/create-wallet-batch.ts"],
+  "include": [
+    "src/v2-index.ts",
+    "src/live-v2.ts",
+    "src/control-service.ts",
+    "src/create-wallet-batch.ts"
+  ],
   "exclude": ["test/**/*.ts"]
 }

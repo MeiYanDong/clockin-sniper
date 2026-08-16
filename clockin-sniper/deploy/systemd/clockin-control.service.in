@@ -9,6 +9,8 @@ User=clockin-observer
 Group=clockin-observer
 WorkingDirectory=@ARTIFACT_DIR@/clockin-sniper
 EnvironmentFile=/etc/clockin-sniper/strategy.env
+Environment=CLOCKIN_MANIFEST_PATH=/etc/clockin-sniper/public/entry-manifest.json
+Environment=CLOCKIN_STATE_DIR=/var/lib/clockin-control
 LoadCredential=rpc_http:/etc/clockin-sniper/credentials/rpc_http
 LoadCredential=rpc_wss:/etc/clockin-sniper/credentials/rpc_wss
 ExecStart=@CONTROL_EXECUTABLE@
@@ -21,7 +23,7 @@ KillSignal=SIGTERM
 UMask=0077
 RuntimeDirectory=clockin-control
 RuntimeDirectoryMode=0700
-StateDirectory=clockin-sniper
+StateDirectory=clockin-control
 StateDirectoryMode=0700
 StandardOutput=journal
 StandardError=journal
@@ -46,7 +48,7 @@ RestrictRealtime=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 AmbientCapabilities=
-ReadWritePaths=/var/lib/clockin-sniper /run/clockin-control
+ReadWritePaths=/var/lib/clockin-control /run/clockin-control
 
 [Install]
 WantedBy=multi-user.target
