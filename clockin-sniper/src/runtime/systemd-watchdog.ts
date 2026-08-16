@@ -56,9 +56,11 @@ export class SystemdWatchdog {
     this.#timer = setInterval(() => {
       if (this.#running) return;
       this.#running = true;
-      void this.#notify(["--watchdog", `--pid=${process.pid}`]).finally(() => {
-        this.#running = false;
-      });
+      void this.#notify([`--pid=${process.pid}`, "WATCHDOG=1"])
+        .catch(() => undefined)
+        .finally(() => {
+          this.#running = false;
+        });
     }, this.#intervalMs);
     this.#timer.unref();
   }
