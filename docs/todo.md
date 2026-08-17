@@ -1206,7 +1206,7 @@
 
 目标：云机以非 root、可重启、仓库外 credentials 运行。
 
-`CONTROL_DEPLOYED; EXECUTION_UNITS_INSTALLED_DISABLED_INACTIVE; EXECUTION_PLANE_BLOCKED_BY_FINAL_PROTOCOL_EVIDENCE`。`47.251.28.201` 上的无私钥 Control 已完成真实 systemd、`/proc`、journal、钱包、artifact 与 30 秒 watchdog 回读；Executor/Reconciler/Exit entrypoint 和 unit 已安装并核对 artifact SHA，但保持 `disabled/inactive`，仍因最终 Factory/ABI/route 未冻结而不授权、不启动。
+`RPC_MONITORING_PAUSED; ALL_PRODUCTION_UNITS_DISABLED_INACTIVE; EXECUTION_PLANE_BLOCKED_BY_FINAL_PROTOCOL_EVIDENCE`。`47.251.28.201` 上的无私钥 Control 曾完成真实 systemd、`/proc`、journal、钱包、artifact 与 30 秒 watchdog 回读；用户因 Chainstack RPC 用量于 `2026-08-17T06:20:59Z` 下令暂停后，Control 已 `disable --now`，四个 unit 现全部 `disabled/inactive`。私钥、凭证和发布物未删除，仍因最终 Factory/ABI/route 未冻结而不授权、不启动资金执行。
 
 - [x] 创建 Control Sentinel unit。
 - [x] 创建 Executor unit。
@@ -1225,6 +1225,7 @@
 - [x] 实现独立 production Executor/Reconciler/Exit entrypoint，release build 生成对应 `dist/*-service.js`。
 - [x] Control 服务实际 readback 与 artifact SHA 对齐，见 [2026-08-16-control-deployment.md](./receipts/2026-08-16-control-deployment.md)。
 - [x] 四个 production unit 指向同一 immutable release；Control enabled/active，Executor/Reconciler/Exit installed、disabled、inactive，arm marker absent，见 [2026-08-17-production-runtime-deployment.md](./receipts/2026-08-17-production-runtime-deployment.md)。
+- [x] 按用户指令停止 Chainstack 流量：Control 已 `disable --now`，四个 unit 均 `disabled/inactive`，无残留 ClockIn 进程、timer 或 cron，见 [2026-08-17-rpc-monitoring-pause.md](./receipts/2026-08-17-rpc-monitoring-pause.md)。
 - [ ] Executor/Reconciler/Exit 在最终协议证据完成后授权、启动并回读 canonical state。
 
 验收：
@@ -1372,6 +1373,8 @@
 
 `BLOCKED_BY: READINESS_RECEIPT_IS_NOT_HOT_ARMED`。已创建 [receipts/production-readiness.md](./receipts/production-readiness.md) 负面回执，逐项记录证据、blocker 和 owner，不伪造 `HOT_ARMED`。
 
+当前运行态额外标记为 `RPC_MONITORING_PAUSED`；下列已勾选项是暂停前已完成的生产回读，不代表现在仍有实时 RPC 健康、链头或价格快照。
+
 - [x] chainId/current head。
 - [x] HTTP/WSS/direct Sequencer health（生产 Control readback）。
 - [ ] Factory/Profile current bytecode readback。
@@ -1509,7 +1512,7 @@
 - [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现；生产 profile/adapters/三服务/interlock/watchdog 已补齐并通过 226 项测试。
 - [x] 默认 live 入口在主网证据不完整时失败关闭，旧单钱包入口不进入 release artifact。
 - [x] 已生成 10 个仓库外 one-shot EOA，完成本地与服务器 10/10 key/address correspondence，并为每个钱包注入 `0.0032 ETH`；生产回读 nonce 均为 `0/0`。
-- [x] 已在 `47.251.28.201` 部署 keyless Control Sentinel，生产 HTTP/WSS/Sequencer、钱包 readiness、30 秒 watchdog 和 artifact SHA 回读通过；Executor/Reconciler/Exit unit 已安装但保持 disabled/inactive、未授权，arm marker absent。
+- [x] 已在 `47.251.28.201` 部署并验证 keyless Control Sentinel；随后按用户的 RPC 成本决策暂停。当前 Control/Executor/Reconciler/Exit 全部 disabled/inactive、无 ClockIn 进程、未授权，arm marker absent。
 
 ### 下一批必须先完成
 
