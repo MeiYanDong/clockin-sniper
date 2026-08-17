@@ -28,7 +28,7 @@ npm ci
 npm run verify
 ```
 
-2026-08-17 本地证据：233/233 tests；最近一次完整 verify 为 line `88.77%`、branch `68.27%`、function `91.44%`。CI 强制最低 line 85%、branch 60%、function 80%，并执行格式、lint、strict typecheck、仓库与 Git 历史 secret scan、production dependency audit 和 package audit。
+2026-08-17 本地证据：234/234 tests；最近一次完整 verify 为 line `88.77%`、branch `68.27%`、function `91.44%`。CI 强制最低 line 85%、branch 60%、function 80%，并执行格式、lint、strict typecheck、仓库与 Git 历史 secret scan、production dependency audit 和 package audit。
 
 ## 文档
 

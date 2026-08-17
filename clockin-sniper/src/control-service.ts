@@ -419,14 +419,15 @@ async function main(): Promise<void> {
     identityRefreshMs,
     walletRefreshMs,
   };
-  let chainPollRunning = false;
+  let headPollRunning = false;
+  let identityCheckRunning = false;
   let walletRefreshRunning = false;
   let publishRunning = false;
   let stopping = false;
 
   const verifyPublicIdentity = async (): Promise<void> => {
-    if (chainPollRunning || stopping) return;
-    chainPollRunning = true;
+    if (identityCheckRunning || stopping) return;
+    identityCheckRunning = true;
     try {
       const identity = await verifyRobinhoodMainnet(http);
       if (state.latestBlock > 0n && identity.blockNumber < state.latestBlock) {
@@ -444,13 +445,13 @@ async function main(): Promise<void> {
         `public RPC identity check failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     } finally {
-      chainPollRunning = false;
+      identityCheckRunning = false;
     }
   };
 
   const pollPublicHead = async (): Promise<void> => {
-    if (chainPollRunning || stopping) return;
-    chainPollRunning = true;
+    if (headPollRunning || stopping) return;
+    headPollRunning = true;
     try {
       const current = hexToBigInt("eth_blockNumber", await http.request<string>("eth_blockNumber"));
       if (state.latestBlock > 0n && current < state.latestBlock) {
@@ -467,7 +468,7 @@ async function main(): Promise<void> {
         `public RPC head poll failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     } finally {
-      chainPollRunning = false;
+      headPollRunning = false;
     }
   };
 
