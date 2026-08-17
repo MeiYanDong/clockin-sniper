@@ -10,7 +10,7 @@ This is a negative execution-readiness receipt, updated after deploying the owne
 
 | Gate | Current evidence | Result |
 | --- | --- | --- |
-| Network identity | Public Control returned `chainId=4663`; head advanced from `38667399` to `38670245`, and the first scheduled five-minute identity recheck advanced its timestamp and `eth_chainId` counter | PASS CURRENT for public observation |
+| Network identity | Public Control returned `chainId=4663`; head advanced from `38667399` to `38673034`, and two scheduled five-minute identity rechecks advanced their timestamps and `eth_chainId` counter | PASS CURRENT for public observation |
 | Direct Sequencer write path | Historical invalid-transaction probe passed; public Control deliberately has no Sequencer capability | PASS historical semantics / NOT ENABLED outside paid execution window |
 | Production HTTP/WSS provider set | Public Control reports `robinhood-public-http`, `OFFICIAL_PUBLIC_HTTP_ONLY`, and `paidRpcCapability=false`; paid services and marker are absent | PASS CURRENT for public observation / deliberately NOT PAID-READY |
 | Factory/Profile | Official mainnet Launcher Factory/final ABI not published; no current runtime/proxy hashes | BLOCKED |

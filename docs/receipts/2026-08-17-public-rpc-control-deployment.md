@@ -18,7 +18,7 @@ This receipt proves that the production Control process is running against the h
 | Build Node | `v25.9.0` |
 | Production runtime Node | `v24.19.0` from a versioned absolute path |
 | Capability manifest | revision `9`, SHA-256 `3ac45df85eda21645ca675f99ba2e29d50641c678443894d8b143883937fb524` |
-| Readback window | `2026-08-17T07:43:44Z` through `2026-08-17T07:50:06Z` |
+| Readback window | `2026-08-17T07:43:44Z` through `2026-08-17T07:54:46Z` |
 
 The prior immutable releases `f610f0e6e169f71acee574fe91a31a4eb5bfbd0e`, `ebbd827be2989d8aa8b1a42871ab774bf530381b`, `f14fe3eb27efb205acb1e6ab31608aea63564af5`, and `16d02f05a54a33bfd0bb8bbce627b1aef892a689`, plus pre-change unit copies, remain available for rollback.
 
@@ -48,7 +48,7 @@ At the final readback:
 - watchdog timestamps advanced over more than two 30-second intervals;
 - `/health` returned HTTP `200`, `/ready` returned HTTP `503`, and `/dashboard` returned HTTP `200`;
 - `503` was correct because final Factory/Profile, signers, Execution WAL/lease, entry/exit readiness and verified exit routes are unavailable;
-- chain identity was `4663`; the observed head progressed from `38667399` to `38670245` during the held readback;
+- chain identity was `4663`; the observed head progressed from `38667399` to `38673034` during the held readback;
 - three website fingerprints were present;
 - the hourly public readiness pass reported 10/10 funded wallets, 10/10 clean nonces and all-in cap ready at that snapshot; this is observation evidence, not a transaction authorization.
 
@@ -65,13 +65,13 @@ walletRefreshMs=3600000
 minimumRequestIntervalMs=500
 ```
 
-The metered public counter increased from 73 to 218 while the held check crossed the first five-minute identity-recheck boundary and the head advanced. At `2026-08-17T07:50:06Z` it reported 218 total public calls: 184 `eth_blockNumber`, 3 `eth_chainId`, 1 `eth_gasPrice`, 10 `eth_getBalance`, and 20 `eth_getTransactionCount`, with `throttledRetries=0`. The paced startup completed 10/10 wallet funding and nonce readiness without HTTP 429. Those are requests to the official public endpoint, not Chainstack.
+The metered public counter increased from 73 to 361 while the held check crossed two five-minute identity-recheck boundaries and the head advanced. At `2026-08-17T07:54:46Z` it reported 361 total public calls: 326 `eth_blockNumber`, 4 `eth_chainId`, 1 `eth_gasPrice`, 10 `eth_getBalance`, and 20 `eth_getTransactionCount`. The paced startup completed 10/10 wallet funding and nonce readiness with zero retry. A later public request received one HTTP 429 and recovered through the bounded retry path; `throttledRetries=1`, the journal contained zero application error events, and no provider fallback occurred. Those are requests to the official public endpoint, not Chainstack.
 
 ## Public rate-limit correction
 
 The first metadata-aligned restart exposed a genuine operational fault: the official public endpoint returned HTTP 429 during the concurrent 31-call wallet-readiness burst, leaving that cold snapshot missing while chain-head and website monitoring continued. No paid endpoint or execution service was used. The deployed revision 8 serializes all public JSON-RPC calls with a 500 ms minimum interval and permits only two HTTP-429 retries with one- and two-second backoff. Automated tests assert ordering, physical-request counts and retry counts; the final production restart completed the same readiness pass with zero retry and no unresolved 429.
 
-The subsequent held readback exposed a separate scheduling fault: the two-second head timer and five-minute identity timer were phase-aligned, and a shared overlap flag could make every periodic identity call return before it reached the public request queue. Revision 9 gives head polling and identity verification independent overlap guards while retaining the single physical-request pacing queue. In production, `lastIdentityCheckAt` advanced from `2026-08-17T07:43:44.960Z` to `2026-08-17T07:49:01.697Z`, `eth_chainId` increased from 2 to 3, head polling continued, retries stayed at zero, and `NRestarts` stayed at zero. This proves the periodic identity path actually executed rather than merely compiling.
+The subsequent held readback exposed a separate scheduling fault: the two-second head timer and five-minute identity timer were phase-aligned, and a shared overlap flag could make every periodic identity call return before it reached the public request queue. Revision 9 gives head polling and identity verification independent overlap guards while retaining the single physical-request pacing queue. In production, `lastIdentityCheckAt` advanced from `2026-08-17T07:43:44.960Z` to `2026-08-17T07:49:01.697Z` and then `2026-08-17T07:54:01.700Z`; `eth_chainId` increased from 2 to 4, head polling continued, and `NRestarts` stayed at zero. This proves two periodic identity executions rather than merely compiling the path.
 
 ## Paid capability and signing boundary
 
