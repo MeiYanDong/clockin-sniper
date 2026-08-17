@@ -11,22 +11,22 @@ This receipt proves that the production Control process is running against the h
 | Item | Verified readback |
 |---|---|
 | Host | `47.251.28.201`, SSH management port `2222` |
-| Source commit | `f610f0e6e169f71acee574fe91a31a4eb5bfbd0e` |
-| Immutable release | `/opt/clockin-sniper/releases/f610f0e6e169f71acee574fe91a31a4eb5bfbd0e` |
-| Uploaded artifact SHA-256 | `731aa8b49d4a2c6ce47c430ac50f962ba7ffb6f7011caab55ad80624ea759958` |
+| Source commit | `2a5e9e3586a395b62731b961bb97087ab96786a5` |
+| Immutable release | `/opt/clockin-sniper/releases/2a5e9e3586a395b62731b961bb97087ab96786a5` |
+| Uploaded artifact SHA-256 | `0d4ad1f039e74e34bc21255c492d79a1154da8b778df38281c3327857ad634b2` |
 | Package version | `0.1.0` |
 | Build Node | `v25.9.0` |
 | Production runtime Node | `v24.19.0` from a versioned absolute path |
-| Capability manifest | revision `8`, SHA-256 `5a24c789ae6951d482ff1a3b0aee38fa2dbbb6a82c438a1f3cd612f84bc8eb7d` |
-| Readback window | `2026-08-17T07:31:23Z` through `2026-08-17T07:33:20Z` |
+| Capability manifest | revision `9`, SHA-256 `3ac45df85eda21645ca675f99ba2e29d50641c678443894d8b143883937fb524` |
+| Readback window | `2026-08-17T07:43:44Z` through `2026-08-17T07:50:06Z` |
 
-The prior immutable releases `ebbd827be2989d8aa8b1a42871ab774bf530381b`, `f14fe3eb27efb205acb1e6ab31608aea63564af5`, and `16d02f05a54a33bfd0bb8bbce627b1aef892a689`, plus pre-change unit copies, remain available for rollback.
+The prior immutable releases `f610f0e6e169f71acee574fe91a31a4eb5bfbd0e`, `ebbd827be2989d8aa8b1a42871ab774bf530381b`, `f14fe3eb27efb205acb1e6ab31608aea63564af5`, and `16d02f05a54a33bfd0bb8bbce627b1aef892a689`, plus pre-change unit copies, remain available for rollback.
 
 Installed entrypoint SHA-256 values:
 
 | Entrypoint | SHA-256 |
 |---|---|
-| `dist/control-service.js` | `31286fa2dec1390c303536552aedd812123113214c3f34448c4c3a4d52937be7` |
+| `dist/control-service.js` | `3811b106c8bc5a879394048cabd9ae1ca5f98c3234eec873da05c43a69a0e462` |
 | `dist/executor-service.js` | `6cc758b7adc2bb97314685cbfd83de803fca47a5f078eec9e892505356e58b34` |
 | `dist/reconciler-service.js` | `a87ac25214f6b2c2a3620fbdd475868df3c5503171177e472b714c90745c3abd` |
 | `dist/exit-service.js` | `e79c2f91d723b74eb813a449716322c12f5f45d5f77c0a797f8f0f37a062e7d6` |
@@ -35,20 +35,20 @@ Rendered unit SHA-256 values:
 
 | Unit | SHA-256 |
 |---|---|
-| `clockin-control.service` | `623e75d3b805a49b47ad085cee8f6189ceff05899c7dc6c4f3ba4bf1144c4b7d` |
-| `clockin-executor.service` | `671ceb40bd55679e5a221ebc4b5a7f8b914b00721c64510507629fcc1ae64bd3` |
-| `clockin-reconciler.service` | `666fb06e02000badbda3a529f9bce6e0f82d718ece4546d9b308d91bd5fc94cd` |
-| `clockin-exit.service` | `7caf7889d12d574ca23896c6e17de8619cafec2c8b077b8c8502a2d22f083eac` |
+| `clockin-control.service` | `75c493a989b12b6241442269d740c6b4b525bdf11617c6c131517ebf5bc56f59` |
+| `clockin-executor.service` | `d721c4da8946cb095c3535155e64c49ea31535338ed550ddb10c903c19ea951d` |
+| `clockin-reconciler.service` | `190f0ec6c8a2ca9c224b57fa025b81ff679d9bf839cadfdd3d67bd4b4f77262b` |
+| `clockin-exit.service` | `418f1722527e8406b2768895244d51fa0f8d35c0a02ec779181fbe5496650bf0` |
 
 ## Public Control readback
 
 At the final readback:
 
-- `clockin-control.service` was `enabled/active/running`, main PID `230707`, with `NRestarts=0`;
+- `clockin-control.service` was `enabled/active/running`, main PID `232507`, with `NRestarts=0`;
 - watchdog timestamps advanced over more than two 30-second intervals;
 - `/health` returned HTTP `200`, `/ready` returned HTTP `503`, and `/dashboard` returned HTTP `200`;
 - `503` was correct because final Factory/Profile, signers, Execution WAL/lease, entry/exit readiness and verified exit routes are unavailable;
-- chain identity was `4663`; the observed head progressed from `38659480` to `38660018` during the held readback;
+- chain identity was `4663`; the observed head progressed from `38667399` to `38670245` during the held readback;
 - three website fingerprints were present;
 - the hourly public readiness pass reported 10/10 funded wallets, 10/10 clean nonces and all-in cap ready at that snapshot; this is observation evidence, not a transaction authorization.
 
@@ -65,11 +65,13 @@ walletRefreshMs=3600000
 minimumRequestIntervalMs=500
 ```
 
-The metered public counter increased from 46 to 73 during a 55-second held check while the head advanced. At `2026-08-17T07:33:19Z` it reported 83 total public calls: 50 `eth_blockNumber`, 2 `eth_chainId`, 1 `eth_gasPrice`, 10 `eth_getBalance`, and 20 `eth_getTransactionCount`, with `throttledRetries=0`. The paced startup completed 10/10 wallet funding and nonce readiness without HTTP 429. Those are requests to the official public endpoint, not Chainstack.
+The metered public counter increased from 73 to 218 while the held check crossed the first five-minute identity-recheck boundary and the head advanced. At `2026-08-17T07:50:06Z` it reported 218 total public calls: 184 `eth_blockNumber`, 3 `eth_chainId`, 1 `eth_gasPrice`, 10 `eth_getBalance`, and 20 `eth_getTransactionCount`, with `throttledRetries=0`. The paced startup completed 10/10 wallet funding and nonce readiness without HTTP 429. Those are requests to the official public endpoint, not Chainstack.
 
 ## Public rate-limit correction
 
 The first metadata-aligned restart exposed a genuine operational fault: the official public endpoint returned HTTP 429 during the concurrent 31-call wallet-readiness burst, leaving that cold snapshot missing while chain-head and website monitoring continued. No paid endpoint or execution service was used. The deployed revision 8 serializes all public JSON-RPC calls with a 500 ms minimum interval and permits only two HTTP-429 retries with one- and two-second backoff. Automated tests assert ordering, physical-request counts and retry counts; the final production restart completed the same readiness pass with zero retry and no unresolved 429.
+
+The subsequent held readback exposed a separate scheduling fault: the two-second head timer and five-minute identity timer were phase-aligned, and a shared overlap flag could make every periodic identity call return before it reached the public request queue. Revision 9 gives head polling and identity verification independent overlap guards while retaining the single physical-request pacing queue. In production, `lastIdentityCheckAt` advanced from `2026-08-17T07:43:44.960Z` to `2026-08-17T07:49:01.697Z`, `eth_chainId` increased from 2 to 3, head polling continued, retries stayed at zero, and `NRestarts` stayed at zero. This proves the periodic identity path actually executed rather than merely compiling.
 
 ## Paid capability and signing boundary
 

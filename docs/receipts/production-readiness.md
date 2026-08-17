@@ -10,20 +10,20 @@ This is a negative execution-readiness receipt, updated after deploying the owne
 
 | Gate | Current evidence | Result |
 | --- | --- | --- |
-| Network identity | Public Control returned `chainId=4663`; head advanced from `38650322` to `38650758` in the held readback | PASS CURRENT for public observation |
+| Network identity | Public Control returned `chainId=4663`; head advanced from `38667399` to `38670245`, and the first scheduled five-minute identity recheck advanced its timestamp and `eth_chainId` counter | PASS CURRENT for public observation |
 | Direct Sequencer write path | Historical invalid-transaction probe passed; public Control deliberately has no Sequencer capability | PASS historical semantics / NOT ENABLED outside paid execution window |
 | Production HTTP/WSS provider set | Public Control reports `robinhood-public-http`, `OFFICIAL_PUBLIC_HTTP_ONLY`, and `paidRpcCapability=false`; paid services and marker are absent | PASS CURRENT for public observation / deliberately NOT PAID-READY |
 | Factory/Profile | Official mainnet Launcher Factory/final ABI not published; no current runtime/proxy hashes | BLOCKED |
 | Exact/topic-wide channels | Generic channels tested; final address/topic/profile configuration unavailable | BLOCKED |
 | Wallet identity | 10/10 external key/address correspondence verified locally and again against the root-only server key files without printing keys | PASS |
-| Wallet funding/nonces | The public hourly readiness pass reported 10/10 funded wallets and 10/10 clean nonces without loading keys | PASS at `2026-08-17T07:16:01Z`; not a launch-time authorization |
+| Wallet funding/nonces | The public hourly readiness pass reported 10/10 funded wallets and 10/10 clean nonces without loading keys | PASS at `2026-08-17T07:44:00Z`; not a launch-time authorization |
 | Principal/entry Gas/exit Gas | The same public snapshot reported `readyWallets=10` and `allInCapReady=true` under the frozen risk model | PASS at the latest hourly snapshot; must refresh in paid preparation |
 | Price Snapshot | Control produced a fresh dual-source snapshot at startup, but the 30-second launch-time freshness gate intentionally expires between hourly cold wallet checks | BLOCKED for HOT_ARMED; refresh in explicit real-snipe preparation |
 | Strategy authorization | Owner policy complete: `clockin-policy-v2`, revision `2`, config hash `sha256:a03505b3f0da3a92a5c45f70ff584ab26326ba9940996446325449392f7fb121`; 7-day TTL boundary tested; no current production AuthorizationRecord exists | PASS locally / BLOCKED for current launch |
 | DB/leases/vault | SQLite WAL, atomic lease/nonce/reservation and encrypted vault recovery tested locally; the keyless Control intentionally reports signer/DB lease not ready | PASS locally / BLOCKED for Execution Plane |
 | Inner/outer exit | Generic contracts, route registry, net quote and policy tested; final sell/router/finalize profile unavailable | BLOCKED |
 | UNKNOWN/open positions | The last Control readback reported zero unknown attempts and zero open positions; no Execution Plane database exists yet | PASS at the last readback / BLOCKED for current executor evidence |
-| Artifact/systemd | Commit `f610f0e6e169f71acee574fe91a31a4eb5bfbd0e`, artifact SHA-256 `731aa8b49d4a2c6ce47c430ac50f962ba7ffb6f7011caab55ad80624ea759958`, capability revision `8`, runtime Node `v24.19.0`; Control is enabled/active with paced public RPC and no credential capability, three paid services are disabled/inactive and both markers are absent | PASS for public monitoring; BLOCKED for paid execution activation |
+| Artifact/systemd | Commit `2a5e9e3586a395b62731b961bb97087ab96786a5`, artifact SHA-256 `0d4ad1f039e74e34bc21255c492d79a1154da8b778df38281c3327857ad634b2`, capability revision `9`, runtime Node `v24.19.0`; Control is enabled/active with paced public RPC, independent periodic identity rechecks and no credential capability, three paid services are disabled/inactive and both markers are absent | PASS for public monitoring; BLOCKED for paid execution activation |
 | Canonical effects | No v2 entry or exit receipt/token delta/quote delta | BLOCKED |
 
 ## Blocking owners and evidence needed
