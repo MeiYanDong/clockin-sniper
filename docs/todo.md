@@ -1477,6 +1477,7 @@
 - [x] 只 `enable --now clockin-control`；Executor/Reconciler/Exit 保持 disabled/inactive。
 - [x] 验证 Control 进程没有 credentials directory、RPC env 或 paid endpoint capability。
 - [x] 验证 snapshot 为 `OFFICIAL_PUBLIC_HTTP_ONLY`、public endpoint class、计数持续增长且 head 推进。
+- [x] 验证生产启动钱包 readiness 在 500ms 公共限速下完成 10/10，`throttledRetries=0`，未遗留 HTTP 429。
 - [x] 验证 `/health=200`、`/ready=503`、Dashboard 可读；503 表示尚未 `HOT_ARMED`，不是 Control 宕机。
 - [x] 验证 `PAID_RPC_APPROVED` 与 `PRODUCTION_ARM_APPROVED` 均 absent，无签名、广播或资金变化。
 - [x] 保存部署回执并同步 Public GitHub/CI。

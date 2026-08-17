@@ -11,22 +11,22 @@ This receipt proves that the production Control process is running against the h
 | Item | Verified readback |
 |---|---|
 | Host | `47.251.28.201`, SSH management port `2222` |
-| Source commit | `f14fe3eb27efb205acb1e6ab31608aea63564af5` |
-| Immutable release | `/opt/clockin-sniper/releases/f14fe3eb27efb205acb1e6ab31608aea63564af5` |
-| Uploaded artifact SHA-256 | `56c3d27fec25562f7a644ff55bacf8ee4c3ca808f867383eb947ebdac2a58a9f` |
+| Source commit | `f610f0e6e169f71acee574fe91a31a4eb5bfbd0e` |
+| Immutable release | `/opt/clockin-sniper/releases/f610f0e6e169f71acee574fe91a31a4eb5bfbd0e` |
+| Uploaded artifact SHA-256 | `731aa8b49d4a2c6ce47c430ac50f962ba7ffb6f7011caab55ad80624ea759958` |
 | Package version | `0.1.0` |
 | Build Node | `v25.9.0` |
 | Production runtime Node | `v24.19.0` from a versioned absolute path |
-| Capability manifest | revision `6`, SHA-256 `697d5430826c3cf9ef2acb4c66527767fd6a0b61cad67f3e478925e5faed8653` |
-| Readback window | `2026-08-17T07:15:58Z` through `2026-08-17T07:18:59Z` |
+| Capability manifest | revision `8`, SHA-256 `5a24c789ae6951d482ff1a3b0aee38fa2dbbb6a82c438a1f3cd612f84bc8eb7d` |
+| Readback window | `2026-08-17T07:31:23Z` through `2026-08-17T07:33:20Z` |
 
-The prior immutable release `16d02f05a54a33bfd0bb8bbce627b1aef892a689` and pre-change unit copies remain available for rollback.
+The prior immutable releases `ebbd827be2989d8aa8b1a42871ab774bf530381b`, `f14fe3eb27efb205acb1e6ab31608aea63564af5`, and `16d02f05a54a33bfd0bb8bbce627b1aef892a689`, plus pre-change unit copies, remain available for rollback.
 
 Installed entrypoint SHA-256 values:
 
 | Entrypoint | SHA-256 |
 |---|---|
-| `dist/control-service.js` | `4a843218a7ce9fe528315ac690ef9899d4c0c21dc0ff67e862bebface76d4a96` |
+| `dist/control-service.js` | `31286fa2dec1390c303536552aedd812123113214c3f34448c4c3a4d52937be7` |
 | `dist/executor-service.js` | `6cc758b7adc2bb97314685cbfd83de803fca47a5f078eec9e892505356e58b34` |
 | `dist/reconciler-service.js` | `a87ac25214f6b2c2a3620fbdd475868df3c5503171177e472b714c90745c3abd` |
 | `dist/exit-service.js` | `e79c2f91d723b74eb813a449716322c12f5f45d5f77c0a797f8f0f37a062e7d6` |
@@ -35,20 +35,20 @@ Rendered unit SHA-256 values:
 
 | Unit | SHA-256 |
 |---|---|
-| `clockin-control.service` | `0ebb286770a123271dc9e7e50b512564d675c4e7b37c759b22022d0c74ddc9d1` |
-| `clockin-executor.service` | `1221e0b5e5c8d08ca65429cfc10c9f53dc824bdb9958f63b782a1ff7b6aacc18` |
-| `clockin-reconciler.service` | `53d492b9574330c0179c5589edc77487f371b50757880716037bac673885856f` |
-| `clockin-exit.service` | `f79451df06738496f46dadc21ae28d2629ec7dcf440d138f3913ab501b8aa1ef` |
+| `clockin-control.service` | `623e75d3b805a49b47ad085cee8f6189ceff05899c7dc6c4f3ba4bf1144c4b7d` |
+| `clockin-executor.service` | `671ceb40bd55679e5a221ebc4b5a7f8b914b00721c64510507629fcc1ae64bd3` |
+| `clockin-reconciler.service` | `666fb06e02000badbda3a529f9bce6e0f82d718ece4546d9b308d91bd5fc94cd` |
+| `clockin-exit.service` | `7caf7889d12d574ca23896c6e17de8619cafec2c8b077b8c8502a2d22f083eac` |
 
 ## Public Control readback
 
 At the final readback:
 
-- `clockin-control.service` was `enabled/active/running`, main PID `228813`, with `NRestarts=0`;
+- `clockin-control.service` was `enabled/active/running`, main PID `230707`, with `NRestarts=0`;
 - watchdog timestamps advanced over more than two 30-second intervals;
 - `/health` returned HTTP `200`, `/ready` returned HTTP `503`, and `/dashboard` returned HTTP `200`;
 - `503` was correct because final Factory/Profile, signers, Execution WAL/lease, entry/exit readiness and verified exit routes are unavailable;
-- chain identity was `4663`; the observed head progressed from `38650322` to `38650758` during the held readback;
+- chain identity was `4663`; the observed head progressed from `38659480` to `38660018` during the held readback;
 - three website fingerprints were present;
 - the hourly public readiness pass reported 10/10 funded wallets, 10/10 clean nonces and all-in cap ready at that snapshot; this is observation evidence, not a transaction authorization.
 
@@ -62,9 +62,14 @@ paidRpcCapability=false
 headPollMs=2000
 identityRefreshMs=300000
 walletRefreshMs=3600000
+minimumRequestIntervalMs=500
 ```
 
-The metered public counter increased from 56 to 78 during a 45-second held check while the head advanced. At `2026-08-17T07:18:56Z` it reported 121 total public calls: 88 `eth_blockNumber`, 2 `eth_chainId`, 1 `eth_gasPrice`, 10 `eth_getBalance`, and 20 `eth_getTransactionCount`. Those are requests to the official public endpoint, not Chainstack.
+The metered public counter increased from 46 to 73 during a 55-second held check while the head advanced. At `2026-08-17T07:33:19Z` it reported 83 total public calls: 50 `eth_blockNumber`, 2 `eth_chainId`, 1 `eth_gasPrice`, 10 `eth_getBalance`, and 20 `eth_getTransactionCount`, with `throttledRetries=0`. The paced startup completed 10/10 wallet funding and nonce readiness without HTTP 429. Those are requests to the official public endpoint, not Chainstack.
+
+## Public rate-limit correction
+
+The first metadata-aligned restart exposed a genuine operational fault: the official public endpoint returned HTTP 429 during the concurrent 31-call wallet-readiness burst, leaving that cold snapshot missing while chain-head and website monitoring continued. No paid endpoint or execution service was used. The deployed revision 8 serializes all public JSON-RPC calls with a 500 ms minimum interval and permits only two HTTP-429 retries with one- and two-second backoff. Automated tests assert ordering, physical-request counts and retry counts; the final production restart completed the same readiness pass with zero retry and no unresolved 429.
 
 ## Paid capability and signing boundary
 

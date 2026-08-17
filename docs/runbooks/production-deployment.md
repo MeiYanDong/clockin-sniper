@@ -61,10 +61,10 @@ On Ubuntu 24.04, do not assume `systemd-notify --watchdog` exists. The portable 
 1. Install `deploy/control.env.example` as `/etc/clockin-sniper/control.env`, owned by `root:clockin-status`, mode `0640`. Review variable names and values; it must not contain any RPC URL or secret.
 2. Ensure `/etc/clockin-sniper/PAID_RPC_APPROVED` and `/etc/clockin-sniper/PRODUCTION_ARM_APPROVED` are absent.
 3. Disable `clockin-executor`, `clockin-reconciler`, and `clockin-exit`; then enable and start only `clockin-control`.
-4. Verify `/health=200`, `/ready=503`, Dashboard HTTP 200, advancing watchdog/head, and `monitoringPolicy.mode=OFFICIAL_PUBLIC_HTTP_ONLY` with `paidRpcCapability=false`.
+4. Verify `/health=200`, `/ready=503`, Dashboard HTTP 200, advancing watchdog/head, and `monitoringPolicy.mode=OFFICIAL_PUBLIC_HTTP_ONLY` with `paidRpcCapability=false`, `minimumRequestIntervalMs=500`, and bounded `throttledRetries`.
 5. Verify the Control process has no systemd credentials directory, no RPC/Chainstack environment variable names, and no execution process. `/ready=503` is expected until the full Execution Plane is armed.
 
-This mode is the default 24×7 state. It is not a real-snipe preparation window and must produce no Chainstack request.
+This mode is the default 24×7 state. It is not a real-snipe preparation window and must produce no Chainstack request. The startup/hourly 31-call wallet-readiness pass must be paced rather than concurrent; an unresolved HTTP 429 leaves funding/nonce readiness missing and must not be reported as a successful readiness check.
 
 ## Explicit paid RPC window
 
