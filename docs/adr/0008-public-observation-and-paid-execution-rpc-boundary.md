@@ -31,7 +31,7 @@ This preserves continuous low-cost discovery and makes paid capability a deliber
 
 - `clockin-control` has exactly one chain transport: the hard-coded official public HTTP endpoint `https://rpc.mainnet.chain.robinhood.com`.
 - Control accepts no RPC URL from environment, command line, strategy configuration, or systemd credentials. Its unit has no `LoadCredential` directive and reads only `/etc/clockin-sniper/control.env`, which may contain non-sensitive timing and local HTTP/status settings.
-- The cold cadence is a two-second head poll, five-minute chain-identity recheck, hourly public wallet-readiness refresh, and thirty-second website fingerprint refresh. Each JSON-RPC method call is counted in the Control snapshot.
+- The cold cadence is a two-second head poll, five-minute chain-identity recheck, hourly public wallet-readiness refresh, and thirty-second website fingerprint refresh. All public JSON-RPC calls share a serialized 500 ms minimum interval; HTTP 429 receives at most two retries with one- and two-second backoff. Each physical request and throttled retry is counted in the Control snapshot.
 - Public monitoring is observation evidence only. It cannot sign, broadcast, create an authorization, create an approval marker, or start another service.
 
 ### Paid RPC window
@@ -49,7 +49,7 @@ This preserves continuous low-cost discovery and makes paid capability a deliber
 - Ordinary 24×7 monitoring produces zero Chainstack requests by construction.
 - Paid endpoint cost and signing authority are separate, auditable capabilities.
 - A compromised website or false-positive candidate cannot automatically activate paid transport or move funds.
-- The snapshot makes public request cadence and method counts observable.
+- The snapshot makes public request cadence, method counts, and throttled retries observable.
 
 ### Negative
 
@@ -60,5 +60,5 @@ This preserves continuous low-cost discovery and makes paid capability a deliber
 ### Follow-up evidence
 
 - Automated tests must prove Control cannot be configured to another RPC and has no paid credential mount.
-- Deployment readback must prove Control is the only active process, has no credentials directory or RPC environment variables, reports `OFFICIAL_PUBLIC_HTTP_ONLY`, and advances its public request counters.
+- Deployment readback must prove Control is the only active process, has no credentials directory or RPC environment variables, reports `OFFICIAL_PUBLIC_HTTP_ONLY`, advances its public request counters, and completes the paced wallet-readiness burst without an unresolved HTTP 429.
 - Deployment readback must also prove all paid services are disabled/inactive and both approval markers are absent.

@@ -1992,11 +1992,12 @@ RPC 在系统中不是一个统一的“连接状态”，而是三类不同能�
 - 只读取 `/etc/clockin-sniper/control.env` 中的非敏感本地端口、状态目录与轮询周期；
 - 默认每 2 秒请求一次 `eth_blockNumber`，每 5 分钟用 `eth_chainId + eth_blockNumber` 复核网络身份，每小时以公共 RPC 回读钱包余额/nonces/Gas；
 - 每 30 秒监控 ClockIn 与 Stonk Launcher 页面 fingerprint；
-- 每个 JSON-RPC method 的请求数与最后请求时间写入 redacted Control snapshot；
+- 所有公共 JSON-RPC 请求共享 500ms 最小间隔；HTTP 429 最多按 1 秒、2 秒做两次有界退避重试，绝不因此切换到 Chainstack；
+- 每个 JSON-RPC method 的物理请求数、429 retry 数与最后请求时间写入 redacted Control snapshot；
 - `monitoringPolicy.mode=OFFICIAL_PUBLIC_HTTP_ONLY` 且 `paidRpcCapability=false`；
 - Control 无私钥、无 signed-tx vault、无执行授权，不存在从网页或链上候选自动唤醒付费服务的代码路径。
 
-按默认周期，稳定阶段链头请求约 `0.5 req/s`；身份复核约 `2 calls/5min`；钱包/Gas readiness 约 `31 calls/hour`。启动时有一次 identity 与 wallet readiness burst。这个计数属于公共 RPC，不计入 Chainstack。
+按默认周期，稳定阶段链头请求约 `0.5 req/s`；身份复核约 `2 calls/5min`；钱包/Gas readiness 约 `31 calls/hour`。启动时的 identity 与 wallet readiness burst 被铺开到最高约 `2 req/s`，遇到 429 只做有限重试。这个计数属于公共 RPC，不计入 Chainstack。
 
 ### 34.3 付费执行窗口
 
