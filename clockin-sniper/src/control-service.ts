@@ -10,7 +10,6 @@ import {
   type OperationalReadiness,
   type OperationalReadinessInput,
 } from "./ops/readiness.js";
-import type { JsonRpcRequester } from "./rpc/types.js";
 import { verifyRobinhoodMainnet } from "./rpc/robinhood.js";
 import { hexToBigInt } from "./rpc/hex.js";
 import { PublicControlRpc } from "./runtime/public-control-rpc.js";
@@ -58,36 +57,6 @@ interface RuntimeState {
   headPollMs: number;
   identityRefreshMs: number;
   walletRefreshMs: number;
-}
-
-class LimitedJsonRpcRequester implements JsonRpcRequester {
-  readonly providerId: string;
-  readonly #inner: JsonRpcRequester;
-  readonly #maximumConcurrency: number;
-  #active = 0;
-  readonly #waiters: Array<() => void> = [];
-
-  constructor(inner: JsonRpcRequester, maximumConcurrency: number) {
-    if (!Number.isSafeInteger(maximumConcurrency) || maximumConcurrency < 1) {
-      throw new RangeError("maximumConcurrency must be a positive safe integer");
-    }
-    this.providerId = inner.providerId;
-    this.#inner = inner;
-    this.#maximumConcurrency = maximumConcurrency;
-  }
-
-  async request<T>(method: string, params: readonly unknown[] = []): Promise<T> {
-    if (this.#active >= this.#maximumConcurrency) {
-      await new Promise<void>((resolve) => this.#waiters.push(resolve));
-    }
-    this.#active += 1;
-    try {
-      return await this.#inner.request<T>(method, params);
-    } finally {
-      this.#active -= 1;
-      this.#waiters.shift()?.();
-    }
-  }
 }
 
 function integerEnv(name: string, fallback: number): number {
@@ -356,6 +325,7 @@ async function writeSnapshot(
       headPollMs: state.headPollMs,
       identityRefreshMs: state.identityRefreshMs,
       walletRefreshMs: state.walletRefreshMs,
+      minimumRequestIntervalMs: state.publicRpc.minimumIntervalMs,
       paidRpcCapability: false,
     },
   };
@@ -431,7 +401,7 @@ async function main(): Promise<void> {
     60_000,
   );
   const publicRpc = new PublicControlRpc({ timeoutMs: 8_000 });
-  const http = new LimitedJsonRpcRequester(publicRpc, 4);
+  const http = publicRpc;
   const state: RuntimeState = {
     latestBlock: 0n,
     httpReady: false,

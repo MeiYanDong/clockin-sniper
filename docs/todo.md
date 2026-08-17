@@ -1451,6 +1451,7 @@
 - [x] 删除 Control 的 authenticated HTTP/WSS credential 读取和 WSS/direct Sequencer 常驻探针。
 - [x] 将常驻周期拆成 2 秒链头、5 分钟网络身份、1 小时钱包/Gas readiness、30 秒网站 fingerprint 与 5 秒本地状态发布。
 - [x] 把公共 RPC 总请求数、method 分布、最后请求时间与 `paidRpcCapability=false` 写入 Control snapshot。
+- [x] 将所有公共 RPC 物理请求串行限速到最小 500ms 间隔，对 HTTP 429 只做 1s/2s 两次有界退避，并记录 retry 数。
 - [x] 将 Control systemd 配置与 Execution `strategy.env` 分离，只允许读取非敏感 `control.env`，并移除全部 `LoadCredential`。
 - [x] 为 Executor/Reconciler/Exit 增加固定路径 `PAID_RPC_APPROVED` systemd condition。
 - [x] 在三个付费进程读取任何 RPC credential 前验证 marker 的固定内容、root owner 与不可组/全局写权限。
@@ -1461,11 +1462,12 @@
 自动化验证：
 
 - [x] 测试 Control RPC 无 URL/env/credential 注入点且请求只到官方 public endpoint。
+- [x] 测试并发 public 调用被串行化，HTTP 429 有界重试且物理请求/retry 计数准确。
 - [x] 测试 Control unit 无 `LoadCredential`、无 `strategy.env`、无 RPC/私钥字段。
 - [x] 测试 `control.env.example` 只含非敏感本地配置和有界周期。
 - [x] 测试三个付费服务在 credential 读取前执行 paid-marker 校验。
 - [x] 测试 marker 拒绝错误 owner、组/全局可写或错误内容。
-- [x] 完整 `npm run verify`、package audit 与 secret/history scan 通过（232/232；最近一次完整 verify 为 line 88.77%、branch 68.21%、function 91.71%）。
+- [x] 完整 `npm run verify`、package audit 与 secret/history scan 通过（233/233；最近一次完整 verify 为 line 88.77%、branch 68.27%、function 91.44%）。
 
 生产部署：
 
@@ -1556,7 +1558,7 @@
 - [x] 当前私钥加载边界已迁到仓库外，并已有 secret scan/npm ignore 基础。
 - [x] 已测得当前质量基线：line 87.41%、branch 65.69%、function 88.61%。
 - [x] 本可执行 todo 已按小故事卡、阶段、测试和验收拆解。
-- [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现；生产 profile/adapters/三服务/interlock/watchdog、公共/付费 RPC 隔离已补齐并通过 232 项测试。
+- [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现；生产 profile/adapters/三服务/interlock/watchdog、公共/付费 RPC 隔离与公共限速退避已补齐并通过 233 项测试。
 - [x] 默认 live 入口在主网证据不完整时失败关闭，旧单钱包入口不进入 release artifact。
 - [x] 已生成 10 个仓库外 one-shot EOA，完成本地与服务器 10/10 key/address correspondence，并为每个钱包注入 `0.0032 ETH`；生产回读 nonce 均为 `0/0`。
 - [x] 已在 `47.251.28.201` 部署并验证 public-only keyless Control Sentinel；当前只有 Control enabled/active，三个付费服务 disabled/inactive，无付费 credential capability，两个 marker absent。

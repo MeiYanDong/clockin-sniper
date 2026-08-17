@@ -35,7 +35,54 @@ describe("public Control RPC cost boundary", () => {
       endpointClass: "OFFICIAL_PUBLIC_HTTP",
       totalRequests: 2,
       requestsByMethod: { eth_blockNumber: 1, eth_chainId: 1 },
+      throttledRetries: 0,
       lastRequestAt: "2026-08-17T07:00:02.000Z",
+    });
+  });
+
+  it("serializes public calls and retries HTTP 429 with bounded backoff", async () => {
+    let now = Date.parse("2026-08-17T07:00:00.000Z");
+    let attempts = 0;
+    const delays: number[] = [];
+    const fetchFn: typeof fetch = async (_input, init) => {
+      attempts += 1;
+      if (attempts === 1) return new Response("rate limited", { status: 429 });
+      const request = JSON.parse(String(init?.body)) as {
+        readonly id: number;
+        readonly method: string;
+      };
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: request.id,
+          result: request.method === "eth_chainId" ? "0x1237" : "0x10",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+    const rpc = new PublicControlRpc({
+      fetchFn,
+      now: () => now,
+      minimumIntervalMs: 500,
+      sleep: async (milliseconds) => {
+        delays.push(milliseconds);
+        now += milliseconds;
+      },
+    });
+    const [block, chainId] = await Promise.all([
+      rpc.request("eth_blockNumber"),
+      rpc.request("eth_chainId"),
+    ]);
+    assert.equal(block, "0x10");
+    assert.equal(chainId, "0x1237");
+    assert.deepEqual(delays, [1_000, 500]);
+    assert.deepEqual(rpc.usageSnapshot(), {
+      providerId: "robinhood-public-http",
+      endpointClass: "OFFICIAL_PUBLIC_HTTP",
+      totalRequests: 3,
+      requestsByMethod: { eth_blockNumber: 2, eth_chainId: 1 },
+      throttledRetries: 1,
+      lastRequestAt: "2026-08-17T07:00:01.500Z",
     });
   });
 
