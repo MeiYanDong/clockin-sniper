@@ -35,7 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Changed the default live entrypoint to fail closed while required mainnet evidence is unavailable; legacy single-wallet commands are explicitly audit/replay-only.
 - Reserved per-wallet Gas for one entry, one approval and three sells plus 30% margin; aggregate readiness now enforces the all-in cap and rejects automatic top-up.
 - Raised the tested baseline to 232 passing tests; the latest full verification reported line `88.77%`, branch `68.21%`, and function `91.71%` coverage.
-- Updated operational truth: all ten production wallets hold `0.0032 ETH` with clean `0/0` nonces; keyless Control is enabled/active with a progressing watchdog; Executor/Reconciler/Exit are installed but disabled/inactive while the final mainnet Factory/ABI/profile is unavailable.
+- Updated operational truth: all ten production wallets last reported funded with clean nonces; keyless Control is enabled/active on the official public HTTP endpoint with no paid credential capability and a progressing watchdog; Executor/Reconciler/Exit are installed but disabled/inactive while the final mainnet Factory/ABI/profile is unavailable.
 
 ### Security
 
