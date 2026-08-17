@@ -6,7 +6,7 @@ Robinhood Chain (`chainId=4663`) 上的 ClockIn / Stonk Launcher 生产架构实
 
 仓库已经实现并测试 v2 的 Canonical Model、SQLite WAL 状态、Known/Unknown Factory Control Sentinel、10 个独立 one-shot EOA、40%→floor 十档入场、1U–5U cap 缩量、canary 校准、7 天 scope-bound 授权、same-raw 广播与 UNKNOWN 恢复、双阶段退出与 5%/20% 分离滑点、readiness、只读 Dashboard、告警、systemd 模板和发布边界。
 
-当前状态是 `NOT_HOT_ARMED`，不是“已成交”。截至 2026-08-17，10 个生产钱包已逐个注资并保持 `latest/pending nonce = 0/0`，无私钥 Control 已部署并通过 30 秒 watchdog 回读，Executor/Reconciler/Exit unit 也已安装但保持 `disabled/inactive`；官方仍未公开最终主网 Launcher Factory、ClockIn CA 和最终 buy/sell/finalize ABI，因此没有当前 profile/授权且不存在 arm marker。默认 `npm run live` 继续只输出 blocker 并以非零状态失败关闭，不读取私钥、不签名、不广播。
+当前状态是 `RPC_MONITORING_PAUSED / NOT_HOT_ARMED`，不是“已成交”。最近一次生产回读曾确认 10 个钱包每个 `0.0032 ETH`、`latest/pending nonce = 0/0`，但用户因 Chainstack RPC 用量于 `2026-08-17T06:20:59Z` 下令暂停：生产机上的 Control 已 `disable --now`，四个 ClockIn unit 全部 `disabled/inactive`，无监控或执行进程，arm marker 不存在。官方仍未公开最终主网 Launcher Factory、ClockIn CA 和最终 buy/sell/finalize ABI。默认 `npm run live` 继续只输出 blocker 并以非零状态失败关闭，不读取私钥、不签名、不广播。暂停回执见 [2026-08-17 RPC monitoring pause](docs/receipts/2026-08-17-rpc-monitoring-pause.md)。
 
 ## 证据边界
 

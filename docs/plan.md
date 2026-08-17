@@ -1893,7 +1893,7 @@ Fork/replay 的目标是验证 calldata、状态变化和经济口径，不作�
 ### 33.1 当前真实状态
 
 - 10 个仓库外 one-shot EOA 已在生产链逐个回读，每个余额为 `0.0032 ETH`，`latestNonce=0`、`pendingNonce=0`；私钥不进入仓库、日志或回执。
-- `47.251.28.201` 已运行无私钥 `clockin-control`，HTTP/WSS/direct Sequencer 和双源价格检查可用；`Type=notify` 30 秒 watchdog 持续推进且 `NRestarts=0`，`/ready` 在协议证据缺失时正确返回 `503`。
+- `47.251.28.201` 上的无私钥 `clockin-control` 曾完成 HTTP/WSS/direct Sequencer、双源价格、`Type=notify` 30 秒 watchdog 与 `/ready=503` 回读。用户因 Chainstack RPC 用量于 `2026-08-17T06:20:59Z` 下令暂停后，Control 已 `disable --now`，不再提供实时链头、Factory/CA、价格、readiness 或 Dashboard 更新。
 - Executor、Reconciler、Exit 的生产 entrypoint、SQLite schema、systemd unit 和确定性 renderer 已实现并安装；三项资金服务的 installed artifact SHA 已回读，但 unit 保持 `disabled/inactive`，最终 profile、授权和 arm marker 缺失时不能启动资金执行。
 - 2026-08-17 官方页面仍未发布可冻结的主网 Launcher Factory、ClockIn CA 和最终 buy/sell/finalize ABI；当前总状态继续是 `NOT_HOT_ARMED`。
 
@@ -1940,7 +1940,7 @@ Reconciler canonical receipt/effect → per-wallet PositionLot → Exit exact qu
 
 ### 33.5 部署与激活边界
 
-生产安装采用绝对路径 renderer，生成四个 Type=notify/WatchdogSec=30 的 hardened units。Control 使用 `clockin-observer`；资金服务使用 `clockin`；状态目录通过受限共享组交换 redacted JSON，私钥和 RPC 凭证只走 systemd credentials。2026-08-17 的实际部署中，Control enabled/active，Executor/Reconciler/Exit installed/disabled/inactive，arm marker absent；完整回读和回滚证据见 [production runtime deployment receipt](./receipts/2026-08-17-production-runtime-deployment.md)。
+生产安装采用绝对路径 renderer，生成四个 Type=notify/WatchdogSec=30 的 hardened units。Control 使用 `clockin-observer`；资金服务使用 `clockin`；状态目录通过受限共享组交换 redacted JSON，私钥和 RPC 凭证只走 systemd credentials。2026-08-17 的部署回读曾确认 Control enabled/active、Executor/Reconciler/Exit installed/disabled/inactive、arm marker absent，见 [production runtime deployment receipt](./receipts/2026-08-17-production-runtime-deployment.md)。当日后续按用户指令暂停付费 RPC 用量：当前四个 unit 全部 disabled/inactive，见 [RPC monitoring pause receipt](./receipts/2026-08-17-rpc-monitoring-pause.md)。
 
 安装、构建通过、钱包有余额、服务文件存在都不等于激活。实盘启动仍必须按顺序满足：
 
