@@ -44,7 +44,7 @@ npm run build
 npm run live
 ```
 
-2026-08-17 本地基线：234/234 tests；最近一次完整 verify 为 line `88.77%`、branch `68.27%`、function `91.44%`。`verify` 包含：
+2026-08-17 本地基线：234/234 tests；最近一次完整 verify 为 line `88.72%`、branch `68.27%`、function `91.44%`。`verify` 包含：
 
 - current tree 与完整 Git history secret scan；
 - Biome format/lint；

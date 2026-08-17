@@ -1469,7 +1469,7 @@
 - [x] 测试 `control.env.example` 只含非敏感本地配置和有界周期。
 - [x] 测试三个付费服务在 credential 读取前执行 paid-marker 校验。
 - [x] 测试 marker 拒绝错误 owner、组/全局可写或错误内容。
-- [x] 完整 `npm run verify`、package audit 与 secret/history scan 通过（234/234；最近一次完整 verify 为 line 88.77%、branch 68.27%、function 91.44%）。
+- [x] 完整 `npm run verify`、package audit 与 secret/history scan 通过（234/234；最近一次完整 verify 为 line 88.72%、branch 68.27%、function 91.44%）。
 
 生产部署：
 
@@ -1479,6 +1479,7 @@
 - [x] 只 `enable --now clockin-control`；Executor/Reconciler/Exit 保持 disabled/inactive。
 - [x] 验证 Control 进程没有 credentials directory、RPC env 或 paid endpoint capability。
 - [x] 验证 snapshot 为 `OFFICIAL_PUBLIC_HTTP_ONLY`、public endpoint class、计数持续增长且 head 推进。
+- [x] 持有生产读回跨过首个 5 分钟 identity 周期，验证 `lastIdentityCheckAt` 与 `eth_chainId` 计数实际推进，head 轮询未中断。
 - [x] 验证生产启动钱包 readiness 在 500ms 公共限速下完成 10/10，`throttledRetries=0`，未遗留 HTTP 429。
 - [x] 验证 `/health=200`、`/ready=503`、Dashboard 可读；503 表示尚未 `HOT_ARMED`，不是 Control 宕机。
 - [x] 验证 `PAID_RPC_APPROVED` 与 `PRODUCTION_ARM_APPROVED` 均 absent，无签名、广播或资金变化。
