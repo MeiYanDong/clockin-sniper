@@ -1481,6 +1481,7 @@
 - [x] 验证 snapshot 为 `OFFICIAL_PUBLIC_HTTP_ONLY`、public endpoint class、计数持续增长且 head 推进。
 - [x] 持有生产读回跨过首个 5 分钟 identity 周期，验证 `lastIdentityCheckAt` 与 `eth_chainId` 计数实际推进，head 轮询未中断。
 - [x] 验证生产启动钱包 readiness 在 500ms 公共限速下完成 10/10，`throttledRetries=0`，未遗留 HTTP 429。
+- [x] 验证后续公共 RPC HTTP 429 只触发一次有界重试并恢复，日志无应用错误、未切换 Chainstack。
 - [x] 验证 `/health=200`、`/ready=503`、Dashboard 可读；503 表示尚未 `HOT_ARMED`，不是 Control 宕机。
 - [x] 验证 `PAID_RPC_APPROVED` 与 `PRODUCTION_ARM_APPROVED` 均 absent，无签名、广播或资金变化。
 - [x] 保存部署回执并同步 Public GitHub/CI。
