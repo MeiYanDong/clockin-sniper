@@ -4,6 +4,7 @@ Wants=network-online.target time-sync.target
 After=network-online.target time-sync.target
 StartLimitIntervalSec=60s
 StartLimitBurst=8
+ConditionPathExists=/etc/clockin-sniper/PAID_RPC_APPROVED
 
 [Service]
 Type=notify

@@ -27,6 +27,7 @@ import { HttpJsonRpcClient } from "./rpc/http-json-rpc.js";
 import { WebSocketNewHeadsClient, type NewHeadsSubscription } from "./rpc/websocket-new-heads.js";
 import type { Hex } from "./rpc/types.js";
 import { discoverConfiguredClockInLaunch } from "./runtime/configured-discovery.js";
+import { assertPaidRpcApproved } from "./runtime/paid-rpc-approval.js";
 import {
   loadProductionProfileAndAuthorization,
   loadProductionWalletSigners,
@@ -137,6 +138,7 @@ async function main(): Promise<void> {
   let statusTimer: NodeJS.Timeout | null = null;
   let priceTimer: NodeJS.Timeout | null = null;
 
+  await assertPaidRpcApproved();
   const [walletBundle, rpcHttp, rpcWss, sequencerHttp, vaultKey] = await Promise.all([
     loadProductionWalletSigners(),
     readSystemdCredential("rpc_http"),

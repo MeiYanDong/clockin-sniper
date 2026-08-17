@@ -5,6 +5,7 @@ Requires=clockin-reconciler.service clockin-exit.service
 After=network-online.target time-sync.target clockin-control.service clockin-reconciler.service clockin-exit.service
 StartLimitIntervalSec=60s
 StartLimitBurst=8
+ConditionPathExists=/etc/clockin-sniper/PAID_RPC_APPROVED
 ConditionPathExists=/etc/clockin-sniper/PRODUCTION_ARM_APPROVED
 
 [Service]

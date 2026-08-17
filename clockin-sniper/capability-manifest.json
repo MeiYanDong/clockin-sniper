@@ -1,6 +1,6 @@
 {
-  "manifest_revision": 5,
-  "generated_at": "2026-08-16T16:59:26.000Z",
+  "manifest_revision": 6,
+  "generated_at": "2026-08-17T07:11:55.000Z",
   "network": "eip155:4663",
   "production_state": "NOT_HOT_ARMED",
   "mode": "real_funds_only_no_shadow_branch",
@@ -12,6 +12,9 @@
     "topic_wide_factory_discovery": "TESTED",
     "address_cluster_discovery": "TESTED",
     "website_json_html_bundle_fallback": "TESTED",
+    "public_control_rpc_boundary": "TESTED_HARD_CODED_OFFICIAL_PUBLIC_HTTP_NO_CREDENTIALS",
+    "public_rpc_usage_metering": "TESTED_METHOD_COUNTS_AND_LAST_REQUEST_TIME",
+    "paid_rpc_window_interlock": "TESTED_FIXED_ROOT_MARKER_BEFORE_CREDENTIAL_READ_NOT_APPROVED",
     "factory_profile_registry": "TESTED",
     "identity_l0_l4_authorization": "TESTED_SEVEN_DAY_MAXIMUM_TTL",
     "owner_policy_v2": "TESTED_OWNER_POLICY_COMPLETE_NOT_PROTOCOL_READY",
@@ -30,15 +33,16 @@
     "pre_principal_downside_exit": "TESTED_NO_FINAL_EXECUTABLE_ROUTE",
     "routine_and_break_glass_slippage": "TESTED_FIVE_AND_TWENTY_PERCENT_NO_LIVE_EXIT_RECEIPT",
     "append_only_execution_revisions": "TESTED_PLAN_ATTEMPT_QUOTE_EXIT_AND_LEASE_RECOVERY",
-    "production_service_entrypoints": "TESTED_AND_INSTALLED_DISABLED_INACTIVE_NOT_ARMED",
+    "production_service_entrypoints": "TESTED_CURRENT_PUBLIC_RPC_DEPLOYMENT_PENDING",
     "production_service_interlock": "TESTED_REQUIRES_CURRENT_RECONCILER_EXIT_PROFILE_AUTH_WAL_AND_ZERO_UNKNOWN",
-    "systemd_templates": "VERIFIED_CONTROL_NOTIFY_WATCHDOG_EXECUTION_UNITS_INSTALLED_DISABLED_INACTIVE",
+    "systemd_templates": "TESTED_PUBLIC_CONTROL_NO_CREDENTIALS_PAID_SERVICES_DUAL_GATED_DEPLOYMENT_PENDING",
     "live_effect": "NO_REAL_CANONICAL_ENTRY_OR_EXIT_RECEIPT"
   },
   "blockers": [
     "OFFICIAL_MAINNET_LAUNCHER_FACTORY_AND_FINAL_ABI_NOT_PUBLISHED",
     "FINAL_MAINNET_POOL_BUY_SELL_FINALIZE_ADAPTERS_NOT_VERIFIED_CURRENT",
     "BOUND_PRODUCTION_PROFILE_AND_AUTHORIZATION_NOT_CREATED",
+    "PAID_RPC_AND_PRODUCTION_ARM_MARKERS_ABSENT_BY_POLICY",
     "EXECUTION_SERVICES_DISABLED_INACTIVE_NO_PROFILE_AUTHORIZATION_OR_ARM_MARKER",
     "ACTIVE_REGION_PERFORMANCE_NOT_BENCHMARKED",
     "NO_V2_CANONICAL_ENTRY_OR_EXIT_RECEIPT"
@@ -55,6 +59,7 @@
     "docs/adr/0005-initial-strategy-policy.md",
     "docs/adr/0006-clockin-policy-v2-risk-and-authorization.md",
     "docs/adr/0007-production-runtime-interlock-and-route-binding.md",
+    "docs/adr/0008-public-observation-and-paid-execution-rpc-boundary.md",
     "docs/receipts/2026-08-17-production-runtime-deployment.md"
   ]
 }

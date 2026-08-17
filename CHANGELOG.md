@@ -26,13 +26,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Immutable production protocol profiles and seven-day authorizations, exact configured Factory/Pool adapters, dynamic launch-bound exit targets, and production Executor/Reconciler/Exit entrypoints.
 - Append-only execution/attempt/route/exit revisions, deterministic pre-broadcast cleanup, UNKNOWN same-raw recovery, cross-service readiness interlocks, redacted status exchange, watchdog heartbeats, and deterministic systemd rendering.
 - Fail-closed production deployment receipt covering all four entrypoint hashes, unit state, 30-second watchdog readback, OS secret boundary, failed-start containment and recoverable rollback.
+- Hard-coded official-public HTTP Control transport with per-method request metering, a credential-free `control.env`, and a separately approved paid-RPC window for real-snipe preparation/reconciliation/exit.
+- Root-owned `PAID_RPC_APPROVED` interlock validated before Executor, Reconciler, or Exit reads a paid RPC credential; this cost approval remains independent from `PRODUCTION_ARM_APPROVED` signing authority.
 
 ### Changed
 
 - Extended the verification command to include formatting, linting, coverage, production dependency audit, and package-content audit.
 - Changed the default live entrypoint to fail closed while required mainnet evidence is unavailable; legacy single-wallet commands are explicitly audit/replay-only.
 - Reserved per-wallet Gas for one entry, one approval and three sells plus 30% margin; aggregate readiness now enforces the all-in cap and rejects automatic top-up.
-- Raised the tested baseline to 226 passing tests with line `88.75%`, branch `68.07%`, and function `91.78%` coverage.
+- Raised the tested baseline to 232 passing tests; the latest full verification reported line `88.77%`, branch `68.21%`, and function `91.71%` coverage.
 - Updated operational truth: all ten production wallets hold `0.0032 ETH` with clean `0/0` nonces; keyless Control is enabled/active with a progressing watchdog; Executor/Reconciler/Exit are installed but disabled/inactive while the final mainnet Factory/ABI/profile is unavailable.
 
 ### Security
