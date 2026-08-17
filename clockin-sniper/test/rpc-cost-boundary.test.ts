@@ -98,6 +98,15 @@ describe("public Control RPC cost boundary", () => {
     assert.doesNotMatch(unit, /^LoadCredential=/mu);
   });
 
+  it("does not let an aligned head poll suppress the periodic chain-identity check", async () => {
+    const source = await readFile(new URL("../src/control-service.ts", import.meta.url), "utf8");
+    assert.match(source, /let headPollRunning = false;/u);
+    assert.match(source, /let identityCheckRunning = false;/u);
+    assert.match(source, /if \(identityCheckRunning \|\| stopping\) return;/u);
+    assert.match(source, /if \(headPollRunning \|\| stopping\) return;/u);
+    assert.doesNotMatch(source, /chainPollRunning/u);
+  });
+
   it("checks paid approval before any paid service loads credentials", async () => {
     for (const file of ["executor-service.ts", "reconciler-service.ts", "exit-service.ts"]) {
       const source = await readFile(new URL(`../src/${file}`, import.meta.url), "utf8");

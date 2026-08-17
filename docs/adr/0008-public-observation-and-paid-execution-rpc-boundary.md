@@ -31,7 +31,7 @@ This preserves continuous low-cost discovery and makes paid capability a deliber
 
 - `clockin-control` has exactly one chain transport: the hard-coded official public HTTP endpoint `https://rpc.mainnet.chain.robinhood.com`.
 - Control accepts no RPC URL from environment, command line, strategy configuration, or systemd credentials. Its unit has no `LoadCredential` directive and reads only `/etc/clockin-sniper/control.env`, which may contain non-sensitive timing and local HTTP/status settings.
-- The cold cadence is a two-second head poll, five-minute chain-identity recheck, hourly public wallet-readiness refresh, and thirty-second website fingerprint refresh. All public JSON-RPC calls share a serialized 500 ms minimum interval; HTTP 429 receives at most two retries with one- and two-second backoff. Each physical request and throttled retry is counted in the Control snapshot.
+- The cold cadence is a two-second head poll, five-minute chain-identity recheck, hourly public wallet-readiness refresh, and thirty-second website fingerprint refresh. Head and identity tasks use independent in-process overlap guards so their aligned timer periods cannot suppress identity rechecks. All physical public JSON-RPC calls still share one serialized 500 ms minimum-interval queue; HTTP 429 receives at most two retries with one- and two-second backoff. Each physical request and throttled retry is counted in the Control snapshot.
 - Public monitoring is observation evidence only. It cannot sign, broadcast, create an authorization, create an approval marker, or start another service.
 
 ### Paid RPC window

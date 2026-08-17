@@ -1991,6 +1991,7 @@ RPC 在系统中不是一个统一的“连接状态”，而是三类不同能�
 - systemd unit 不含任何 `LoadCredential`，也不读取资金侧 `strategy.env`；
 - 只读取 `/etc/clockin-sniper/control.env` 中的非敏感本地端口、状态目录与轮询周期；
 - 默认每 2 秒请求一次 `eth_blockNumber`，每 5 分钟用 `eth_chainId + eth_blockNumber` 复核网络身份，每小时以公共 RPC 回读钱包余额/nonces/Gas；
+- 链头与 identity 任务使用独立防重入锁，避免 5 分钟周期恰为 2 秒整数倍时被同相 head poll 永久跳过；物理请求仍共享同一个公共限速队列；
 - 每 30 秒监控 ClockIn 与 Stonk Launcher 页面 fingerprint；
 - 所有公共 JSON-RPC 请求共享 500ms 最小间隔；HTTP 429 最多按 1 秒、2 秒做两次有界退避重试，绝不因此切换到 Chainstack；
 - 每个 JSON-RPC method 的物理请求数、429 retry 数与最后请求时间写入 redacted Control snapshot；
