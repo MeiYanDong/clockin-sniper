@@ -23,7 +23,7 @@ This is a negative execution-readiness receipt, updated after deploying the owne
 | DB/leases/vault | SQLite WAL, atomic lease/nonce/reservation and encrypted vault recovery tested locally; the keyless Control intentionally reports signer/DB lease not ready | PASS locally / BLOCKED for Execution Plane |
 | Inner/outer exit | Generic contracts, route registry, net quote and policy tested; final sell/router/finalize profile unavailable | BLOCKED |
 | UNKNOWN/open positions | The last Control readback reported zero unknown attempts and zero open positions; no Execution Plane database exists yet | PASS at the last readback / BLOCKED for current executor evidence |
-| Artifact/systemd | Commit `f14fe3eb27efb205acb1e6ab31608aea63564af5`, artifact SHA-256 `56c3d27fec25562f7a644ff55bacf8ee4c3ca808f867383eb947ebdac2a58a9f`, capability revision `6`, runtime Node `v24.19.0`; Control is enabled/active with no credential capability, three paid services are disabled/inactive and both markers are absent | PASS for public monitoring; BLOCKED for paid execution activation |
+| Artifact/systemd | Commit `f610f0e6e169f71acee574fe91a31a4eb5bfbd0e`, artifact SHA-256 `731aa8b49d4a2c6ce47c430ac50f962ba7ffb6f7011caab55ad80624ea759958`, capability revision `8`, runtime Node `v24.19.0`; Control is enabled/active with paced public RPC and no credential capability, three paid services are disabled/inactive and both markers are absent | PASS for public monitoring; BLOCKED for paid execution activation |
 | Canonical effects | No v2 entry or exit receipt/token delta/quote delta | BLOCKED |
 
 ## Blocking owners and evidence needed
