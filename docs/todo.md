@@ -1206,7 +1206,7 @@
 
 目标：云机以非 root、可重启、仓库外 credentials 运行。
 
-`RPC_MONITORING_PAUSED; ALL_PRODUCTION_UNITS_DISABLED_INACTIVE; EXECUTION_PLANE_BLOCKED_BY_FINAL_PROTOCOL_EVIDENCE`。`47.251.28.201` 上的无私钥 Control 曾完成真实 systemd、`/proc`、journal、钱包、artifact 与 30 秒 watchdog 回读；用户因 Chainstack RPC 用量于 `2026-08-17T06:20:59Z` 下令暂停后，Control 已 `disable --now`，四个 unit 现全部 `disabled/inactive`。私钥、凭证和发布物未删除，仍因最终 Factory/ABI/route 未冻结而不授权、不启动资金执行。
+`DEPLOYED_PUBLIC_MONITORING; NO_PAID_RPC_CAPABILITY; EXECUTION_PLANE_BLOCKED_BY_FINAL_PROTOCOL_EVIDENCE`。`47.251.28.201` 上的无私钥 Control 已改用官方公共 HTTP RPC 并恢复 `enabled/active`；三项付费服务为 `disabled/inactive`，两个批准 marker absent。最终 Factory/ABI/route 仍未冻结，因此公共监控在线不等于授权资金执行。
 
 - [x] 创建 Control Sentinel unit。
 - [x] 创建 Executor unit。
@@ -1226,6 +1226,7 @@
 - [x] Control 服务实际 readback 与 artifact SHA 对齐，见 [2026-08-16-control-deployment.md](./receipts/2026-08-16-control-deployment.md)。
 - [x] 四个 production unit 指向同一 immutable release；Control enabled/active，Executor/Reconciler/Exit installed、disabled、inactive，arm marker absent，见 [2026-08-17-production-runtime-deployment.md](./receipts/2026-08-17-production-runtime-deployment.md)。
 - [x] 按用户指令停止 Chainstack 流量：Control 已 `disable --now`，四个 unit 均 `disabled/inactive`，无残留 ClockIn 进程、timer 或 cron，见 [2026-08-17-rpc-monitoring-pause.md](./receipts/2026-08-17-rpc-monitoring-pause.md)。
+- [x] 按 ADR 0008 恢复 public-only Control：无 credential/Execution env，三个付费 unit 保持 disabled/inactive，见 [2026-08-17-public-rpc-control-deployment.md](./receipts/2026-08-17-public-rpc-control-deployment.md)。
 - [ ] Executor/Reconciler/Exit 在最终协议证据完成后授权、启动并回读 canonical state。
 
 验收：
@@ -1373,15 +1374,17 @@
 
 `BLOCKED_BY: READINESS_RECEIPT_IS_NOT_HOT_ARMED`。已创建 [receipts/production-readiness.md](./receipts/production-readiness.md) 负面回执，逐项记录证据、blocker 和 owner，不伪造 `HOT_ARMED`。
 
-当前运行态额外标记为 `RPC_MONITORING_PAUSED`；下列已勾选项是暂停前已完成的生产回读，不代表现在仍有实时 RPC 健康、链头或价格快照。
+当前运行态为 `DEPLOYED_PUBLIC_MONITORING / NOT_HOT_ARMED`。公共链头和网站监控是 current；付费 WSS/Sequencer、执行侧价格/数据库/退出 readiness 只有在用户显式打开 real-snipe window 后才能成为 current。
 
 - [x] chainId/current head。
-- [x] HTTP/WSS/direct Sequencer health（生产 Control readback）。
+- [x] 官方公共 HTTP RPC health（当前生产 Control readback）。
+- [x] 付费 WSS/direct Sequencer 的历史探针语义与执行侧代码已验证；当前按成本策略未启用。
 - [ ] Factory/Profile current bytecode readback。
 - [ ] exact/topic-wide subscriptions。
 - [x] 10/10 wallet address/balance/nonces（每个 `0.0032 ETH`、latest/pending `0/0`）。
 - [x] principal/entry Gas/exit Gas reservation（当前 price/Gas snapshot 下 10/10 ready、60U all-in cap ready）。
-- [x] Price Snapshot freshness（生产 Control 持续双源刷新；不等于 launch authorization）。
+- [x] cold Control 启动时完成双源 Price Snapshot；不等于 launch authorization。
+- [ ] real-snipe 窗口内 <=30 秒 Price Snapshot freshness。
 - [ ] strategy config hash/authorization。
 - [x] DB/leases/vault readiness。
 - [ ] inner/outer exit adapter readiness。
@@ -1466,20 +1469,20 @@
 
 生产部署：
 
-- [ ] 从通过验证的 commit 构建不可变 artifact 并记录 SHA-256。
-- [ ] 在 `47.251.28.201` 安装独立 `control.env`，不改动或输出现有 RPC/key credential。
-- [ ] 更新四个 rendered systemd units 并回读 unit/entrypoint/artifact hash。
-- [ ] 只 `enable --now clockin-control`；Executor/Reconciler/Exit 保持 disabled/inactive。
-- [ ] 验证 Control 进程没有 credentials directory、RPC env 或 paid endpoint capability。
-- [ ] 验证 snapshot 为 `OFFICIAL_PUBLIC_HTTP_ONLY`、public endpoint class、计数持续增长且 head 推进。
-- [ ] 验证 `/health=200`、`/ready=503`、Dashboard 可读；503 表示尚未 `HOT_ARMED`，不是 Control 宕机。
-- [ ] 验证 `PAID_RPC_APPROVED` 与 `PRODUCTION_ARM_APPROVED` 均 absent，无签名、广播或资金变化。
-- [ ] 保存部署回执并同步 Public GitHub/CI。
+- [x] 从通过验证的 commit 构建不可变 artifact 并记录 SHA-256。
+- [x] 在 `47.251.28.201` 安装独立 `control.env`，不改动或输出现有 RPC/key credential。
+- [x] 更新四个 rendered systemd units 并回读 unit/entrypoint/artifact hash。
+- [x] 只 `enable --now clockin-control`；Executor/Reconciler/Exit 保持 disabled/inactive。
+- [x] 验证 Control 进程没有 credentials directory、RPC env 或 paid endpoint capability。
+- [x] 验证 snapshot 为 `OFFICIAL_PUBLIC_HTTP_ONLY`、public endpoint class、计数持续增长且 head 推进。
+- [x] 验证 `/health=200`、`/ready=503`、Dashboard 可读；503 表示尚未 `HOT_ARMED`，不是 Control 宕机。
+- [x] 验证 `PAID_RPC_APPROVED` 与 `PRODUCTION_ARM_APPROVED` 均 absent，无签名、广播或资金变化。
+- [x] 保存部署回执并同步 Public GitHub/CI。
 
 验收：
 
-- [ ] 常驻 Control 在线且从代码、unit、进程环境和 snapshot 四层证明 Chainstack 请求为零能力边界。
-- [ ] 付费服务只能在显式 real-snipe cost window 中启动，且 Executor 仍需独立实盘授权。
+- [x] 常驻 Control 在线且从代码、unit、进程环境和 snapshot 四层证明 Chainstack 请求为零能力边界。
+- [x] 付费服务只能在显式 real-snipe cost window 中启动，且 Executor 仍需独立实盘授权。
 
 ---
 
@@ -1553,10 +1556,10 @@
 - [x] 当前私钥加载边界已迁到仓库外，并已有 secret scan/npm ignore 基础。
 - [x] 已测得当前质量基线：line 87.41%、branch 65.69%、function 88.61%。
 - [x] 本可执行 todo 已按小故事卡、阶段、测试和验收拆解。
-- [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现；生产 profile/adapters/三服务/interlock/watchdog 已补齐并通过 226 项测试。
+- [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现；生产 profile/adapters/三服务/interlock/watchdog、公共/付费 RPC 隔离已补齐并通过 232 项测试。
 - [x] 默认 live 入口在主网证据不完整时失败关闭，旧单钱包入口不进入 release artifact。
 - [x] 已生成 10 个仓库外 one-shot EOA，完成本地与服务器 10/10 key/address correspondence，并为每个钱包注入 `0.0032 ETH`；生产回读 nonce 均为 `0/0`。
-- [x] 已在 `47.251.28.201` 部署并验证 keyless Control Sentinel；随后按用户的 RPC 成本决策暂停。当前 Control/Executor/Reconciler/Exit 全部 disabled/inactive、无 ClockIn 进程、未授权，arm marker absent。
+- [x] 已在 `47.251.28.201` 部署并验证 public-only keyless Control Sentinel；当前只有 Control enabled/active，三个付费服务 disabled/inactive，无付费 credential capability，两个 marker absent。
 
 ### 下一批必须先完成
 

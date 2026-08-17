@@ -6,7 +6,7 @@ Robinhood Chain (`chainId=4663`) 上的 ClockIn / Stonk Launcher 生产架构实
 
 仓库已经实现并测试 v2 的 Canonical Model、SQLite WAL 状态、Known/Unknown Factory Control Sentinel、10 个独立 one-shot EOA、40%→floor 十档入场、1U–5U cap 缩量、canary 校准、7 天 scope-bound 授权、same-raw 广播与 UNKNOWN 恢复、双阶段退出与 5%/20% 分离滑点、readiness、只读 Dashboard、告警、systemd 模板和发布边界。
 
-当前状态是 `RPC_MONITORING_PAUSED / NOT_HOT_ARMED`，不是“已成交”。最近一次生产回读曾确认 10 个钱包每个 `0.0032 ETH`、`latest/pending nonce = 0/0`，但用户因 Chainstack RPC 用量于 `2026-08-17T06:20:59Z` 下令暂停：生产机上的 Control 已 `disable --now`，四个 ClockIn unit 全部 `disabled/inactive`，无监控或执行进程，arm marker 不存在。官方仍未公开最终主网 Launcher Factory、ClockIn CA 和最终 buy/sell/finalize ABI。默认 `npm run live` 继续只输出 blocker 并以非零状态失败关闭，不读取私钥、不签名、不广播。暂停回执见 [2026-08-17 RPC monitoring pause](docs/receipts/2026-08-17-rpc-monitoring-pause.md)。
+当前状态是 `DEPLOYED_PUBLIC_MONITORING / NO_PAID_RPC_CAPABILITY / NOT_HOT_ARMED`，不是“已成交”。`47.251.28.201` 上只有无私钥 Control `enabled/active`，其唯一链 transport 是 Robinhood 官方公共 HTTP RPC；进程没有 RPC credential、Chainstack 环境变量或 systemd credential mount。Executor/Reconciler/Exit 全部 `disabled/inactive`，`PAID_RPC_APPROVED` 与 `PRODUCTION_ARM_APPROVED` 均不存在。最近一次公共回读确认 10/10 钱包 funding/nonce readiness，但官方仍未公开最终主网 Launcher Factory、ClockIn CA 和最终 buy/sell/finalize ABI。默认 `npm run live` 继续只输出 blocker 并以非零状态失败关闭，不读取私钥、不签名、不广播。部署回执见 [2026-08-17 public-RPC Control deployment](docs/receipts/2026-08-17-public-rpc-control-deployment.md)。
 
 ## 证据边界
 
@@ -28,7 +28,7 @@ npm ci
 npm run verify
 ```
 
-2026-08-17 本地证据：226/226 tests；line `88.75%`、branch `68.07%`、function `91.78%`。CI 强制最低 line 85%、branch 60%、function 80%，并执行格式、lint、strict typecheck、仓库与 Git 历史 secret scan、production dependency audit 和 package audit。
+2026-08-17 本地证据：232/232 tests；最近一次完整 verify 为 line `88.77%`、branch `68.21%`、function `91.71%`。CI 强制最低 line 85%、branch 60%、function 80%，并执行格式、lint、strict typecheck、仓库与 Git 历史 secret scan、production dependency audit 和 package audit。
 
 ## 文档
 

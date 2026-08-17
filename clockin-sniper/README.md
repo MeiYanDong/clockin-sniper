@@ -6,6 +6,8 @@ ClockIn Sniper v2 是 Robinhood Chain (`chainId=4663`) 的事件驱动、10 EOA 
 
 `capability-manifest.json` 当前声明 `NOT_HOT_ARMED`。10 个外部 key 钱包已完成生产链地址/余额/nonce 回读。常驻 Control 的唯一链 transport 已固定为 Robinhood 官方公共 HTTP RPC，既不接收 Chainstack credential，也不读取 Execution 配置；Executor/Reconciler/Exit 只有在用户显式开启真实狙击付费窗口后才可读取付费 RPC，并继续受独立实盘资金授权约束。但官方尚未发布最终主网 Launcher Factory、ClockIn CA、launch/buy/sell/finalize ABI 和可验证退出路由，所以不存在可用的 production profile 与当前授权，资金服务保持 `disabled/inactive`。因此：
 
+生产回读已确认只有公共 Control `enabled/active`，三个付费服务 `disabled/inactive`，两个批准 marker absent；证据见 `../docs/receipts/2026-08-17-public-rpc-control-deployment.md`。
+
 - `npm run live` 只读取公开 capability manifest，输出 blocker，返回 exit code 2；
 - 它不会读取 signer credential、构造交易、签名或广播；
 - `live:legacy-v0` 和 `live:known-target:legacy-v0` 只是旧实现审计/回放入口，不满足 v2 生产要求；
