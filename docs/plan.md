@@ -35,7 +35,7 @@
 | BIZ-03 | 从初始税率到 0 分 10 批 | 业务意图是覆盖完整税率区间。实际最后一档取合约真实 floor；若真实 floor 为 0%，最后一档为 0%；若为 1%，不得伪造 0%。 |
 | BIZ-04 | 每批 5U | 每笔投入的 quote principal 名义值为 5U，税从 5U 输入中扣除，Gas 不计入 5U；ClockIn 总名义本金上限 50U。 |
 | BIZ-05 | 实盘生产，不要 Shadow/dry-run | 生产 executor 只有真实签名与真实广播路径；fork/replay 只作为离线验证工具，不是生产运行模式。 |
-| BIZ-06 | 部署云服务器、CA 出来前持续准备 | Control Sentinel 和 Hot Executor 常驻，Factory/钱包/nonce/资金/RPC/策略均预热；CA 不是唯一启动信号。 |
+| BIZ-06 | 部署云服务器、CA 出来前持续准备 | 无私钥 Control 使用 Robinhood 官方公共 HTTP RPC 常驻；Chainstack 只在用户明确进入真实狙击准备/交易/恢复/退出窗口后启用。CA 不是唯一发现信号，但任何软信号都不能自动开启付费 RPC 或签名。 |
 | BIZ-07 | 防止换地址、换 Factory | 同时监控已知 Factory、关联地址集群、全链目标 topic、合约部署、官网字段和外部流动性事件，并维护版本化 Factory Registry。 |
 | BIZ-08 | 参考 B20/MM 和 Pons 经验 | 复用 same-raw、UNKNOWN、nonce 隔离、receipt 核账、Validity Envelope、内外盘分离等通用能力，不盲目复用单钱包/固定目标假设。 |
 | BIZ-09 | 私钥不能进入仓库 | 10 个执行私钥必须在仓库外或 Secret Manager/systemd credentials 中；日志、数据库、Git、npm 包不得出现私钥或完整带凭证 RPC。 |
@@ -231,7 +231,7 @@ Control Plane 的判断不能单独强迫 Execution Plane 花钱。Execution Pla
 
 ```mermaid
 flowchart LR
-    A["已知 Factory 精确 WSS"] --> S["Control Sentinel"]
+    A["官方公共 RPC 链头/日志轮询"] --> S["Control Sentinel"]
     B["全链 TokenLaunched topic"] --> S
     C["关联地址 / CREATE / Proxy"] --> S
     D["官网 HTML/JSON/Bundle"] --> S
@@ -259,7 +259,7 @@ flowchart LR
 
 | 进程 | 是否持有私钥 | 职责 | 故障影响 |
 |---|---:|---|---|
-| `clockin-control-sentinel` | 否 | 24×7 监控所有信号、Factory 候选与官网 CA | 失去未知 Factory/官网 fallback；已知 Factory热路径仍可运行 |
+| `clockin-control-sentinel` | 否 | 24×7 使用官方公共 HTTP RPC 监控链头/已配置日志、Factory 候选与官网 CA；不持有付费 RPC capability | 失去候选/官网 fallback；Execution Plane 不因此取得付费或签名授权 |
 | `clockin-executor` | 是 | ClockIn/首币策略路由、10 lane entry、same-raw 广播 | 新 entry 暂停；已签 UNKNOWN 由 reconciler 接管 |
 | `clockin-reconciler` | 否或仅可访问 signed-tx vault | receipt、token delta、Gas、UNKNOWN 恢复 | 不得产生新 intent；恢复后补齐经济事实 |
 | `clockin-exit` | 是 | 内盘/外盘 quote、授权、sell/swap、回款核账 | position 保留并告警；不能因 entry 停止而自动停止 |
@@ -347,9 +347,9 @@ verified WSS log
 
 #### CH-A：已知 Factory 精确监听
 
-- 对所有 `VERIFIED` Factory 地址订阅 exact address + exact event topic；
-- 采用 subscribe-before-backfill，覆盖启动和重连缝隙；
-- 这是最低延迟、最高确定性的主通道；
+- 冷态 Control 对所有 `VERIFIED` Factory 使用官方公共 HTTP RPC 轮询 exact address + exact event topic，并按 canonical block cursor 回补；
+- 只有用户显式开启真实狙击准备窗口后，Execution Plane 才可使用 Chainstack WSS 的 subscribe-before-backfill 热路径；
+- 公共轮询是常驻发现通道，付费 WSS 是已批准执行窗口中的低延迟通道；
 - 每个 Factory 绑定 runtime code hash、proxy implementation hash、event ABI hash 和 ProtocolAdapter 版本。
 
 #### CH-B：全链事件 topic 监听
@@ -430,7 +430,7 @@ OBSERVED
 - AI 可在暖路径对未知 bytecode、selector、事件、地址关系做排序和生成分析报告；
 - AI 输出只能是候选证据，不能直接把 Factory 状态改成可花钱的 `VERIFIED`；
 - 热路径不调用 LLM；
-- 自我修复只能重启监听、切换 RPC、回补 block 或重新解析，不能自行改变预算、身份策略、ABI 或 exit 阈值。
+- 自我修复只能重启官方公共监听、回补 block 或重新解析，不能自动切到 Chainstack，也不能自行改变预算、身份策略、ABI 或 exit 阈值。
 
 ---
 
@@ -1370,7 +1370,7 @@ Dashboard 文字必须区分：
 
 - 一台低延迟 active executor 主机；
 - 一台无私钥 observer/standby 监控主机；
-- 多个生产 RPC route + 官方 direct Sequencer；
+- Execution Plane 在显式付费窗口内使用多个生产 RPC route + 官方 direct Sequencer；Control 常驻阶段只使用官方公共 HTTP RPC；
 - active executor 单 writer；
 - standby 不产生不同 payload，不在无共享 lease 情况下自动接管签名。
 
@@ -1387,7 +1387,7 @@ Dashboard 文字必须区分：
 
 - 非 root 用户；
 - 明确 WorkingDirectory；
-- 外部 EnvironmentFile/LoadCredential；
+- Control 只读取独立的非敏感 `control.env` 且没有 `LoadCredential`；资金服务通过 `strategy.env` 与 systemd `LoadCredential` 读取执行配置/凭据；
 - Restart 策略和退避；
 - 文件权限 umask；
 - health watchdog；
@@ -1399,7 +1399,9 @@ Dashboard 文字必须区分：
 
 ```text
 BOOT
-→ TRANSPORT_VERIFIED
+→ PUBLIC_MONITORING
+→ OWNER_PAID_RPC_APPROVAL
+→ PAID_TRANSPORT_VERIFIED
 → REGISTRY_LOADED
 → FACTORY_SUBSCRIPTIONS_ARMED
 → WALLET_KEYS_LOADED
@@ -1418,7 +1420,7 @@ BOOT
 1. 10 个 ClockIn 专用 EOA 的 Robinhood Chain 原生 ETH；每个包括 5U 等值 principal、entry Gas、至少一次 approve/sell Gas 和余量；
 2. 可选首币 canary 的额外独立 5U + Gas（默认不准备也不执行）；
 3. 最终官方 Factory/creator/CA/ABI 信息，或允许 Control Sentinel 等待并验证其发布；
-4. 生产 HTTP/WSS RPC 与 direct Sequencer 可达性；
+4. Robinhood 官方公共 RPC 可达性，以及仅在真实狙击准备窗口内启用的生产 HTTP/WSS RPC 与 direct Sequencer 可达性；
 5. 云服务器和 secret 注入方式；
 6. 对本文末尾 `TBD_USER` 参数的最终确认。
 
@@ -1960,3 +1962,85 @@ official Factory/ABI
 任何一步缺失都保持 execution units inactive，且不能用 testnet Factory、fixture ABI 或“服务能启动”替代。
 
 完整架构决策见 [ADR 0007](./adr/0007-production-runtime-interlock-and-route-binding.md)，最新官方证据见 [2026-08-17 Launcher status](./evidence/2026-08-17-launcher-mainnet-status.md)。
+
+---
+
+## 34. RPC cost and capability boundary（2026-08-17）
+
+用户已冻结新的运维标准：**只有在明确准备真实狙击、真实交易可能发生，或仍需完成交易恢复/退出时，才允许使用 Chainstack RPC。** 常驻发现必须使用公共资源，软信号不能自动产生付费能力。
+
+### 34.1 第一性原理边界
+
+RPC 在系统中不是一个统一的“连接状态”，而是三类不同能力：
+
+| 能力 | 常驻是否需要 | 允许的 transport | 是否可花钱 |
+|---|---:|---|---:|
+| 发现候选、网站变化、链头推进 | 是 | Robinhood 官方公共 HTTP RPC + 公共网页 | 否 |
+| 对最终 Factory/Profile 做热监听和 exact-block 复核 | 仅实盘准备窗口 | Chainstack HTTP/WSS + 官方 Sequencer 只读/预检 | 否 |
+| 签名、same-raw 广播、receipt 恢复、退出 | 仅授权交易窗口或仍有 exposure 时 | Chainstack HTTP/WSS + 官方 direct Sequencer | 是 |
+
+因此“看见信号”“允许产生 RPC 成本”“允许签名/广播”必须是三个独立状态。名字、官网 CA、关联钱包、网站 hash 或候选 event 只能提高观察置信度；它们不能创建付费批准文件、实盘 arm marker 或启动资金服务。
+
+### 34.2 常驻公共 Control
+
+`clockin-control` 的生产不变量：
+
+- RPC 地址固定为 `https://rpc.mainnet.chain.robinhood.com`，不接受 env/CLI/credential 覆盖；
+- systemd unit 不含任何 `LoadCredential`，也不读取资金侧 `strategy.env`；
+- 只读取 `/etc/clockin-sniper/control.env` 中的非敏感本地端口、状态目录与轮询周期；
+- 默认每 2 秒请求一次 `eth_blockNumber`，每 5 分钟用 `eth_chainId + eth_blockNumber` 复核网络身份，每小时以公共 RPC 回读钱包余额/nonces/Gas；
+- 每 30 秒监控 ClockIn 与 Stonk Launcher 页面 fingerprint；
+- 每个 JSON-RPC method 的请求数与最后请求时间写入 redacted Control snapshot；
+- `monitoringPolicy.mode=OFFICIAL_PUBLIC_HTTP_ONLY` 且 `paidRpcCapability=false`；
+- Control 无私钥、无 signed-tx vault、无执行授权，不存在从网页或链上候选自动唤醒付费服务的代码路径。
+
+按默认周期，稳定阶段链头请求约 `0.5 req/s`；身份复核约 `2 calls/5min`；钱包/Gas readiness 约 `31 calls/hour`。启动时有一次 identity 与 wallet readiness burst。这个计数属于公共 RPC，不计入 Chainstack。
+
+### 34.3 付费执行窗口
+
+三个可能读取 Chainstack credential 的 unit 都必须满足 root-owned `/etc/clockin-sniper/PAID_RPC_APPROVED`：
+
+```text
+exact content: CLOCKIN_PAID_RPC_APPROVED_V1
+owner: root
+group/world writable: false
+```
+
+应用必须在读取 `rpc_http`/`rpc_wss` 前再次验证 marker，而不能只依赖 systemd `ConditionPathExists`。该 marker 只授权付费 transport 成本，不授权资金动作。
+
+Executor 的签名/广播还必须额外满足：
+
+```text
+PAID_RPC_APPROVED
++ PRODUCTION_ARM_APPROVED
++ final Factory/Profile/ABI
++ <=7-day bound authorization
++ current 10-wallet/price/Gas/nonce readiness
++ Reconciler READY
++ Exit READY
++ zero unresolved UNKNOWN before new entry
+```
+
+### 34.4 状态转换与关闭规则
+
+```mermaid
+stateDiagram-v2
+    [*] --> PUBLIC_MONITORING
+    PUBLIC_MONITORING --> PAID_PREPARING: owner explicitly approves a real-snipe window
+    PAID_PREPARING --> HOT_ARMED: all production gates pass
+    PAID_PREPARING --> PUBLIC_MONITORING: no tx, no UNKNOWN, no position; stop paid services then remove marker
+    HOT_ARMED --> RECOVERING_OR_EXITING: tx attempted or position opened
+    RECOVERING_OR_EXITING --> PUBLIC_MONITORING: all attempts terminal and exposure zero; stop paid services then remove marker
+    HOT_ARMED --> PUBLIC_MONITORING: no tx submitted and owner aborts
+```
+
+- 创建 `PAID_RPC_APPROVED` 必须来自用户明确的真实狙击准备指令；监控程序和网页 watcher 没有此权限。
+- 若存在 `UNKNOWN` attempt 或 open position，不得为了省 RPC 直接删除 marker/停止 Reconciler/Exit；先完成 canonical reconciliation/exit 或形成明确人工接管回执。
+- 关闭顺序是：禁止新 entry → 确认 zero UNKNOWN/zero exposure → 停 Executor/Reconciler/Exit → 删除 `PAID_RPC_APPROVED`。
+- `PRODUCTION_ARM_APPROVED` 与付费 marker 独立；前者是资金授权门，后者是成本/capability 门。
+
+### 34.5 已接受的竞速代价
+
+官方公共 endpoint 明确属于 rate-limited、非 latency-sensitive production 的入口。默认 2 秒 HTTP poll 加公网抖动，可能比持续 Chainstack WSS 更晚发现 launch；人工打开付费窗口和进程启动也会增加准备延迟。按照本次用户决策，系统不通过软信号自动 prewarm Chainstack，因此不能承诺 first-block 或最佳排序。
+
+这是有意识的取舍，而不是程序缺失：常驻阶段优化“持续可观察且不消耗 Chainstack”，明确进入真实狙击窗口后才优化“低延迟执行”。实现与运维约束由 [ADR 0008](./adr/0008-public-observation-and-paid-execution-rpc-boundary.md) 固化。

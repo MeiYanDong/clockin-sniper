@@ -4,7 +4,7 @@ ClockIn Sniper v2 是 Robinhood Chain (`chainId=4663`) 的事件驱动、10 EOA 
 
 ## 当前状态
 
-`capability-manifest.json` 当前声明 `NOT_HOT_ARMED`。10 个外部 key 钱包已完成生产链地址/余额/nonce 回读，无私钥 Control 已部署，Executor/Reconciler/Exit 生产 entrypoint 和 unit 也已安装；但官方尚未发布最终主网 Launcher Factory、ClockIn CA、launch/buy/sell/finalize ABI 和可验证退出路由，所以不存在可用的 production profile 与当前授权，资金服务保持 `disabled/inactive`。因此：
+`capability-manifest.json` 当前声明 `NOT_HOT_ARMED`。10 个外部 key 钱包已完成生产链地址/余额/nonce 回读。常驻 Control 的唯一链 transport 已固定为 Robinhood 官方公共 HTTP RPC，既不接收 Chainstack credential，也不读取 Execution 配置；Executor/Reconciler/Exit 只有在用户显式开启真实狙击付费窗口后才可读取付费 RPC，并继续受独立实盘资金授权约束。但官方尚未发布最终主网 Launcher Factory、ClockIn CA、launch/buy/sell/finalize ABI 和可验证退出路由，所以不存在可用的 production profile 与当前授权，资金服务保持 `disabled/inactive`。因此：
 
 - `npm run live` 只读取公开 capability manifest，输出 blocker，返回 exit code 2；
 - 它不会读取 signer credential、构造交易、签名或广播；
@@ -42,7 +42,7 @@ npm run build
 npm run live
 ```
 
-2026-08-17 本地基线：226/226 tests；line `88.75%`、branch `68.07%`、function `91.78%`。`verify` 包含：
+2026-08-17 本地基线：232/232 tests；最近一次完整 verify 为 line `88.77%`、branch `68.21%`、function `91.71%`。`verify` 包含：
 
 - current tree 与完整 Git history secret scan；
 - Biome format/lint；
@@ -63,7 +63,7 @@ npm run wallets:create -- --output /absolute/external/secret/directory
 
 工具只在终端输出可验证 public address；private key 保持在 mode-0600 文件，manifest 不记录 key path。资金准备必须逐 wallet 核对：最多 5U principal、1 次 entry、1 次 approve、最多 3 次 sell、Gas 30% margin、`latestNonce===pendingNonce`、chainId 和 key/address correspondence；10 个钱包总需求不得超过冻结价格换算后的 60U all-in cap。
 
-生产部署按 `../docs/runbooks/production-deployment.md` 执行。Control Sentinel 使用独立无私钥账户；executor/exit 只通过 systemd `LoadCredential` 接收 10 个 key。生产钱包当前各有 `0.0032 ETH` 且 nonce 为 `0/0`；这些事实只证明 funding readiness，不授权交易。模板、inactive unit 或 artifact 存在也不等于 `HOT_ARMED`，只有最终 profile/fork/授权、artifact/systemd/current `/ready` 回执和 arm marker 全部成立才允许启动。
+生产部署按 `../docs/runbooks/production-deployment.md` 执行。Control Sentinel 使用独立无私钥账户、官方公共 RPC 和非敏感 `control.env`；它没有任何 systemd credential。Executor/Reconciler/Exit 受 root-owned `PAID_RPC_APPROVED` 约束，executor/exit 只通过 systemd `LoadCredential` 接收 10 个 key；Executor 还必须满足独立的 `PRODUCTION_ARM_APPROVED`。生产钱包当前各有 `0.0032 ETH` 且 nonce 为 `0/0`；这些事实只证明上次 funding readiness，不授权交易。模板、inactive unit 或 artifact 存在也不等于 `HOT_ARMED`，只有最终 profile/fork/授权、artifact/systemd/current `/ready` 回执和两个独立 marker gate 全部成立才允许启动。
 
 ## 解锁实盘所需输入
 

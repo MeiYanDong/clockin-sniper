@@ -18,6 +18,7 @@ import { buildEntryEffect } from "./effects/entry-effect-builder.js";
 import { buildExitEffect } from "./effects/exit-effect-builder.js";
 import { SqliteStore } from "./persistence/sqlite-store.js";
 import { HttpJsonRpcClient } from "./rpc/http-json-rpc.js";
+import { assertPaidRpcApproved } from "./runtime/paid-rpc-approval.js";
 import { hexToBigInt, quantityToHex } from "./rpc/hex.js";
 import {
   loadProductionWalletManifest,
@@ -83,6 +84,7 @@ function planForRevision(plan: ExitPlan, state: ExitPlan["state"]): ExitPlan {
 async function main(): Promise<void> {
   const ownerId = process.env.CLOCKIN_RECONCILER_ID?.trim() || `clockin-reconciler:${hostname()}`;
   const watchdog = new SystemdWatchdog();
+  await assertPaidRpcApproved();
   const [manifest, rpcHttp, sequencerHttp, vaultKey] = await Promise.all([
     loadProductionWalletManifest(),
     readSystemdCredential("rpc_http"),

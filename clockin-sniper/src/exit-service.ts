@@ -31,6 +31,7 @@ import { selectBestExecutableRoute } from "./exit/route-quote.js";
 import { SqliteStore } from "./persistence/sqlite-store.js";
 import { aggregatePosition, reconcileLotBalance } from "./positions/position-book.js";
 import { HttpJsonRpcClient } from "./rpc/http-json-rpc.js";
+import { assertPaidRpcApproved } from "./runtime/paid-rpc-approval.js";
 import { hexToBigInt, quantityToHex } from "./rpc/hex.js";
 import {
   loadProductionProfileAndAuthorization,
@@ -232,6 +233,7 @@ async function main(): Promise<void> {
   let working = false;
   let sequence = 0;
   let lastProcessedHead = -1n;
+  await assertPaidRpcApproved();
   const [walletBundle, rpcHttp, sequencerHttp, vaultKey] = await Promise.all([
     loadProductionWalletSigners(),
     readSystemdCredential("rpc_http"),

@@ -19,5 +19,6 @@ ADRs record decisions that materially change system boundaries, money movement, 
 - [0005 — Initial ClockIn strategy policy](0005-initial-strategy-policy.md)
 - [0006 — ClockIn policy v2 risk, authorization and execution bounds](0006-clockin-policy-v2-risk-and-authorization.md)
 - [0007 — Production runtime interlock and launch-bound routes](0007-production-runtime-interlock-and-route-binding.md)
+- [0008 — Public observation and paid execution RPC boundary](0008-public-observation-and-paid-execution-rpc-boundary.md)
 
 ADRs are append-only historical records. Correct factual errors with a follow-up note or superseding ADR rather than silently rewriting the original decision context.

@@ -10,15 +10,10 @@ import {
   type OperationalReadiness,
   type OperationalReadinessInput,
 } from "./ops/readiness.js";
-import { HttpJsonRpcClient } from "./rpc/http-json-rpc.js";
 import type { JsonRpcRequester } from "./rpc/types.js";
-import {
-  ROBINHOOD_MAINNET_SEQUENCER_URL,
-  verifyRobinhoodMainnet,
-  verifyRobinhoodSequencerWriteEndpoint,
-} from "./rpc/robinhood.js";
-import { WebSocketNewHeadsClient, type NewHeadsSubscription } from "./rpc/websocket-new-heads.js";
+import { verifyRobinhoodMainnet } from "./rpc/robinhood.js";
 import { hexToBigInt } from "./rpc/hex.js";
+import { PublicControlRpc } from "./runtime/public-control-rpc.js";
 import {
   readProductionServiceStatus,
   writeProductionServiceStatus,
@@ -30,8 +25,11 @@ import { inspectWalletReadiness, type WalletReadinessReport } from "./wallets/re
 import type { WalletManifest } from "./wallets/wallet-manifest.js";
 
 const EXPECTED_WALLETS = 10;
-const REFRESH_MS = 5_000;
+const STATUS_REFRESH_MS = 5_000;
 const WEBSITE_REFRESH_MS = 30_000;
+const DEFAULT_HEAD_POLL_MS = 2_000;
+const DEFAULT_IDENTITY_REFRESH_MS = 300_000;
+const DEFAULT_WALLET_REFRESH_MS = 3_600_000;
 const PRICE_MAXIMUM_AGE_MS = 30_000;
 const PRICE_MAXIMUM_DEVIATION_BPS = 200;
 const USD_MICROS_PER_BATCH = 5_000_000n;
@@ -47,15 +45,19 @@ interface ControlEvent {
 interface RuntimeState {
   latestBlock: bigint;
   httpReady: boolean;
-  wssReady: boolean;
-  sequencerReady: boolean;
   walletReport: WalletReadinessReport | null;
   priceSnapshotId: string | null;
   priceExpiresAtMs: number | null;
   lastRefreshAt: string | null;
+  lastHeadPollAt: string | null;
+  lastIdentityCheckAt: string | null;
   websiteHashes: Map<string, string>;
   serviceReadbacks: Map<"executor" | "reconciler" | "exit", ProductionServiceReadback>;
   events: ControlEvent[];
+  publicRpc: PublicControlRpc;
+  headPollMs: number;
+  identityRefreshMs: number;
+  walletRefreshMs: number;
 }
 
 class LimitedJsonRpcRequester implements JsonRpcRequester {
@@ -98,13 +100,9 @@ function integerEnv(name: string, fallback: number): number {
   return value;
 }
 
-async function readCredential(name: string): Promise<string> {
-  const directory = process.env.CREDENTIALS_DIRECTORY?.trim();
-  if (directory === undefined || directory.length === 0) {
-    throw new Error("CREDENTIALS_DIRECTORY is required");
-  }
-  const value = (await readFile(join(directory, name), "utf8")).trim();
-  if (value.length === 0) throw new Error(`credential ${name} is empty`);
+function boundedIntervalEnv(name: string, fallback: number, minimum: number): number {
+  const value = integerEnv(name, fallback);
+  if (value < minimum) throw new RangeError(`${name} must be at least ${minimum}ms`);
   return value;
 }
 
@@ -198,9 +196,9 @@ function readinessInput(state: RuntimeState): OperationalReadinessInput {
     chain,
     transport: Object.freeze({
       rpcHttpReady: state.httpReady,
-      rpcWssReady: state.wssReady,
-      sequencerReady: state.sequencerReady,
-      providerIds: Object.freeze(["production-http", "production-wss", "official-sequencer"]),
+      rpcWssReady: false,
+      sequencerReady: false,
+      providerIds: Object.freeze([state.publicRpc.providerId]),
     }),
     factory:
       executor !== null &&
@@ -264,7 +262,9 @@ function dashboard(state: RuntimeState): DashboardModel {
   const exit = exitReadback?.state === "CURRENT" ? exitReadback.status : null;
   return Object.freeze({
     title: "ClockIn Production Sentinel",
-    phase: readiness.hotArmed ? "HOT_ARMED / WAITING_FACTORY_EVENT" : "WATCHING / NOT_HOT_ARMED",
+    phase: readiness.hotArmed
+      ? "HOT_ARMED / WAITING_FACTORY_EVENT"
+      : "PUBLIC_MONITORING / NOT_HOT_ARMED",
     latestBlock: state.latestBlock.toString(),
     lagBlocks: 0,
     factory: Object.freeze({
@@ -348,6 +348,16 @@ async function writeSnapshot(
           },
     websiteHashes: Object.fromEntries(state.websiteHashes),
     lastRefreshAt: state.lastRefreshAt,
+    lastHeadPollAt: state.lastHeadPollAt,
+    lastIdentityCheckAt: state.lastIdentityCheckAt,
+    publicRpc: state.publicRpc.usageSnapshot(),
+    monitoringPolicy: {
+      mode: "OFFICIAL_PUBLIC_HTTP_ONLY",
+      headPollMs: state.headPollMs,
+      identityRefreshMs: state.identityRefreshMs,
+      walletRefreshMs: state.walletRefreshMs,
+      paidRpcCapability: false,
+    },
   };
   await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, {
     encoding: "utf8",
@@ -359,6 +369,7 @@ async function writeSnapshot(
 
 async function monitorWebsite(state: RuntimeState): Promise<void> {
   for (const url of [
+    "https://clockin.win/",
     "https://www.stonkbrokers.cash/launcher",
     "https://www.stonkbrokers.cash/safe-launch",
   ]) {
@@ -399,11 +410,7 @@ async function main(): Promise<void> {
   if (manifestPath === undefined || manifestPath.length === 0) {
     throw new Error("CLOCKIN_MANIFEST_PATH is required");
   }
-  const [rpcHttp, rpcWss, manifestRaw] = await Promise.all([
-    readCredential("rpc_http"),
-    readCredential("rpc_wss"),
-    readFile(manifestPath, "utf8"),
-  ]);
+  const manifestRaw = await readFile(manifestPath, "utf8");
   const manifest = JSON.parse(manifestRaw) as WalletManifest;
   if (manifest.entries.length !== EXPECTED_WALLETS) {
     throw new Error(`wallet manifest must contain exactly ${EXPECTED_WALLETS} entries`);
@@ -412,61 +419,94 @@ async function main(): Promise<void> {
   const stateDirectory = process.env.CLOCKIN_STATE_DIR?.trim() || "/var/lib/clockin-sniper";
   const host = process.env.CLOCKIN_OPS_HOST?.trim() || "127.0.0.1";
   const port = integerEnv("CLOCKIN_OPS_PORT", 8_787);
-  const http = new LimitedJsonRpcRequester(
-    new HttpJsonRpcClient({
-      providerId: "production-http",
-      url: rpcHttp,
-      timeoutMs: 8_000,
-    }),
-    4,
+  const headPollMs = boundedIntervalEnv("CLOCKIN_PUBLIC_HEAD_POLL_MS", DEFAULT_HEAD_POLL_MS, 1_000);
+  const identityRefreshMs = boundedIntervalEnv(
+    "CLOCKIN_PUBLIC_IDENTITY_REFRESH_MS",
+    DEFAULT_IDENTITY_REFRESH_MS,
+    60_000,
   );
-  const sequencer = new HttpJsonRpcClient({
-    providerId: "official-sequencer",
-    url: ROBINHOOD_MAINNET_SEQUENCER_URL,
-    timeoutMs: 4_000,
-  });
-  const wss = new WebSocketNewHeadsClient({
-    providerId: "production-wss",
-    url: rpcWss,
-    setupTimeoutMs: 8_000,
-  });
+  const walletRefreshMs = boundedIntervalEnv(
+    "CLOCKIN_PUBLIC_WALLET_REFRESH_MS",
+    DEFAULT_WALLET_REFRESH_MS,
+    60_000,
+  );
+  const publicRpc = new PublicControlRpc({ timeoutMs: 8_000 });
+  const http = new LimitedJsonRpcRequester(publicRpc, 4);
   const state: RuntimeState = {
     latestBlock: 0n,
     httpReady: false,
-    wssReady: false,
-    sequencerReady: false,
     walletReport: null,
     priceSnapshotId: null,
     priceExpiresAtMs: null,
     lastRefreshAt: null,
+    lastHeadPollAt: null,
+    lastIdentityCheckAt: null,
     websiteHashes: new Map(),
     serviceReadbacks: new Map(),
     events: [],
+    publicRpc,
+    headPollMs,
+    identityRefreshMs,
+    walletRefreshMs,
   };
-  let subscription: NewHeadsSubscription | null = null;
-  let refreshRunning = false;
+  let chainPollRunning = false;
+  let walletRefreshRunning = false;
+  let publishRunning = false;
   let stopping = false;
 
-  const refresh = async (): Promise<void> => {
-    if (refreshRunning || stopping) return;
-    refreshRunning = true;
+  const verifyPublicIdentity = async (): Promise<void> => {
+    if (chainPollRunning || stopping) return;
+    chainPollRunning = true;
     try {
-      const peerReadbacks = await Promise.all(
-        (["executor", "reconciler", "exit"] as const).map(async (service) =>
-          Object.freeze({
-            service,
-            readback: await readProductionServiceStatus(
-              statusDirectory,
-              service,
-              STATUS_MAXIMUM_AGE_MS,
-            ),
-          }),
-        ),
+      const identity = await verifyRobinhoodMainnet(http);
+      if (state.latestBlock > 0n && identity.blockNumber < state.latestBlock) {
+        throw new Error("public RPC head regressed");
+      }
+      state.latestBlock = identity.blockNumber;
+      state.httpReady = true;
+      state.lastHeadPollAt = new Date().toISOString();
+      state.lastIdentityCheckAt = state.lastHeadPollAt;
+    } catch (error) {
+      state.httpReady = false;
+      recordEvent(
+        state,
+        "ERROR",
+        `public RPC identity check failed: ${error instanceof Error ? error.message : String(error)}`,
       );
-      for (const peer of peerReadbacks) state.serviceReadbacks.set(peer.service, peer.readback);
+    } finally {
+      chainPollRunning = false;
+    }
+  };
+
+  const pollPublicHead = async (): Promise<void> => {
+    if (chainPollRunning || stopping) return;
+    chainPollRunning = true;
+    try {
+      const current = hexToBigInt("eth_blockNumber", await http.request<string>("eth_blockNumber"));
+      if (state.latestBlock > 0n && current < state.latestBlock) {
+        throw new Error("public RPC head regressed");
+      }
+      state.latestBlock = current;
+      state.httpReady = true;
+      state.lastHeadPollAt = new Date().toISOString();
+    } catch (error) {
+      state.httpReady = false;
+      recordEvent(
+        state,
+        "ERROR",
+        `public RPC head poll failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      chainPollRunning = false;
+    }
+  };
+
+  const refreshWalletReadiness = async (): Promise<void> => {
+    if (walletRefreshRunning || stopping) return;
+    walletRefreshRunning = true;
+    try {
       const nowMs = Date.now();
-      const [identity, gasPriceHex, priceSnapshot] = await Promise.all([
-        verifyRobinhoodMainnet(http),
+      const [gasPriceHex, priceSnapshot] = await Promise.all([
         http.request<string>("eth_gasPrice"),
         freezePriceSnapshot(
           () => coinbasePrice(nowMs),
@@ -479,8 +519,6 @@ async function main(): Promise<void> {
           nowMs,
         ),
       ]);
-      state.latestBlock = identity.blockNumber;
-      state.httpReady = true;
       state.priceSnapshotId = priceSnapshot.snapshotId;
       state.priceExpiresAtMs = priceSnapshot.expiresAtMs;
       const gasPriceWei = hexToBigInt("eth_gasPrice", gasPriceHex);
@@ -501,16 +539,35 @@ async function main(): Promise<void> {
       });
       state.lastRefreshAt = new Date().toISOString();
     } catch (error) {
-      state.httpReady = false;
       state.priceSnapshotId = null;
       state.priceExpiresAtMs = null;
       recordEvent(
         state,
         "ERROR",
-        `readiness refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+        `public wallet readiness refresh failed: ${error instanceof Error ? error.message : String(error)}`,
       );
+    } finally {
+      walletRefreshRunning = false;
     }
+  };
+
+  const publishStatus = async (): Promise<void> => {
+    if (publishRunning || stopping) return;
+    publishRunning = true;
     try {
+      const peerReadbacks = await Promise.all(
+        (["executor", "reconciler", "exit"] as const).map(async (service) =>
+          Object.freeze({
+            service,
+            readback: await readProductionServiceStatus(
+              statusDirectory,
+              service,
+              STATUS_MAXIMUM_AGE_MS,
+            ),
+          }),
+        ),
+      );
+      for (const peer of peerReadbacks) state.serviceReadbacks.set(peer.service, peer.readback);
       const currentReadiness = evaluateOperationalReadiness(readinessInput(state));
       await writeSnapshot(stateDirectory, currentReadiness, state);
       const executorReadback = state.serviceReadbacks.get("executor");
@@ -539,7 +596,7 @@ async function main(): Promise<void> {
         details: Object.freeze(
           currentReadiness.hotArmed
             ? ["KEYLESS_CONTROL_HOT_ARMED_READBACK"]
-            : currentReadiness.reasons,
+            : ["OFFICIAL_PUBLIC_RPC_ONLY", "PAID_RPC_CAPABILITY_NONE", ...currentReadiness.reasons],
         ),
       });
       await watchdog.status(
@@ -548,44 +605,7 @@ async function main(): Promise<void> {
           : "control watching fail-closed",
       );
     } finally {
-      refreshRunning = false;
-    }
-  };
-
-  try {
-    await verifyRobinhoodSequencerWriteEndpoint(sequencer);
-    state.sequencerReady = true;
-  } catch (error) {
-    recordEvent(
-      state,
-      "ERROR",
-      `sequencer probe failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-
-  const connectWss = async (): Promise<void> => {
-    while (!stopping) {
-      try {
-        subscription = await wss.subscribe((head) => {
-          state.latestBlock = head.blockNumber;
-          void refresh();
-        });
-        state.wssReady = true;
-        recordEvent(state, "INFO", "production WSS newHeads subscribed");
-        await subscription.done;
-      } catch (error) {
-        if (!stopping) {
-          recordEvent(
-            state,
-            "ERROR",
-            `WSS disconnected: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      } finally {
-        state.wssReady = false;
-        subscription = null;
-      }
-      if (!stopping) await new Promise((resolve) => setTimeout(resolve, 2_000));
+      publishRunning = false;
     }
   };
 
@@ -602,20 +622,36 @@ async function main(): Promise<void> {
   });
   recordEvent(state, "INFO", `ops server listening on ${host}:${port}`);
 
-  await refresh();
+  await verifyPublicIdentity();
+  await refreshWalletReadiness();
   await monitorWebsite(state);
+  await publishStatus();
   await watchdog.ready("control sentinel ready");
-  const refreshTimer = setInterval(() => void refresh(), REFRESH_MS);
+  const headTimer = setInterval(() => void pollPublicHead(), headPollMs);
+  const identityTimer = setInterval(() => void verifyPublicIdentity(), identityRefreshMs);
+  const walletTimer = setInterval(() => void refreshWalletReadiness(), walletRefreshMs);
+  const statusTimer = setInterval(
+    () =>
+      void publishStatus().catch((error: unknown) =>
+        recordEvent(
+          state,
+          "ERROR",
+          `status publication failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      ),
+    STATUS_REFRESH_MS,
+  );
   const websiteTimer = setInterval(() => void monitorWebsite(state), WEBSITE_REFRESH_MS);
-  void connectWss();
 
   const shutdown = async (signal: string): Promise<void> => {
     if (stopping) return;
     stopping = true;
     recordEvent(state, "INFO", `shutdown requested by ${signal}`);
-    clearInterval(refreshTimer);
+    clearInterval(headTimer);
+    clearInterval(identityTimer);
+    clearInterval(walletTimer);
+    clearInterval(statusTimer);
     clearInterval(websiteTimer);
-    subscription?.close();
     await new Promise<void>((resolve) => ops.server.close(() => resolve()));
     await watchdog.stopping(`control stopping after ${signal}`);
   };

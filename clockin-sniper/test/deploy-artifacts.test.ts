@@ -28,7 +28,11 @@ describe("hardened production service templates", () => {
       assert.match(unit, /^User=clockin(?:-observer)?$/mu, unitName);
       assert.doesNotMatch(unit, /^User=root$/mu, unitName);
       assert.match(unit, /^WorkingDirectory=@ARTIFACT_DIR@\/clockin-sniper$/mu, unitName);
-      assert.match(unit, /^EnvironmentFile=\/etc\/clockin-sniper\/strategy\.env$/mu, unitName);
+      if (unitName === "clockin-control.service.in") {
+        assert.match(unit, /^EnvironmentFile=-\/etc\/clockin-sniper\/control\.env$/mu, unitName);
+      } else {
+        assert.match(unit, /^EnvironmentFile=\/etc\/clockin-sniper\/strategy\.env$/mu, unitName);
+      }
       assert.match(unit, /^Restart=on-failure$/mu, unitName);
       assert.match(unit, /^RestartSec=\d+s$/mu, unitName);
       assert.match(unit, /^Type=notify$/mu, unitName);
@@ -54,9 +58,32 @@ describe("hardened production service templates", () => {
   it("keeps the Control Sentinel keyless and gives it an isolated OS identity", async () => {
     const control = await readUnit("clockin-control.service.in");
     assert.match(control, /^User=clockin-observer$/mu);
-    assert.match(control, /^LoadCredential=rpc_http:/mu);
-    assert.match(control, /^LoadCredential=rpc_wss:/mu);
-    assert.doesNotMatch(control, /wallet|entry_\d|vault_key|private.?key/iu);
+    assert.match(control, /^EnvironmentFile=-\/etc\/clockin-sniper\/control\.env$/mu);
+    assert.doesNotMatch(control, /strategy\.env/u);
+    assert.doesNotMatch(control, /^LoadCredential=/mu);
+    assert.doesNotMatch(
+      control,
+      /rpc_http|rpc_wss|sequencer_http|wallet|entry_\d|vault_key|private.?key/iu,
+    );
+  });
+
+  it("ships a public-only Control environment example without RPC or secret fields", async () => {
+    const environment = await readFile(
+      fileURLToPath(new URL("../deploy/control.env.example", import.meta.url)),
+      "utf8",
+    );
+    assert.match(environment, /^CLOCKIN_PUBLIC_HEAD_POLL_MS=2000$/mu);
+    assert.match(environment, /^CLOCKIN_PUBLIC_IDENTITY_REFRESH_MS=300000$/mu);
+    assert.match(environment, /^CLOCKIN_PUBLIC_WALLET_REFRESH_MS=3600000$/mu);
+    const variableNames = environment
+      .split("\n")
+      .filter((line) => line.length > 0 && !line.startsWith("#"))
+      .map((line) => line.split("=", 1)[0])
+      .join("\n");
+    assert.doesNotMatch(
+      variableNames,
+      /rpc|chainstack|credential|secret|private.?key|wallet.?key/iu,
+    );
   });
 
   it("mounts exactly ten one-shot wallet credentials for entry and exit", async () => {
@@ -81,10 +108,27 @@ describe("hardened production service templates", () => {
       executor,
       /^ConditionPathExists=\/etc\/clockin-sniper\/PRODUCTION_ARM_APPROVED$/mu,
     );
+    assert.match(executor, /^ConditionPathExists=\/etc\/clockin-sniper\/PAID_RPC_APPROVED$/mu);
     assert.match(executor, /^ExecStart=@EXECUTOR_EXECUTABLE@$/mu);
     assert.match(executor, /^Requires=clockin-reconciler\.service clockin-exit\.service$/mu);
     assert.match(executor, /^After=.*clockin-reconciler\.service clockin-exit\.service$/mu);
     assert.doesNotMatch(executor, /npm run live(?:\s|$)/u);
+  });
+
+  it("blocks every paid-RPC service until a separate real-snipe cost window is approved", async () => {
+    for (const unitName of [
+      "clockin-executor.service.in",
+      "clockin-reconciler.service.in",
+      "clockin-exit.service.in",
+    ] as const) {
+      const unit = await readUnit(unitName);
+      assert.match(
+        unit,
+        /^ConditionPathExists=\/etc\/clockin-sniper\/PAID_RPC_APPROVED$/mu,
+        unitName,
+      );
+      assert.match(unit, /^LoadCredential=rpc_http:/mu, unitName);
+    }
   });
 
   it("defines owner-only secret/state directories and bounded journal retention", async () => {

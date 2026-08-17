@@ -1437,6 +1437,50 @@
 
 - [x] release artifact 可追溯到 commit `47cc18d`、197 项测试、覆盖率和 capability manifest revision 2；发布回执已保存。
 
+### STORY-117：公共监控 / 付费实盘 RPC 隔离（P0）
+
+目标：24×7 Control 不产生任何 Chainstack 请求；只有用户明确进入真实狙击准备/交易/恢复/退出窗口后，资金侧服务才取得付费 RPC capability。
+
+设计与代码：
+
+- [x] 固化 [ADR 0008](./adr/0008-public-observation-and-paid-execution-rpc-boundary.md)，区分观察、付费 transport 与签名/广播三种授权。
+- [x] 新增不可配置的 `PublicControlRpc`，唯一 endpoint 为 Robinhood 官方公共 HTTP RPC。
+- [x] 删除 Control 的 authenticated HTTP/WSS credential 读取和 WSS/direct Sequencer 常驻探针。
+- [x] 将常驻周期拆成 2 秒链头、5 分钟网络身份、1 小时钱包/Gas readiness、30 秒网站 fingerprint 与 5 秒本地状态发布。
+- [x] 把公共 RPC 总请求数、method 分布、最后请求时间与 `paidRpcCapability=false` 写入 Control snapshot。
+- [x] 将 Control systemd 配置与 Execution `strategy.env` 分离，只允许读取非敏感 `control.env`，并移除全部 `LoadCredential`。
+- [x] 为 Executor/Reconciler/Exit 增加固定路径 `PAID_RPC_APPROVED` systemd condition。
+- [x] 在三个付费进程读取任何 RPC credential 前验证 marker 的固定内容、root owner 与不可组/全局写权限。
+- [x] 保留 Executor 独立的 `PRODUCTION_ARM_APPROVED`，证明付费 RPC 批准不等于资金授权。
+- [x] 明确 soft signal、官网、名字、CA、地址集群与候选 event 都不能自动创建两个 marker 或启动付费服务。
+- [x] 明确有 `UNKNOWN`/open position 时必须保留 Reconciler/Exit 付费恢复能力，zero exposure 后先停服务再删 marker。
+
+自动化验证：
+
+- [x] 测试 Control RPC 无 URL/env/credential 注入点且请求只到官方 public endpoint。
+- [x] 测试 Control unit 无 `LoadCredential`、无 `strategy.env`、无 RPC/私钥字段。
+- [x] 测试 `control.env.example` 只含非敏感本地配置和有界周期。
+- [x] 测试三个付费服务在 credential 读取前执行 paid-marker 校验。
+- [x] 测试 marker 拒绝错误 owner、组/全局可写或错误内容。
+- [x] 完整 `npm run verify`、package audit 与 secret/history scan 通过（232/232；最近一次完整 verify 为 line 88.77%、branch 68.21%、function 91.71%）。
+
+生产部署：
+
+- [ ] 从通过验证的 commit 构建不可变 artifact 并记录 SHA-256。
+- [ ] 在 `47.251.28.201` 安装独立 `control.env`，不改动或输出现有 RPC/key credential。
+- [ ] 更新四个 rendered systemd units 并回读 unit/entrypoint/artifact hash。
+- [ ] 只 `enable --now clockin-control`；Executor/Reconciler/Exit 保持 disabled/inactive。
+- [ ] 验证 Control 进程没有 credentials directory、RPC env 或 paid endpoint capability。
+- [ ] 验证 snapshot 为 `OFFICIAL_PUBLIC_HTTP_ONLY`、public endpoint class、计数持续增长且 head 推进。
+- [ ] 验证 `/health=200`、`/ready=503`、Dashboard 可读；503 表示尚未 `HOT_ARMED`，不是 Control 宕机。
+- [ ] 验证 `PAID_RPC_APPROVED` 与 `PRODUCTION_ARM_APPROVED` 均 absent，无签名、广播或资金变化。
+- [ ] 保存部署回执并同步 Public GitHub/CI。
+
+验收：
+
+- [ ] 常驻 Control 在线且从代码、unit、进程环境和 snapshot 四层证明 Chainstack 请求为零能力边界。
+- [ ] 付费服务只能在显式 real-snipe cost window 中启动，且 Executor 仍需独立实盘授权。
+
 ---
 
 ## Phase 12：真实事件后的闭环证据
