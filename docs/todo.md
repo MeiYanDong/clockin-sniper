@@ -1374,7 +1374,7 @@
 
 `BLOCKED_BY: READINESS_RECEIPT_IS_NOT_HOT_ARMED`。已创建 [receipts/production-readiness.md](./receipts/production-readiness.md) 负面回执，逐项记录证据、blocker 和 owner，不伪造 `HOT_ARMED`。
 
-当前运行态为 `DEPLOYED_PUBLIC_MONITORING / NOT_HOT_ARMED`。公共链头和网站监控是 current；付费 WSS/Sequencer、执行侧价格/数据库/退出 readiness 只有在用户显式打开 real-snipe window 后才能成为 current。
+当前运行态为 `DEPLOYED_PUBLIC_CONTROL_HARDENED / STATIC_EXECUTION_PREREQUISITES_STAGED / NOT_HOT_ARMED`。公共链头、semantic 网站监控和官方 Sequencer invalid-payload 语义是 current；Chainstack 未启用，执行侧 profile/授权/价格/数据库/退出 readiness 仍被最终主网资料阻断。
 
 - [x] chainId/current head。
 - [x] 官方公共 HTTP RPC health（当前生产 Control readback）。
@@ -1519,18 +1519,18 @@
 
 生产部署与武装审计：
 
-- [ ] 从通过验证的 commit 构建不可变 artifact，记录 SHA-256/capability revision。
-- [ ] 只升级并重启 public-only Control，三个付费服务保持 disabled/inactive。
-- [ ] 回读 semantic website signals、foreground/background metering、链头/watchdog 与 HTTP endpoints。
-- [ ] 回读 Control 仍无 credential/RPC env/paid capability，两个 marker 状态准确。
-- [ ] 执行完整 HOT arming preflight；每个未通过 gate 记录当前证据、blocker 和 owner。
-- [ ] 只有全部 gate 通过才创建资金 arm marker；否则不创建、不签名、不广播。
+- [x] 从通过验证的 commit `e1fb6eb` 构建不可变 artifact，记录 SHA-256 与 capability revision 10。
+- [x] 只升级并重启 public-only Control，三个付费服务保持 disabled/inactive。
+- [x] 回读 semantic website signals、foreground/background metering、链头/watchdog 与 HTTP endpoints。
+- [x] 回读 Control 仍无 credential/RPC env/paid capability，两个 marker 状态准确。
+- [x] 执行完整 HOT arming preflight；每个未通过 gate 记录当前证据、blocker 和 owner。
+- [x] 只有全部 gate 通过才创建资金 arm marker；本次 gate 未全过，因此未创建、未签名、未广播。
 - [ ] 保存 2026-08-18 改良部署与武装审计回执并同步 Public GitHub/CI。
 
 验收：
 
-- [ ] 生产 Control 不再因 raw-only 页面变化生成 `ACTION`，且 readiness backlog 不阻塞下一链头 slot。
-- [ ] `HOT_ARMED` 或 `NOT_HOT_ARMED` 都必须由当前证据决定，不以用户授权、代码完成或 marker 本身替代。
+- [x] 生产部署使用已测试的 semantic-only action 与 foreground-next-slot 调度；启动页面 scope readback无假阳性，优先级物理计数可见。
+- [x] `HOT_ARMED` 或 `NOT_HOT_ARMED` 都由当前证据决定；本次结果为 `NOT_HOT_ARMED`，未以用户授权、代码完成或 marker 本身替代。
 
 ---
 
@@ -1607,7 +1607,7 @@
 - [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现；生产 profile/adapters/三服务/interlock/watchdog、公共/付费 RPC 隔离、公共限速退避与独立身份复核调度已补齐并通过 234 项测试。
 - [x] 默认 live 入口在主网证据不完整时失败关闭，旧单钱包入口不进入 release artifact。
 - [x] 已生成 10 个仓库外 one-shot EOA，完成本地与服务器 10/10 key/address correspondence，并为每个钱包注入 `0.0032 ETH`；生产回读 nonce 均为 `0/0`。
-- [x] 已在 `47.251.28.201` 部署并验证 public-only keyless Control Sentinel；当前只有 Control enabled/active，三个付费服务 disabled/inactive，无付费 credential capability，两个 marker absent。
+- [x] 已在 `47.251.28.201` 部署并验证 revision-10 public-only keyless Control Sentinel；semantic 官网信号与 foreground/background 调度已生效，vault key/官方 Sequencer credential 已 root-only 准备；当前只有 Control enabled/active，三个付费服务 disabled/inactive，无付费 capability，两个 marker absent，HOT 审计结论为 `NOT_HOT_ARMED`。
 
 ### 下一批必须先完成
 

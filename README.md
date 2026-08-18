@@ -6,7 +6,7 @@ Robinhood Chain (`chainId=4663`) 上的 ClockIn / Stonk Launcher 生产架构实
 
 仓库已经实现并测试 v2 的 Canonical Model、SQLite WAL 状态、Known/Unknown Factory Control Sentinel、10 个独立 one-shot EOA、40%→floor 十档入场、1U–5U cap 缩量、canary 校准、7 天 scope-bound 授权、same-raw 广播与 UNKNOWN 恢复、双阶段退出与 5%/20% 分离滑点、readiness、只读 Dashboard、告警、systemd 模板和发布边界。
 
-当前状态是 `DEPLOYED_PUBLIC_MONITORING / NO_PAID_RPC_CAPABILITY / NOT_HOT_ARMED`，不是“已成交”。`47.251.28.201` 上只有无私钥 Control `enabled/active`，其唯一链 transport 是 Robinhood 官方公共 HTTP RPC；进程没有 RPC credential、Chainstack 环境变量或 systemd credential mount。Executor/Reconciler/Exit 全部 `disabled/inactive`，`PAID_RPC_APPROVED` 与 `PRODUCTION_ARM_APPROVED` 均不存在。最近一次公共回读确认 10/10 钱包 funding/nonce readiness，但官方仍未公开最终主网 Launcher Factory、ClockIn CA 和最终 buy/sell/finalize ABI。默认 `npm run live` 继续只输出 blocker 并以非零状态失败关闭，不读取私钥、不签名、不广播。部署回执见 [2026-08-17 public-RPC Control deployment](docs/receipts/2026-08-17-public-rpc-control-deployment.md)。
+当前状态是 `DEPLOYED_PUBLIC_CONTROL_HARDENED / STATIC_EXECUTION_PREREQUISITES_STAGED / NOT_HOT_ARMED`，不是“已成交”。`47.251.28.201` 上只有无私钥 Control `enabled/active`，其唯一链 transport 是 Robinhood 官方公共 HTTP RPC；进程没有 RPC credential、Chainstack 环境变量或 systemd credential mount。semantic 官网信号与 foreground/background 公共 RPC 调度已部署，最近一次公共回读确认 10/10 钱包 funding/nonce readiness。Executor/Reconciler/Exit 全部 `disabled/inactive`；vault key 与官方 Sequencer credential 已按 root-only 边界准备，但 `PAID_RPC_APPROVED` 与 `PRODUCTION_ARM_APPROVED` 均不存在。官方仍未公开最终主网 Launcher Factory、ClockIn CA 和最终 buy/sell/finalize ABI，因此默认 `npm run live` 继续只输出 blocker 并以非零状态失败关闭，不读取私钥、不签名、不广播。部署与武装审计见 [2026-08-18 Control hardening and arming audit](docs/receipts/2026-08-18-control-hardening-and-arming-audit.md)。
 
 ## 证据边界
 
