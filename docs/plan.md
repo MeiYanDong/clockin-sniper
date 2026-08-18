@@ -2048,3 +2048,50 @@ stateDiagram-v2
 官方公共 endpoint 明确属于 rate-limited、非 latency-sensitive production 的入口。默认 2 秒 HTTP poll 加公网抖动，可能比持续 Chainstack WSS 更晚发现 launch；人工打开付费窗口和进程启动也会增加准备延迟。按照本次用户决策，系统不通过软信号自动 prewarm Chainstack，因此不能承诺 first-block 或最佳排序。
 
 这是有意识的取舍，而不是程序缺失：常驻阶段优化“持续可观察且不消耗 Chainstack”，明确进入真实狙击窗口后才优化“低延迟执行”。实现与运维约束由 [ADR 0008](./adr/0008-public-observation-and-paid-execution-rpc-boundary.md) 固化。
+
+---
+
+## 35. Control signal quality and scheduling（2026-08-18）
+
+### 35.1 问题定义
+
+公共 Control 的价值不是“产生更多事件”，而是在不取得资金能力的前提下，尽早给出高信噪比候选。当前生产观察暴露了两个会影响竞速但不应通过放宽签名门解决的问题：
+
+1. 整页 HTML hash 把 Next.js chunk/build ID 等字节变化和 CA/launch 状态变化混为同一类 `ACTION`；
+2. 每小时 readiness 的 31 个请求虽然经过 500ms 串行限速，却仍按 FIFO 一次排满，可能让新到达的 2 秒链头请求等待完整队列。
+
+### 35.2 网站双指纹模型
+
+每个 allowlisted 官方页面保存两层证据：
+
+| 层 | 内容 | 用途 | 可否触发资金动作 |
+|---|---|---|---:|
+| raw | 完整响应体 SHA-256 | 取证、定位页面字节变化 | 否 |
+| semantic | 可见 launch 状态、ClockIn/Robinhood marker、可见或带 Factory/token/contract/pool/CA 标签的地址集合 | 告警和人工/链上复核入口 | 否 |
+
+`COMING_SOON / OPEN / PAUSED / UNKNOWN` 状态变化和候选地址集合变化为 `ACTION`；其他 marker 变化为 `INFO`；仅 raw hash 改变不产生事件。候选地址必须始终带 `unverified` 语义，只有经过 chainId、runtime/proxy、Factory family、event provenance、机制与退出 profile 的既有 L0–L4 流程后才可能升级。
+
+服务在启动时若已看到候选地址或 `OPEN`，必须告警，避免重启后把已发布 CA 错当成无需处理的基线。redacted snapshot 同时输出 raw hash 和 semantic signal，Dashboard 的 candidate count 来自去重后的官网候选，但身份仍保持 `UNKNOWN`。
+
+### 35.3 单限速器优先级调度
+
+公共 RPC 保持一个物理发送器和一个 500ms 全局间隔，不为“提速”创建第二个 client 绕过限速：
+
+```text
+FOREGROUND: eth_blockNumber / periodic chain identity
+BACKGROUND: hourly eth_gasPrice / balances / latest+pending nonces
+
+currently in-flight call finishes
+        ↓
+foreground queue non-empty ? foreground : background
+        ↓
+same official endpoint + same pacing + same bounded 429 retry
+```
+
+优先级不取消在途请求，也不承诺公共 HTTP 的 first-block 延迟；它只消除已知的 31-call 队头阻塞。snapshot 增加 foreground/background 物理请求数、当前两类队列深度和历史最大 background 深度，便于生产确认调度是否符合设计。
+
+### 35.4 实盘武装关系
+
+这两项改良提高观察质量和冷态响应，但不改变武装顺序。官网 `OPEN`、候选地址或链头推进只能要求立即复核；它们不能自动创建 `PAID_RPC_APPROVED` 或 `PRODUCTION_ARM_APPROVED`。只有官方最终 Factory/ABI、可执行买卖/退出 route、immutable profile、有效授权与 current readiness 全部通过后，才进入付费 WSS 与签名/广播状态。
+
+该决策由 [ADR 0009](./adr/0009-semantic-site-signals-and-priority-public-rpc.md) 固化。

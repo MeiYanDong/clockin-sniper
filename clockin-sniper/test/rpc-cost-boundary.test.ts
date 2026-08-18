@@ -35,7 +35,11 @@ describe("public Control RPC cost boundary", () => {
       endpointClass: "OFFICIAL_PUBLIC_HTTP",
       totalRequests: 2,
       requestsByMethod: { eth_blockNumber: 1, eth_chainId: 1 },
+      requestsByPriority: { foreground: 2, background: 0 },
       throttledRetries: 0,
+      pendingForeground: 0,
+      pendingBackground: 0,
+      maximumBackgroundQueueDepth: 0,
       lastRequestAt: "2026-08-17T07:00:02.000Z",
     });
   });
@@ -81,9 +85,57 @@ describe("public Control RPC cost boundary", () => {
       endpointClass: "OFFICIAL_PUBLIC_HTTP",
       totalRequests: 3,
       requestsByMethod: { eth_blockNumber: 2, eth_chainId: 1 },
+      requestsByPriority: { foreground: 3, background: 0 },
       throttledRetries: 1,
+      pendingForeground: 0,
+      pendingBackground: 0,
+      maximumBackgroundQueueDepth: 0,
       lastRequestAt: "2026-08-17T07:00:01.500Z",
     });
+  });
+
+  it("serves a new head request before queued background readiness work", async () => {
+    const calls: string[] = [];
+    let releaseFirst: (() => void) | undefined;
+    let markFirstStarted: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const fetchFn: typeof fetch = async (_input, init) => {
+      const request = JSON.parse(String(init?.body)) as {
+        readonly id: number;
+        readonly method: string;
+      };
+      calls.push(request.method);
+      if (request.method === "background-a") {
+        markFirstStarted?.();
+        await firstGate;
+      }
+      return new Response(
+        JSON.stringify({ jsonrpc: "2.0", id: request.id, result: request.method }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+    const rpc = new PublicControlRpc({ fetchFn, minimumIntervalMs: 1 });
+    const first = rpc.requestBackground<string>("background-a");
+    await firstStarted;
+    const second = rpc.requestBackground<string>("background-b");
+    const head = rpc.request<string>("eth_blockNumber");
+    releaseFirst?.();
+    assert.deepEqual(await Promise.all([first, second, head]), [
+      "background-a",
+      "background-b",
+      "eth_blockNumber",
+    ]);
+    assert.deepEqual(calls, ["background-a", "eth_blockNumber", "background-b"]);
+    const usage = rpc.usageSnapshot();
+    assert.deepEqual(usage.requestsByPriority, { foreground: 1, background: 2 });
+    assert.equal(usage.maximumBackgroundQueueDepth, 1);
+    assert.equal(usage.pendingForeground, 0);
+    assert.equal(usage.pendingBackground, 0);
   });
 
   it("keeps paid credentials out of the Control source and unit", async () => {

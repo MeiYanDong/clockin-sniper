@@ -1,6 +1,6 @@
 {
-  "manifest_revision": 9,
-  "generated_at": "2026-08-17T07:37:48.000Z",
+  "manifest_revision": 10,
+  "generated_at": "2026-08-18T04:54:19.000Z",
   "network": "eip155:4663",
   "production_state": "NOT_HOT_ARMED",
   "mode": "real_funds_only_no_shadow_branch",
@@ -13,8 +13,9 @@
     "address_cluster_discovery": "TESTED",
     "website_json_html_bundle_fallback": "TESTED",
     "public_control_rpc_boundary": "VERIFIED_DEPLOYED_HARD_CODED_OFFICIAL_PUBLIC_HTTP_NO_CREDENTIALS",
-    "public_rpc_usage_metering": "TESTED_SERIAL_500MS_MINIMUM_INTERVAL_BOUNDED_429_BACKOFF_METHOD_COUNTS_AND_LAST_REQUEST_TIME",
+    "public_rpc_usage_metering": "TESTED_SINGLE_500MS_LIMITER_FOREGROUND_HEAD_PRIORITY_BACKGROUND_READINESS_BOUNDED_429_AND_QUEUE_COUNTS",
     "public_identity_recheck": "TESTED_INDEPENDENT_FROM_ALIGNED_HEAD_POLL_TIMER",
+    "website_semantic_monitor": "TESTED_RAW_DIAGNOSTIC_SEMANTIC_STATUS_AND_UNVERIFIED_LABELLED_ADDRESS_SIGNALS_NO_AUTOMATIC_AUTHORITY",
     "paid_rpc_window_interlock": "TESTED_AND_INSTALLED_FIXED_ROOT_MARKER_BEFORE_CREDENTIAL_READ_MARKER_ABSENT",
     "factory_profile_registry": "TESTED",
     "identity_l0_l4_authorization": "TESTED_SEVEN_DAY_MAXIMUM_TTL",
@@ -43,7 +44,7 @@
     "OFFICIAL_MAINNET_LAUNCHER_FACTORY_AND_FINAL_ABI_NOT_PUBLISHED",
     "FINAL_MAINNET_POOL_BUY_SELL_FINALIZE_ADAPTERS_NOT_VERIFIED_CURRENT",
     "BOUND_PRODUCTION_PROFILE_AND_AUTHORIZATION_NOT_CREATED",
-    "PAID_RPC_AND_PRODUCTION_ARM_MARKERS_ABSENT_BY_POLICY",
+    "PAID_RPC_AND_PRODUCTION_ARM_MARKERS_ABSENT_WHILE_PRE_EXECUTION_GATES_ARE_BLOCKED",
     "EXECUTION_SERVICES_DISABLED_INACTIVE_NO_PROFILE_AUTHORIZATION_OR_ARM_MARKER",
     "ACTIVE_REGION_PERFORMANCE_NOT_BENCHMARKED",
     "NO_V2_CANONICAL_ENTRY_OR_EXIT_RECEIPT"
@@ -61,6 +62,8 @@
     "docs/adr/0006-clockin-policy-v2-risk-and-authorization.md",
     "docs/adr/0007-production-runtime-interlock-and-route-binding.md",
     "docs/adr/0008-public-observation-and-paid-execution-rpc-boundary.md",
+    "docs/adr/0009-semantic-site-signals-and-priority-public-rpc.md",
+    "docs/evidence/2026-08-18-launcher-mainnet-status.md",
     "docs/receipts/2026-08-17-production-runtime-deployment.md",
     "docs/receipts/2026-08-17-public-rpc-control-deployment.md"
   ]
