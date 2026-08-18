@@ -1529,7 +1529,7 @@
 - [x] 执行完整 HOT arming preflight；每个未通过 gate 记录当前证据、blocker 和 owner。
 - [x] 只有全部 gate 通过才创建资金 arm marker；本次 gate 未全过，因此未创建、未签名、未广播。
 - [x] 保存 2026-08-18 改良部署与武装审计回执并同步 Public GitHub；CI run `32101994516` 通过。
-- [ ] 构建并部署包含 `/docs` fallback 的 capability revision 11，更新最终回执并通过 Public GitHub CI。
+- [x] 从 commit `de854f1` 构建并部署包含 `/docs` fallback 的 capability revision 11；不可变 package SHA-256 为 `409bff74c441e47806a976c7b76e95d50979fe8d7cb6ea7befe29bf238c59ba7`，生产回读通过，Public GitHub CI run `32102451685` 全绿。
 
 验收：
 
@@ -1608,10 +1608,10 @@
 - [x] 当前私钥加载边界已迁到仓库外，并已有 secret scan/npm ignore 基础。
 - [x] 已测得当前质量基线：line 87.41%、branch 65.69%、function 88.61%。
 - [x] 本可执行 todo 已按小故事卡、阶段、测试和验收拆解。
-- [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现；生产 profile/adapters/三服务/interlock/watchdog、公共/付费 RPC 隔离、公共限速退避与独立身份复核调度已补齐并通过 234 项测试。
+- [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现；生产 profile/adapters/三服务/interlock/watchdog、公共/付费 RPC 隔离、公共限速退避与独立身份复核调度已补齐并通过 242 项测试。
 - [x] 默认 live 入口在主网证据不完整时失败关闭，旧单钱包入口不进入 release artifact。
 - [x] 已生成 10 个仓库外 one-shot EOA，完成本地与服务器 10/10 key/address correspondence，并为每个钱包注入 `0.0032 ETH`；生产回读 nonce 均为 `0/0`。
-- [x] 已在 `47.251.28.201` 部署并验证 revision-10 public-only keyless Control Sentinel；semantic 官网信号与 foreground/background 调度已生效，vault key/官方 Sequencer credential 已 root-only 准备；当前只有 Control enabled/active，三个付费服务 disabled/inactive，无付费 capability，两个 marker absent，HOT 审计结论为 `NOT_HOT_ARMED`。
+- [x] 已在 `47.251.28.201` 部署并验证 revision-11 public-only keyless Control Sentinel；四路 semantic 官网信号、主网 docs Factory/testnet archive 边界与 foreground/background 调度已生效，vault key/官方 Sequencer credential 已 root-only 准备；当前只有 Control enabled/active，三个付费服务 disabled/inactive，无付费 capability，两个 marker absent，HOT 审计结论为 `NOT_HOT_ARMED`。
 
 ### 下一批必须先完成
 
