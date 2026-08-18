@@ -39,6 +39,21 @@ const PRICE_MAXIMUM_DEVIATION_BPS = 200;
 const USD_MICROS_PER_BATCH = 5_000_000n;
 const USD_MICROS_ALL_IN = 60_000_000n;
 const STATUS_MAXIMUM_AGE_MS = 15_000;
+const OFFICIAL_WEBSITE_TARGETS = Object.freeze([
+  Object.freeze({ url: "https://clockin.win/", scope: "CLOCKIN" as const }),
+  Object.freeze({
+    url: "https://www.stonkbrokers.cash/launcher",
+    scope: "LAUNCHER" as const,
+  }),
+  Object.freeze({
+    url: "https://www.stonkbrokers.cash/docs",
+    scope: "LAUNCHER_DOCS" as const,
+  }),
+  Object.freeze({
+    url: "https://www.stonkbrokers.cash/safe-launch",
+    scope: "SAFE_LAUNCH" as const,
+  }),
+]);
 
 interface ControlEvent {
   readonly time: string;
@@ -362,74 +377,69 @@ async function writeSnapshot(
   await rename(temporary, target);
 }
 
-async function monitorWebsite(state: RuntimeState): Promise<void> {
-  for (const target of [
-    Object.freeze({ url: "https://clockin.win/", scope: "CLOCKIN" as const }),
-    Object.freeze({
-      url: "https://www.stonkbrokers.cash/launcher",
-      scope: "LAUNCHER" as const,
-    }),
-    Object.freeze({
-      url: "https://www.stonkbrokers.cash/safe-launch",
-      scope: "SAFE_LAUNCH" as const,
-    }),
-  ]) {
-    const { url, scope } = target;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6_000);
-    try {
-      const response = await fetch(url, { signal: controller.signal });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const body = await response.text();
-      const current = observeOfficialSite(body, { scope });
-      const previous = state.websiteObservations.get(url);
-      state.websiteObservations.set(url, current);
-      const page = `${new URL(url).hostname}${new URL(url).pathname}`;
-      if (previous === undefined) {
-        recordEvent(
-          state,
-          "INFO",
-          `official website semantic baseline: ${page} status=${current.launchStatus} candidates=${current.candidateAddresses.length}`,
-        );
-        if (current.candidateAddresses.length > 0) {
-          recordEvent(
-            state,
-            "ACTION",
-            `official website exposes ${current.candidateAddresses.length} unverified candidate address(es): ${page}`,
-          );
-        }
-        if (current.launchStatus === "OPEN") {
-          recordEvent(state, "ACTION", `official website launch status is OPEN: ${page}`);
-        }
-        continue;
-      }
-      const change = compareOfficialSiteObservations(previous, current);
-      if (change.addressSetChanged) {
-        recordEvent(
-          state,
-          "ACTION",
-          `official website unverified candidate address set changed: ${page} added=${change.addedAddresses.length} removed=${change.removedAddresses.length}`,
-        );
-      }
-      if (change.statusChanged) {
-        recordEvent(
-          state,
-          "ACTION",
-          `official website launch status changed: ${page} ${previous.launchStatus}->${current.launchStatus}`,
-        );
-      } else if (change.semanticChanged && !change.addressSetChanged) {
-        recordEvent(state, "INFO", `official website semantic markers changed: ${page}`);
-      }
-    } catch (error) {
+async function monitorWebsiteTarget(
+  state: RuntimeState,
+  target: (typeof OFFICIAL_WEBSITE_TARGETS)[number],
+): Promise<void> {
+  const { url, scope } = target;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6_000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body = await response.text();
+    const current = observeOfficialSite(body, { scope });
+    const previous = state.websiteObservations.get(url);
+    state.websiteObservations.set(url, current);
+    const page = `${new URL(url).hostname}${new URL(url).pathname}`;
+    if (previous === undefined) {
       recordEvent(
         state,
-        "ERROR",
-        `official website check failed: ${error instanceof Error ? error.message : String(error)}`,
+        "INFO",
+        `official website semantic baseline: ${page} status=${current.launchStatus} candidates=${current.candidateAddresses.length}`,
       );
-    } finally {
-      clearTimeout(timer);
+      if (current.candidateAddresses.length > 0) {
+        recordEvent(
+          state,
+          "ACTION",
+          `official website exposes ${current.candidateAddresses.length} unverified candidate address(es): ${page}`,
+        );
+      }
+      if (current.launchStatus === "OPEN") {
+        recordEvent(state, "ACTION", `official website launch status is OPEN: ${page}`);
+      }
+      return;
     }
+    const change = compareOfficialSiteObservations(previous, current);
+    if (change.addressSetChanged) {
+      recordEvent(
+        state,
+        "ACTION",
+        `official website unverified candidate address set changed: ${page} added=${change.addedAddresses.length} removed=${change.removedAddresses.length}`,
+      );
+    }
+    if (change.statusChanged) {
+      recordEvent(
+        state,
+        "ACTION",
+        `official website launch status changed: ${page} ${previous.launchStatus}->${current.launchStatus}`,
+      );
+    } else if (change.semanticChanged && !change.addressSetChanged) {
+      recordEvent(state, "INFO", `official website semantic markers changed: ${page}`);
+    }
+  } catch (error) {
+    recordEvent(
+      state,
+      "ERROR",
+      `official website check failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+async function monitorWebsite(state: RuntimeState): Promise<void> {
+  await Promise.all(OFFICIAL_WEBSITE_TARGETS.map((target) => monitorWebsiteTarget(state, target)));
 }
 
 async function main(): Promise<void> {

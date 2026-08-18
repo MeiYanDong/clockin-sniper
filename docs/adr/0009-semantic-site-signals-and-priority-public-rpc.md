@@ -37,6 +37,8 @@ This keeps byte-level evidence without making it actionable. A foreground/backgr
 - Script and style bodies are excluded from visible status parsing. An arbitrary address inside an unrelated bundle variable is not promoted to a candidate.
 - A raw-only change emits no action. Launch-status transitions and candidate-address set changes emit `ACTION`; other semantic-marker changes emit `INFO`.
 - Candidate addresses remain `unverified`. They are exposed in the redacted snapshot and candidate count, but they do not become a Factory profile, create an authorization or marker, start a paid service, load a signer, sign, or broadcast.
+- The official `/docs` contract-address table has a dedicated `LAUNCHER_DOCS` scope. It accepts only a `Launcher Factory` address in the mainnet portion before `Testnet Archive`, and explicitly rejects any testnet-labelled/archive Factory.
+- ClockIn, Launcher, docs and Safe Launch fetches run in parallel with independent six-second timeouts; adding the docs fallback does not serialize another full timeout ahead of the other pages.
 - If Control starts while an official page already contains candidates or reports an open launch, startup emits an action instead of silently treating it as an inert baseline.
 
 ### Public RPC scheduling
@@ -64,6 +66,6 @@ This keeps byte-level evidence without making it actionable. A foreground/backgr
 
 ## Verification
 
-- Unit tests prove raw-only HTML changes preserve the semantic hash, launch transitions change status, candidate additions/removals are exact, and arbitrary bundle addresses are ignored.
+- Unit tests prove raw-only HTML changes preserve the semantic hash, launch transitions change status, candidate additions/removals are exact, arbitrary bundle addresses are ignored, a mainnet docs Factory is accepted, and the currently published testnet-archive Factory is rejected.
 - Unit tests hold one background request in flight, enqueue more readiness work and then enqueue a head request; the observed physical order must be background-in-flight, head, remaining background.
 - Production readback must show the new semantic snapshot fields, foreground/background accounting, advancing head/watchdog, and unchanged `OFFICIAL_PUBLIC_HTTP_ONLY` / `paidRpcCapability=false` boundaries.
