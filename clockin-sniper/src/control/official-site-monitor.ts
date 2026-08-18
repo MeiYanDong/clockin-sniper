@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 
 export type OfficialSiteLaunchStatus = "UNKNOWN" | "COMING_SOON" | "OPEN" | "PAUSED";
-export type OfficialSiteScope = "GENERIC" | "LAUNCHER" | "CLOCKIN" | "SAFE_LAUNCH";
+export type OfficialSiteScope =
+  | "GENERIC"
+  | "LAUNCHER"
+  | "LAUNCHER_DOCS"
+  | "CLOCKIN"
+  | "SAFE_LAUNCH";
 
 export interface OfficialSiteObservation {
   readonly rawHash: string;
@@ -90,7 +95,30 @@ function extractAddresses(text: string, target: Set<`0x${string}`>): void {
   }
 }
 
-function candidateAddresses(html: string, visible: string): readonly `0x${string}`[] {
+function launcherDocsAddresses(visible: string): readonly `0x${string}`[] {
+  const candidates = new Set<`0x${string}`>();
+  const archive = /\btestnet\s+archive\b/iu.exec(visible);
+  const mainnetSection = archive === null ? visible : visible.slice(0, archive.index);
+  const labelled = /\blauncher\s+factory\b[^0-9a-f]{0,96}(0x[0-9a-f]{40})/giu;
+  for (const match of mainnetSection.matchAll(labelled)) {
+    const address = match[1];
+    if (address === undefined || /^0x0{40}$/iu.test(address)) continue;
+    const context = mainnetSection.slice(
+      Math.max(0, match.index - 120),
+      match.index + match[0].length,
+    );
+    if (/\btestnet\b/iu.test(context)) continue;
+    addAddress(candidates, address);
+  }
+  return Object.freeze([...candidates].sort());
+}
+
+function candidateAddresses(
+  html: string,
+  visible: string,
+  scope: OfficialSiteScope,
+): readonly `0x${string}`[] {
+  if (scope === "LAUNCHER_DOCS") return launcherDocsAddresses(visible);
   const candidates = new Set<`0x${string}`>();
   extractAddresses(visible, candidates);
 
@@ -110,7 +138,8 @@ function launchStatus(
   if (markers.includes("PAUSED") || markers.includes("MAINTENANCE")) return "PAUSED";
   const open =
     markers.includes("LAUNCH_NOW") ||
-    (scope === "LAUNCHER" && markers.includes("STONK_LAUNCHER_OPEN")) ||
+    ((scope === "LAUNCHER" || scope === "LAUNCHER_DOCS") &&
+      markers.includes("STONK_LAUNCHER_OPEN")) ||
     (scope === "CLOCKIN" && (markers.includes("CLOCKIN_OPEN") || markers.includes("SALE_OPEN"))) ||
     (scope === "SAFE_LAUNCH" && markers.includes("SAFE_LAUNCH_OPEN")) ||
     (scope === "GENERIC" &&
@@ -140,7 +169,7 @@ export function observeOfficialSite(
   const statusMarkers = Object.freeze(
     STATUS_PATTERNS.filter(({ pattern }) => pattern.test(visible)).map(({ marker }) => marker),
   );
-  const addresses = candidateAddresses(html, visible);
+  const addresses = candidateAddresses(html, visible, scope);
   const status = launchStatus(statusMarkers, scope);
   const clockInMentioned = /\bclock\s*in\b/iu.test(visible);
   const robinhoodChainMentioned =

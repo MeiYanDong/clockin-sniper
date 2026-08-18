@@ -33,13 +33,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dual raw/semantic official-site observations that ignore framework-only byte churn, preserve explicit launch-status changes, and surface only visible or labelled addresses as unverified candidates.
 - Foreground/background scheduling inside the single public-RPC limiter so head and identity requests take the next available physical slot ahead of queued hourly readiness work.
 - Public snapshot metering for priority-class request counts, current queue depths, maximum background depth, semantic page states, and unverified candidate sets.
+- Scope-bound monitoring of the official documentation address table that accepts only a mainnet-labelled Launcher Factory before the Testnet Archive boundary; all four official page requests run in parallel so the extra fallback does not add serial timeout latency.
 
 ### Changed
 
 - Extended the verification command to include formatting, linting, coverage, production dependency audit, and package-content audit.
 - Changed the default live entrypoint to fail closed while required mainnet evidence is unavailable; legacy single-wallet commands are explicitly audit/replay-only.
 - Reserved per-wallet Gas for one entry, one approval and three sells plus 30% margin; aggregate readiness now enforces the all-in cap and rejects automatic top-up.
-- Raised the tested baseline to 240 passing tests; the latest full verification reported line `89.00%`, branch `68.84%`, and function `92.04%` coverage.
+- Raised the tested baseline to 242 passing tests; the latest full verification reported line `89.01%`, branch `68.83%`, and function `92.05%` coverage.
 - Updated operational truth: all ten production wallets last reported funded with clean nonces; revision-10 keyless Control is enabled/active with semantic site signals, priority public scheduling, no paid capability and a progressing watchdog; the vault key and official Sequencer credential are staged root-only, while Executor/Reconciler/Exit remain disabled/inactive because the final mainnet Factory/ABI/profile/authorization/exit route is unavailable.
 
 ### Security

@@ -1504,6 +1504,8 @@
 - [x] 将官网候选明确标为 `unverified`，禁止自动升级 profile、创建 marker、启动服务、签名或广播。
 - [x] raw-only 变化不再产生事件；status/candidate set 变化产生 `ACTION`，其他 semantic marker 变化产生 `INFO`。
 - [x] 启动时若页面已为 `OPEN` 或已包含候选地址，立即产生行动事件，避免重启盲区。
+- [x] 将官方 `/docs` 地址表纳入 `LAUNCHER_DOCS` scope，只接受主网段 Launcher Factory，排除 Testnet Archive。
+- [x] 四个官网 fallback 并行抓取并独立超时，避免新增 docs 监控扩大串行最坏延迟。
 - [x] snapshot 输出 raw/semantic/status/candidate 证据，Dashboard candidate count 使用官网候选去重数但身份保持 `UNKNOWN`。
 - [x] 将公共 RPC 队列拆成 foreground/background 两类，继续共享同一 endpoint、物理限速与 429 退避。
 - [x] 链头/身份使用 foreground；Gas、余额与 latest/pending nonce readiness 使用 background。
@@ -1513,9 +1515,10 @@
 
 - [x] 测试 framework/build ID 的 raw-only 变化不改变 semantic hash。
 - [x] 测试 `COMING_SOON→OPEN`、candidate add/remove 和 arbitrary bundle address 过滤。
+- [x] 测试主网 docs Factory 被捕获、当前 testnet archive Factory 不被捕获，并用真实官方 HTML 回读 candidates=0。
 - [x] 测试 background 在途、background 排队后，新到 head 在下一物理 slot 优先执行。
 - [x] targeted tests、lint 与 strict typecheck 通过。
-- [x] 完整 `npm run verify`、package audit 与 secret/history scan 通过（240/240；line 89.00%、branch 68.84%、function 92.04%）。
+- [x] 完整 `npm run verify`、package audit 与 secret/history scan 通过（242/242；line 89.01%、branch 68.83%、function 92.05%）。
 
 生产部署与武装审计：
 
@@ -1526,6 +1529,7 @@
 - [x] 执行完整 HOT arming preflight；每个未通过 gate 记录当前证据、blocker 和 owner。
 - [x] 只有全部 gate 通过才创建资金 arm marker；本次 gate 未全过，因此未创建、未签名、未广播。
 - [x] 保存 2026-08-18 改良部署与武装审计回执并同步 Public GitHub；CI run `32101994516` 通过。
+- [ ] 构建并部署包含 `/docs` fallback 的 capability revision 11，更新最终回执并通过 Public GitHub CI。
 
 验收：
 

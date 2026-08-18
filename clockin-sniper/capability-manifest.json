@@ -1,6 +1,6 @@
 {
-  "manifest_revision": 10,
-  "generated_at": "2026-08-18T04:54:19.000Z",
+  "manifest_revision": 11,
+  "generated_at": "2026-08-18T05:16:00.000Z",
   "network": "eip155:4663",
   "production_state": "NOT_HOT_ARMED",
   "mode": "real_funds_only_no_shadow_branch",
@@ -15,7 +15,7 @@
     "public_control_rpc_boundary": "VERIFIED_DEPLOYED_HARD_CODED_OFFICIAL_PUBLIC_HTTP_NO_CREDENTIALS",
     "public_rpc_usage_metering": "TESTED_SINGLE_500MS_LIMITER_FOREGROUND_HEAD_PRIORITY_BACKGROUND_READINESS_BOUNDED_429_AND_QUEUE_COUNTS",
     "public_identity_recheck": "TESTED_INDEPENDENT_FROM_ALIGNED_HEAD_POLL_TIMER",
-    "website_semantic_monitor": "TESTED_RAW_DIAGNOSTIC_SEMANTIC_STATUS_AND_UNVERIFIED_LABELLED_ADDRESS_SIGNALS_NO_AUTOMATIC_AUTHORITY",
+    "website_semantic_monitor": "TESTED_SCOPED_STATUS_MAINNET_LAUNCHER_DOCS_FACTORY_TESTNET_ARCHIVE_EXCLUSION_AND_UNVERIFIED_ADDRESS_SIGNALS_NO_AUTOMATIC_AUTHORITY",
     "paid_rpc_window_interlock": "TESTED_AND_INSTALLED_FIXED_ROOT_MARKER_BEFORE_CREDENTIAL_READ_MARKER_ABSENT",
     "factory_profile_registry": "TESTED",
     "identity_l0_l4_authorization": "TESTED_SEVEN_DAY_MAXIMUM_TTL",

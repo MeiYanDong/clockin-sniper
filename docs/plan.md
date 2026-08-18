@@ -2069,9 +2069,9 @@ stateDiagram-v2
 | raw | 完整响应体 SHA-256 | 取证、定位页面字节变化 | 否 |
 | semantic | 可见 launch 状态、ClockIn/Robinhood marker、可见或带 Factory/token/contract/pool/CA 标签的地址集合 | 告警和人工/链上复核入口 | 否 |
 
-`COMING_SOON / OPEN / PAUSED / UNKNOWN` 状态变化和候选地址集合变化为 `ACTION`；其他 marker 变化为 `INFO`；仅 raw hash 改变不产生事件。候选地址必须始终带 `unverified` 语义，只有经过 chainId、runtime/proxy、Factory family、event provenance、机制与退出 profile 的既有 L0–L4 流程后才可能升级。
+`COMING_SOON / OPEN / PAUSED / UNKNOWN` 状态变化和候选地址集合变化为 `ACTION`；其他 marker 变化为 `INFO`；仅 raw hash 改变不产生事件。候选地址必须始终带 `unverified` 语义，只有经过 chainId、runtime/proxy、Factory family、event provenance、机制与退出 profile 的既有 L0–L4 流程后才可能升级。官方 `/docs` 地址表使用独立 `LAUNCHER_DOCS` scope：只接受 `Testnet Archive` 之前的主网 `Launcher Factory`，明确拒绝 archive/testnet Factory。
 
-服务在启动时若已看到候选地址或 `OPEN`，必须告警，避免重启后把已发布 CA 错当成无需处理的基线。redacted snapshot 同时输出 raw hash 和 semantic signal，Dashboard 的 candidate count 来自去重后的官网候选，但身份仍保持 `UNKNOWN`。
+服务在启动时若已看到候选地址或 `OPEN`，必须告警，避免重启后把已发布 CA 错当成无需处理的基线。ClockIn、Launcher、docs 与 Safe Launch 四个请求并行执行并各自使用 6 秒 timeout，避免新增 fallback 造成串行延迟。redacted snapshot 同时输出 raw hash 和 semantic signal，Dashboard 的 candidate count 来自去重后的官网候选，但身份仍保持 `UNKNOWN`。
 
 ### 35.3 单限速器优先级调度
 

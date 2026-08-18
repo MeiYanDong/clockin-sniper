@@ -84,4 +84,35 @@ describe("official website semantic monitor", () => {
     assert.deepEqual(change.addedAddresses, [added]);
     assert.deepEqual(change.removedAddresses, [removed]);
   });
+
+  it("accepts only a mainnet Launcher Factory from official docs", () => {
+    const mainnet = "0x4444444444444444444444444444444444444444";
+    const testnet = "0x5555555555555555555555555555555555555555";
+    const observation = observeOfficialSite(
+      `<main>
+        <h2>Contract Addresses</h2>
+        <p>Live mainnet deployment addresses on Robinhood Chain.</p>
+        <p>Launcher Factory | ${mainnet}</p>
+        <h3>Testnet Archive (Hackathon Demo)</h3>
+        <p>Do not use on mainnet. Launcher Factory (testnet) | ${testnet}</p>
+      </main>`,
+      { scope: "LAUNCHER_DOCS" },
+    );
+    assert.deepEqual(observation.candidateAddresses, [mainnet]);
+  });
+
+  it("does not promote the archived testnet Factory when mainnet is unpublished", () => {
+    const testnet = "0x5555555555555555555555555555555555555555";
+    const observation = observeOfficialSite(
+      `<main>
+        <h2>Contract Addresses</h2>
+        <p>Live mainnet deployment addresses on Robinhood Chain.</p>
+        <h3>Upcoming protocol modules</h3>
+        <h3>Testnet Archive (Hackathon Demo)</h3>
+        <p>Do not use on mainnet. Launcher Factory (testnet) | ${testnet}</p>
+      </main>`,
+      { scope: "LAUNCHER_DOCS" },
+    );
+    assert.deepEqual(observation.candidateAddresses, []);
+  });
 });
