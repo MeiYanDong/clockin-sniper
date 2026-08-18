@@ -1525,7 +1525,7 @@
 - [x] 回读 Control 仍无 credential/RPC env/paid capability，两个 marker 状态准确。
 - [x] 执行完整 HOT arming preflight；每个未通过 gate 记录当前证据、blocker 和 owner。
 - [x] 只有全部 gate 通过才创建资金 arm marker；本次 gate 未全过，因此未创建、未签名、未广播。
-- [ ] 保存 2026-08-18 改良部署与武装审计回执并同步 Public GitHub/CI。
+- [x] 保存 2026-08-18 改良部署与武装审计回执并同步 Public GitHub；CI run `32101994516` 通过。
 
 验收：
 
