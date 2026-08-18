@@ -10,20 +10,20 @@ This is a negative execution-readiness receipt, updated after deploying semantic
 
 | Gate | Current evidence | Result |
 | --- | --- | --- |
-| Network identity | Post-deploy public Control returned `chainId=4663`, head `39433707` and advancing, with independent foreground identity/head accounting | PASS CURRENT for public observation |
+| Network identity | Post-deploy public Control returned `chainId=4663`, head `39446492` and advancing at `2026-08-18T05:27:24Z`; the first scheduled identity refresh completed at `05:27:05Z` while foreground head polling continued | PASS CURRENT for public observation |
 | Direct Sequencer write path | Root-only credential staged; an invalid-empty-transaction probe was deterministically rejected at `2026-08-18T05:09:09Z`; no signed or valid transaction was sent | PASS CURRENT write-method semantics / NOT ENABLED in Control |
 | Production HTTP/WSS provider set | Public Control reports `robinhood-public-http`, `OFFICIAL_PUBLIC_HTTP_ONLY`, and `paidRpcCapability=false`; paid services and marker are absent | PASS CURRENT for public observation / deliberately NOT PAID-READY |
-| Factory/Profile | Official mainnet Launcher Factory/final ABI not published; no current runtime/proxy hashes | BLOCKED |
+| Factory/Profile | Official mainnet Launcher Factory/final ABI not published; the scoped Launcher and `/docs` monitors both report `COMING_SOON`, zero mainnet candidates, and no current runtime/proxy hashes | BLOCKED |
 | Exact/topic-wide channels | Generic channels tested; final address/topic/profile configuration unavailable | BLOCKED |
 | Wallet identity | 10/10 external key/address correspondence verified locally and again against the root-only server key files without printing keys | PASS |
-| Wallet funding/nonces | The post-deploy public readiness pass reported 10/10 funded wallets and 10/10 clean nonces without loading keys | PASS at `2026-08-18T05:05:40Z`; not a launch-time authorization |
+| Wallet funding/nonces | The post-deploy public readiness pass reported 10/10 funded wallets and 10/10 clean nonces without loading keys | PASS at `2026-08-18T05:22:04Z`; not a launch-time authorization |
 | Principal/entry Gas/exit Gas | The same public snapshot reported `readyWallets=10` and `allInCapReady=true` under the frozen risk model | PASS at the latest hourly snapshot; must refresh in paid preparation |
 | Price Snapshot | Control produced a fresh dual-source snapshot at startup, but the 30-second launch-time freshness gate intentionally expires between hourly cold wallet checks | BLOCKED for HOT_ARMED; refresh in explicit real-snipe preparation |
 | Strategy authorization | Owner policy complete: `clockin-policy-v2`, revision `2`, config hash `sha256:a03505b3f0da3a92a5c45f70ff584ab26326ba9940996446325449392f7fb121`; 7-day TTL boundary tested; no current production AuthorizationRecord exists | PASS locally / BLOCKED for current launch |
 | DB/leases/vault | SQLite WAL, atomic lease/nonce/reservation and encrypted vault recovery tested locally; a new vault key is backed up outside the repository and staged server-side `0400 root:root`; canonical SQLite is absent and no writer lease exists | PASS vault static / BLOCKED DB and lease for Execution Plane |
 | Inner/outer exit | Generic contracts, route registry, net quote and policy tested; final sell/router/finalize profile unavailable | BLOCKED |
 | UNKNOWN/open positions | The last Control readback reported zero unknown attempts and zero open positions; no Execution Plane database exists yet | PASS at the last readback / BLOCKED for current executor evidence |
-| Artifact/systemd | Commit `e1fb6eb2dabc88ce45974032be4a82c6170bc07c`, package SHA-256 `9c741ea6e13e5e1ca418b7b549a8fb7997a1b398cc66ffa59a0d4369592fa00f`, capability revision `10`, runtime Node `v24.19.0`; Control is enabled/active with semantic website signals, foreground/background public scheduling and no credential capability; three paid services are disabled/inactive and both markers are absent | PASS for public monitoring; BLOCKED for paid execution activation |
+| Artifact/systemd | Commit `de854f1d4c6e46b0bd6b872dec41889850b7dbcd`, package SHA-256 `409bff74c441e47806a976c7b76e95d50979fe8d7cb6ea7befe29bf238c59ba7`, capability revision `11`, runtime Node `v24.19.0`; Control is enabled/active with four scoped website signals, foreground/background public scheduling and no credential capability; three paid services are disabled/inactive and both markers are absent | PASS for public monitoring; BLOCKED for paid execution activation |
 | Canonical effects | No v2 entry or exit receipt/token delta/quote delta | BLOCKED |
 
 ## Blocking owners and evidence needed

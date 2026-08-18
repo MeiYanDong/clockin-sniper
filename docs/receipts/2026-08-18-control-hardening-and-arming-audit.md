@@ -10,28 +10,29 @@ The owner explicitly requested real-production hardening and arming. This receip
 
 | Item | Verified value |
 |---|---|
-| Source commit | `e1fb6eb2dabc88ce45974032be4a82c6170bc07c` |
+| Source commit | `de854f1d4c6e46b0bd6b872dec41889850b7dbcd` |
 | Public branch | `agent/keyless-control-production-deployment` |
 | GitHub PR | draft PR #10, mergeable |
-| GitHub Actions | run `32101353060`, both required checks passed |
+| GitHub Actions | run `32102451685`, both required checks passed |
 | Package | `local-clockin-sniper-0.1.0.tgz` |
-| Package SHA-256 | `9c741ea6e13e5e1ca418b7b549a8fb7997a1b398cc66ffa59a0d4369592fa00f` |
-| Capability manifest | revision `10`, SHA-256 `25b63813bce599e803e35b5dfbcef33702baa21c22278d910ac4e4dade5295aa` |
-| Installed Control entrypoint SHA-256 | `5c8d8be0d67fa982bc0896bca3620bb4e98502d02f8310756834a3b85b6a5427` |
-| Local verification | 240/240 tests; line 89.00%, branch 68.84%, function 92.04%; secret/history, format, lint, typecheck, production audit and package audit passed |
-| Production release | `/opt/clockin-sniper/releases/e1fb6eb2dabc88ce45974032be4a82c6170bc07c` |
+| Package SHA-256 | `409bff74c441e47806a976c7b76e95d50979fe8d7cb6ea7befe29bf238c59ba7` |
+| Capability manifest | revision `11`, SHA-256 `ac73e63d4188c9148d5b63167afe932626a4a8e96b570fdb8ed3aa1096b29882` |
+| Installed Control entrypoint SHA-256 | `aa8a68fbcac192a4cb7494d57479c99a14979d15b362e38a25641e3710ff39d0` |
+| Installed Control unit SHA-256 | `ca65713875dda15172aebe29c5c2ed3621cad2fa85ebbec8af6dcf5d36e0eb34` |
+| Local verification | 242/242 tests; line 89.01%, branch 68.83%, function 92.05%; secret/history, format, lint, typecheck, production audit and package audit passed |
+| Production release | `/opt/clockin-sniper/releases/de854f1d4c6e46b0bd6b872dec41889850b7dbcd` |
 
-The package checksum and `BUILD-METADATA.json` were independently read back after upload and before extraction. The server installed nine locked production packages with the versioned Node `v24.19.0` runtime. The old release `2a5e9e3586a395b62731b961bb97087ab96786a5` and the pre-change units under `/opt/clockin-sniper/unit-backups/2026-08-18T0505Z-before-e1fb6eb/` remain available for rollback.
+The package checksum and `BUILD-METADATA.json` were independently read back after upload and before extraction. The server installed nine locked production packages with the versioned Node `v24.19.0` runtime. The immediately previous release `e1fb6eb2dabc88ce45974032be4a82c6170bc07c` remains available, and the pre-change units are retained under `/opt/clockin-sniper/unit-backups/2026-08-18T0521Z-before-de854f1/` for rollback.
 
 ## Deployed Control behavior
 
-The new Control started at `2026-08-18T05:05:23Z`. Initial readback reported:
+The revision-11 Control started at `2026-08-18T05:21:47Z`. Runtime readback reported:
 
-- `clockin-control`: enabled, active/running, PID `328174`, `NRestarts=0`, 30-second watchdog advancing;
+- `clockin-control`: enabled, active/running, PID `330352`, `NRestarts=0`; the 30-second watchdog advanced from monotonic `139677751520` to `139737762040` while the PID remained stable;
 - `/health=200`, `/ready=503`, `/dashboard=200`; 503 is the correct negative HOT result;
-- 10/10 wallets ready, 10/10 latest/pending nonce-clean and all-in cap ready at `2026-08-18T05:05:40Z`;
-- chain head `39433707` and advancing on chain `4663`;
-- public RPC physical counts after startup: 43 total, 11 foreground and 32 background, zero throttle retry, zero pending queue and maximum background queue depth 29;
+- 10/10 wallets ready, 10/10 latest/pending nonce-clean and all-in cap ready at `2026-08-18T05:22:04Z`;
+- chain head `39444201` and advancing on chain `4663` at `2026-08-18T05:23:34Z`;
+- public RPC physical counts at that snapshot: 78 total, 46 foreground and 32 background, zero throttle retry, zero pending queue and maximum background queue depth 29;
 - monitoring policy remained `OFFICIAL_PUBLIC_HTTP_ONLY`, 500ms global minimum interval and `paidRpcCapability=false`.
 
 The production semantic page snapshot correctly separated page scopes:
@@ -39,12 +40,13 @@ The production semantic page snapshot correctly separated page scopes:
 ```text
 clockin.win/                       status=UNKNOWN     candidates=0 clockInMentioned=true
 stonkbrokers.cash/launcher        status=COMING_SOON candidates=0 markers=COMING_SOON,SIGNAL_SCRAMBLED,SAFE_LAUNCH_OPEN
+stonkbrokers.cash/docs            status=COMING_SOON candidates=0 markers=COMING_SOON,SIGNAL_SCRAMBLED
 stonkbrokers.cash/safe-launch     status=UNKNOWN     candidates=0
 ```
 
-The startup journal contained three `INFO` baselines and zero `ACTION`/`ERROR` events. In particular, the live Safe Launch marker on the Launcher page did not promote the main Launcher to `OPEN`. Automated tests separately prove that framework-only raw HTML changes create no action and that a foreground head request takes the next physical slot ahead of queued background readiness work.
+The startup journal contained four `INFO` baselines and zero `ACTION`/application `ERROR` events. In particular, the live Safe Launch marker on the Launcher page did not promote the main Launcher to `OPEN`; the `/docs` parser returned zero candidates instead of promoting its archived testnet Factory. Automated tests separately prove that framework-only raw HTML changes create no action, only a mainnet-labelled docs Factory before the Testnet Archive boundary can become an unverified candidate, and a foreground head request takes the next physical slot ahead of queued background readiness work.
 
-A held readback through `2026-08-18T05:11:45Z` showed head progression from `39433707` to `39437158`, `lastIdentityCheckAt=2026-08-18T05:10:40.934Z`, `eth_chainId=3`, 218 total public requests (186 foreground / 32 background), zero throttled retry, zero `ACTION`, zero application `ERROR`, `NRestarts=0`, and an advancing watchdog. This proves the first scheduled five-minute identity recheck on the deployed artifact while normal head polling continued.
+A held readback through `2026-08-18T05:27:24Z` showed head progression to `39446492`, the first scheduled identity refresh completed at `05:27:05Z`, `eth_chainId` rose from 2 to 3, and the public queues returned to zero pending. The official public endpoint produced one throttled request during the hold; bounded retry recovered it without an application error. Totals reached 196 physical requests (164 foreground / 32 background), `NRestarts=0`, all four website candidate sets remained empty, and the watchdog continued advancing.
 
 ## RPC and secret capability boundary
 
@@ -75,7 +77,7 @@ These files are capabilities needed by future paid services; their presence does
 | Immutable production profile | `/etc/clockin-sniper/credentials/factory-profile.json` absent | BLOCKED |
 | <=7-day bound authorization | `/etc/clockin-sniper/credentials/production-authorization.json` absent | BLOCKED |
 | Wallet key files | Exactly ten root-only entry key files remain present; values not read | PASS static |
-| Wallet public funding/nonces | 10/10 ready and nonce-clean in the post-deploy public snapshot | PASS at `2026-08-18T05:05:40Z` |
+| Wallet public funding/nonces | 10/10 ready and nonce-clean in the post-deploy public snapshot | PASS at `2026-08-18T05:22:04Z` |
 | Vault key | External backup plus server `0400 root:root` credential | PASS static |
 | Direct Sequencer | Credential staged; invalid-payload rejection verified | PASS current read-only/write-method semantics |
 | Paid HTTP/WSS | Credentials exist, but current health intentionally not probed before a valid target/profile exists | NOT ACTIVATED |
@@ -86,7 +88,7 @@ These files are capabilities needed by future paid services; their presence does
 | Exposure | Control reports zero unresolved attempts and zero open positions | PASS |
 | Arm markers | Both absent | CORRECT FAIL-CLOSED RESULT |
 
-The deployed fail-closed entrypoint returned exit code `2`, `state=NOT_HOT_ARMED`, `signed=false`, `broadcast=false`, and the exact blocker list from capability revision 10.
+The deployed fail-closed entrypoint returned exit code `2`, `state=NOT_HOT_ARMED`, `signed=false`, `broadcast=false`, and the exact blocker list from capability revision 11.
 
 ## Decision
 

@@ -41,7 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Changed the default live entrypoint to fail closed while required mainnet evidence is unavailable; legacy single-wallet commands are explicitly audit/replay-only.
 - Reserved per-wallet Gas for one entry, one approval and three sells plus 30% margin; aggregate readiness now enforces the all-in cap and rejects automatic top-up.
 - Raised the tested baseline to 242 passing tests; the latest full verification reported line `89.01%`, branch `68.83%`, and function `92.05%` coverage.
-- Updated operational truth: all ten production wallets last reported funded with clean nonces; revision-10 keyless Control is enabled/active with semantic site signals, priority public scheduling, no paid capability and a progressing watchdog; the vault key and official Sequencer credential are staged root-only, while Executor/Reconciler/Exit remain disabled/inactive because the final mainnet Factory/ABI/profile/authorization/exit route is unavailable.
+- Updated operational truth: all ten production wallets last reported funded with clean nonces; revision-11 keyless Control is enabled/active with four scoped semantic site signals, mainnet docs-Factory/testnet-archive separation, priority public scheduling, no paid capability and a progressing watchdog; the vault key and official Sequencer credential are staged root-only, while Executor/Reconciler/Exit remain disabled/inactive because the final mainnet Factory/ABI/profile/authorization/exit route is unavailable.
 
 ### Security
 
