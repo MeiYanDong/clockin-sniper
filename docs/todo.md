@@ -1491,6 +1491,47 @@
 - [x] 常驻 Control 在线且从代码、unit、进程环境和 snapshot 四层证明 Chainstack 请求为零能力边界。
 - [x] 付费服务只能在显式 real-snipe cost window 中启动，且 Executor 仍需独立实盘授权。
 
+### STORY-118：Control 信号降噪与链头优先调度（P0）
+
+目标：整页前端噪声不能冒充 launch 信号；小时级钱包检查不能把两秒链头请求堵在完整 FIFO 队列之后。
+
+设计与代码：
+
+- [x] 固化 [ADR 0009](./adr/0009-semantic-site-signals-and-priority-public-rpc.md)。
+- [x] 保留官网 raw SHA-256 作为诊断证据，新增独立 semantic hash。
+- [x] 从可见文本提取明确 launch status，并排除 script/style 对状态判断的干扰。
+- [x] 只收集页面可见地址或带 Factory/token/contract/pool/CA 标签的源码地址，过滤零地址和任意 bundle 地址。
+- [x] 将官网候选明确标为 `unverified`，禁止自动升级 profile、创建 marker、启动服务、签名或广播。
+- [x] raw-only 变化不再产生事件；status/candidate set 变化产生 `ACTION`，其他 semantic marker 变化产生 `INFO`。
+- [x] 启动时若页面已为 `OPEN` 或已包含候选地址，立即产生行动事件，避免重启盲区。
+- [x] snapshot 输出 raw/semantic/status/candidate 证据，Dashboard candidate count 使用官网候选去重数但身份保持 `UNKNOWN`。
+- [x] 将公共 RPC 队列拆成 foreground/background 两类，继续共享同一 endpoint、物理限速与 429 退避。
+- [x] 链头/身份使用 foreground；Gas、余额与 latest/pending nonce readiness 使用 background。
+- [x] snapshot 输出两类物理请求数、当前 queue depth 与最大 background depth。
+
+自动化验证：
+
+- [x] 测试 framework/build ID 的 raw-only 变化不改变 semantic hash。
+- [x] 测试 `COMING_SOON→OPEN`、candidate add/remove 和 arbitrary bundle address 过滤。
+- [x] 测试 background 在途、background 排队后，新到 head 在下一物理 slot 优先执行。
+- [x] targeted tests、lint 与 strict typecheck 通过。
+- [x] 完整 `npm run verify`、package audit 与 secret/history scan 通过（240/240；line 89.00%、branch 68.84%、function 92.04%）。
+
+生产部署与武装审计：
+
+- [ ] 从通过验证的 commit 构建不可变 artifact，记录 SHA-256/capability revision。
+- [ ] 只升级并重启 public-only Control，三个付费服务保持 disabled/inactive。
+- [ ] 回读 semantic website signals、foreground/background metering、链头/watchdog 与 HTTP endpoints。
+- [ ] 回读 Control 仍无 credential/RPC env/paid capability，两个 marker 状态准确。
+- [ ] 执行完整 HOT arming preflight；每个未通过 gate 记录当前证据、blocker 和 owner。
+- [ ] 只有全部 gate 通过才创建资金 arm marker；否则不创建、不签名、不广播。
+- [ ] 保存 2026-08-18 改良部署与武装审计回执并同步 Public GitHub/CI。
+
+验收：
+
+- [ ] 生产 Control 不再因 raw-only 页面变化生成 `ACTION`，且 readiness backlog 不阻塞下一链头 slot。
+- [ ] `HOT_ARMED` 或 `NOT_HOT_ARMED` 都必须由当前证据决定，不以用户授权、代码完成或 marker 本身替代。
+
 ---
 
 ## Phase 12：真实事件后的闭环证据

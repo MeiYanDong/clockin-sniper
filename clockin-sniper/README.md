@@ -30,6 +30,7 @@ ClockIn Sniper v2 是 Robinhood Chain (`chainId=4663`) 的事件驱动、10 EOA 
 - entry/exit 独立开关、health/readiness、证据型 Dashboard、异步 redacted alerts；
 - active/keyless-observer single-writer failover、region benchmark primitives、hardened systemd/release templates。
 - immutable production profile/7 天授权解析、Factory event exact decode、launch-bound pool target、configured buy/sell route、Executor/Reconciler/Exit 三进程、append-only crash recovery、redacted status interlock 和 systemd watchdog。
+- 官网 raw/semantic 双指纹、scope-bound launch 状态和未验证候选地址集合，以及同一公共 RPC 物理限速器内的链头 foreground / readiness background 优先级调度。
 
 接口和 fixture 的“实现/测试通过”不等于最终主网 adapter 已验证。`sell-adapter.ts`、route/finalize interfaces 仍需绑定官方最终 ABI 后才能实盘使用。
 
@@ -44,7 +45,7 @@ npm run build
 npm run live
 ```
 
-2026-08-17 本地基线：234/234 tests；最近一次完整 verify 为 line `88.72%`、branch `68.27%`、function `91.44%`。`verify` 包含：
+2026-08-18 本地基线：240/240 tests；最近一次完整 verify 为 line `89.00%`、branch `68.84%`、function `92.04%`。`verify` 包含：
 
 - current tree 与完整 Git history secret scan；
 - Biome format/lint；

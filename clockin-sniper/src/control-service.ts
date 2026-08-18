@@ -1,8 +1,12 @@
-import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
 
+import {
+  compareOfficialSiteObservations,
+  observeOfficialSite,
+  type OfficialSiteObservation,
+} from "./control/official-site-monitor.js";
 import { createOpsServer } from "./ops/http-server.js";
 import type { DashboardModel } from "./ops/dashboard.js";
 import {
@@ -13,6 +17,7 @@ import {
 import { verifyRobinhoodMainnet } from "./rpc/robinhood.js";
 import { hexToBigInt } from "./rpc/hex.js";
 import { PublicControlRpc } from "./runtime/public-control-rpc.js";
+import type { JsonRpcRequester } from "./rpc/types.js";
 import {
   readProductionServiceStatus,
   writeProductionServiceStatus,
@@ -50,7 +55,7 @@ interface RuntimeState {
   lastRefreshAt: string | null;
   lastHeadPollAt: string | null;
   lastIdentityCheckAt: string | null;
-  websiteHashes: Map<string, string>;
+  websiteObservations: Map<string, OfficialSiteObservation>;
   serviceReadbacks: Map<"executor" | "reconciler" | "exit", ProductionServiceReadback>;
   events: ControlEvent[];
   publicRpc: PublicControlRpc;
@@ -224,6 +229,11 @@ function readinessInput(state: RuntimeState): OperationalReadinessInput {
 
 function dashboard(state: RuntimeState): DashboardModel {
   const rows = state.walletReport?.rows ?? [];
+  const websiteCandidateCount = new Set(
+    [...state.websiteObservations.values()].flatMap((observation) => [
+      ...observation.candidateAddresses,
+    ]),
+  ).size;
   const readiness = evaluateOperationalReadiness(readinessInput(state));
   const executorReadback = state.serviceReadbacks.get("executor");
   const exitReadback = state.serviceReadbacks.get("exit");
@@ -237,7 +247,7 @@ function dashboard(state: RuntimeState): DashboardModel {
     latestBlock: state.latestBlock.toString(),
     lagBlocks: 0,
     factory: Object.freeze({
-      candidateCount: 0,
+      candidateCount: websiteCandidateCount,
       profileId: executor?.profileId ?? "UNPUBLISHED",
       revision: executor?.profileRevision ?? 0,
       state: readiness.snapshot.factory.state,
@@ -315,7 +325,22 @@ async function writeSnapshot(
               ready: row.ready,
             })),
           },
-    websiteHashes: Object.fromEntries(state.websiteHashes),
+    websiteHashes: Object.fromEntries(
+      [...state.websiteObservations].map(([url, observation]) => [url, observation.rawHash]),
+    ),
+    websiteSignals: Object.fromEntries(
+      [...state.websiteObservations].map(([url, observation]) => [
+        url,
+        {
+          semanticHash: observation.semanticHash,
+          launchStatus: observation.launchStatus,
+          statusMarkers: observation.statusMarkers,
+          candidateAddresses: observation.candidateAddresses,
+          clockInMentioned: observation.clockInMentioned,
+          robinhoodChainMentioned: observation.robinhoodChainMentioned,
+        },
+      ]),
+    ),
     lastRefreshAt: state.lastRefreshAt,
     lastHeadPollAt: state.lastHeadPollAt,
     lastIdentityCheckAt: state.lastIdentityCheckAt,
@@ -338,26 +363,62 @@ async function writeSnapshot(
 }
 
 async function monitorWebsite(state: RuntimeState): Promise<void> {
-  for (const url of [
-    "https://clockin.win/",
-    "https://www.stonkbrokers.cash/launcher",
-    "https://www.stonkbrokers.cash/safe-launch",
+  for (const target of [
+    Object.freeze({ url: "https://clockin.win/", scope: "CLOCKIN" as const }),
+    Object.freeze({
+      url: "https://www.stonkbrokers.cash/launcher",
+      scope: "LAUNCHER" as const,
+    }),
+    Object.freeze({
+      url: "https://www.stonkbrokers.cash/safe-launch",
+      scope: "SAFE_LAUNCH" as const,
+    }),
   ]) {
+    const { url, scope } = target;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6_000);
     try {
       const response = await fetch(url, { signal: controller.signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = await response.text();
-      const current = createHash("sha256").update(body).digest("hex");
-      const previous = state.websiteHashes.get(url);
-      state.websiteHashes.set(url, current);
-      if (previous !== undefined && previous !== current) {
+      const current = observeOfficialSite(body, { scope });
+      const previous = state.websiteObservations.get(url);
+      state.websiteObservations.set(url, current);
+      const page = `${new URL(url).hostname}${new URL(url).pathname}`;
+      if (previous === undefined) {
+        recordEvent(
+          state,
+          "INFO",
+          `official website semantic baseline: ${page} status=${current.launchStatus} candidates=${current.candidateAddresses.length}`,
+        );
+        if (current.candidateAddresses.length > 0) {
+          recordEvent(
+            state,
+            "ACTION",
+            `official website exposes ${current.candidateAddresses.length} unverified candidate address(es): ${page}`,
+          );
+        }
+        if (current.launchStatus === "OPEN") {
+          recordEvent(state, "ACTION", `official website launch status is OPEN: ${page}`);
+        }
+        continue;
+      }
+      const change = compareOfficialSiteObservations(previous, current);
+      if (change.addressSetChanged) {
         recordEvent(
           state,
           "ACTION",
-          `official website fingerprint changed: ${new URL(url).pathname}`,
+          `official website unverified candidate address set changed: ${page} added=${change.addedAddresses.length} removed=${change.removedAddresses.length}`,
         );
+      }
+      if (change.statusChanged) {
+        recordEvent(
+          state,
+          "ACTION",
+          `official website launch status changed: ${page} ${previous.launchStatus}->${current.launchStatus}`,
+        );
+      } else if (change.semanticChanged && !change.addressSetChanged) {
+        recordEvent(state, "INFO", `official website semantic markers changed: ${page}`);
       }
     } catch (error) {
       recordEvent(
@@ -402,6 +463,12 @@ async function main(): Promise<void> {
   );
   const publicRpc = new PublicControlRpc({ timeoutMs: 8_000 });
   const http = publicRpc;
+  const backgroundHttp: JsonRpcRequester = Object.freeze({
+    providerId: publicRpc.providerId,
+    request<T>(method: string, params: readonly unknown[] = []): Promise<T> {
+      return publicRpc.requestBackground<T>(method, params);
+    },
+  });
   const state: RuntimeState = {
     latestBlock: 0n,
     httpReady: false,
@@ -411,7 +478,7 @@ async function main(): Promise<void> {
     lastRefreshAt: null,
     lastHeadPollAt: null,
     lastIdentityCheckAt: null,
-    websiteHashes: new Map(),
+    websiteObservations: new Map(),
     serviceReadbacks: new Map(),
     events: [],
     publicRpc,
@@ -478,7 +545,7 @@ async function main(): Promise<void> {
     try {
       const nowMs = Date.now();
       const [gasPriceHex, priceSnapshot] = await Promise.all([
-        http.request<string>("eth_gasPrice"),
+        backgroundHttp.request<string>("eth_gasPrice"),
         freezePriceSnapshot(
           () => coinbasePrice(nowMs),
           () => krakenPrice(nowMs),
@@ -496,7 +563,7 @@ async function main(): Promise<void> {
       const boundedMaxFeeWei = gasPriceWei * 5n;
       const aggregateAllInCapWei =
         (USD_MICROS_ALL_IN * 1_000_000_000_000_000_000n) / priceSnapshot.primary.usdMicrosPerEth;
-      state.walletReport = await inspectWalletReadiness(http, manifest, {
+      state.walletReport = await inspectWalletReadiness(backgroundHttp, manifest, {
         batchValueWei: priceSnapshot.batchValueWei,
         entryGasLimit: 500_000n,
         entryMaxFeePerGasWei: boundedMaxFeeWei,
