@@ -10,6 +10,7 @@ Receipts record externally verifiable outcomes such as public publication, CI, r
 - [2026-08-17 production runtime deployment](2026-08-17-production-runtime-deployment.md)
 - [2026-08-17 RPC monitoring pause](2026-08-17-rpc-monitoring-pause.md)
 - [2026-08-17 public-RPC Control deployment](2026-08-17-public-rpc-control-deployment.md)
+- [2026-08-18 Control hardening and real-snipe arming audit](2026-08-18-control-hardening-and-arming-audit.md)
 - [Production readiness (current: NOT_HOT_ARMED)](production-readiness.md)
 
 A receipt must state its evidence level. Repository and CI receipts do not prove a service is deployed, funded, running, or has traded.

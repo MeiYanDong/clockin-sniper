@@ -2095,3 +2095,9 @@ same official endpoint + same pacing + same bounded 429 retry
 这两项改良提高观察质量和冷态响应，但不改变武装顺序。官网 `OPEN`、候选地址或链头推进只能要求立即复核；它们不能自动创建 `PAID_RPC_APPROVED` 或 `PRODUCTION_ARM_APPROVED`。只有官方最终 Factory/ABI、可执行买卖/退出 route、immutable profile、有效授权与 current readiness 全部通过后，才进入付费 WSS 与签名/广播状态。
 
 该决策由 [ADR 0009](./adr/0009-semantic-site-signals-and-priority-public-rpc.md) 固化。
+
+### 35.5 生产部署与武装审计结果
+
+2026-08-18，commit `e1fb6eb` / capability revision 10 已部署到 `47.251.28.201`。生产 snapshot 回读三页 semantic scope、foreground/background 计数、10/10 wallet readiness、公共链头和 watchdog；Control 仍无 credential/paid capability，三项资金服务仍 disabled/inactive。
+
+用户的实盘准备授权已进入审计记录。可独立准备的 vault key 和官方 Sequencer credential 已按仓库外/root-only 边界完成，invalid-empty-transaction 探针确认 Sequencer write method 且未发送有效交易。官方主 Launcher 仍为 `COMING_SOON`，Factory/ABI/profile/authorization/exit route 不存在，所以 HOT 预检结论为 `NOT_HOT_ARMED`，两个 marker 未创建。完整证据见 [2026-08-18 deployment and arming receipt](./receipts/2026-08-18-control-hardening-and-arming-audit.md)。
