@@ -721,7 +721,7 @@ async function main(): Promise<void> {
           ...(currentReadiness.hotArmed
             ? ["KEYLESS_CONTROL_HOT_ARMED_READBACK"]
             : [
-                "OFFICIAL_PUBLIC_RPC_ONLY",
+                "KEYLESS_PUBLIC_HTTP_FAILOVER",
                 "PAID_RPC_CAPABILITY_NONE",
                 ...currentReadiness.reasons,
               ]),
