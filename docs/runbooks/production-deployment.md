@@ -163,11 +163,13 @@ stat -c '%U:%G %a %n' \
   /run/clockin-status/paid
 ```
 
-Expected modes are defined by the installed tmpfiles file: in particular, `/etc/clockin-sniper/public` is `root:root 0755`, the two secret directories are `root:root 0700`, and the three status paths have the exact owners/modes above. Any different owner, group, or mode blocks startup. Runtime status writes use random `O_EXCL` temporary names, reject symlinks and non-regular files, reject group/world-writable status files, then atomically rename inside the service-owned tier.
+Expected modes are defined by the installed tmpfiles file: in particular, `/etc/clockin-sniper/public` is `root:root 0755`, the two secret directories are `root:root 0700`, and the three status paths have the exact owners/modes above. When present, both approval markers are non-secret `root:clockin 0440` regular files, distinct from the root-only secret directories. Any different owner, group, or mode blocks startup. Runtime status writes use random `O_EXCL` temporary names, reject symlinks and non-regular files, reject group/world-writable status files, then atomically rename inside the service-owned tier.
 
 ## Stage configuration and credentials
 
 All input material must arrive through a root-only path outside the Git checkout and release tree. Do not paste any RPC endpoint, vault key, or wallet key into a terminal command, environment variable, unit, journal, or deployment receipt. The following commands copy files without displaying their contents; replace only the two source-directory placeholders:
+
+The `vault_key` file must encode exactly 32 bytes in one of three accepted forms: exactly 64 hexadecimal characters, the same 64 hexadecimal characters prefixed by lowercase `0x`, or canonical standard base64 (padded or unpadded). Bare 64-character hex is decoded as hex, never as base64. Do not convert an existing key to fresh random bytes merely to change its text form; adding or removing the `0x` prefix must preserve the same 32 bytes. The application parser validates this shape without printing the value.
 
 ```bash
 set -euo pipefail
@@ -239,6 +241,8 @@ ln -s /etc/clockin-sniper/credentials/factory-profile.json \
   "${PREFLIGHT_CREDENTIALS}/factory_profile"
 ln -s /etc/clockin-sniper/credentials/production-authorization.json \
   "${PREFLIGHT_CREDENTIALS}/authorization"
+ln -s /etc/clockin-sniper/credentials/vault_key \
+  "${PREFLIGHT_CREDENTIALS}/vault_key"
 CREDENTIALS_DIRECTORY="${PREFLIGHT_CREDENTIALS}" \
 RELEASE_RUNTIME_URL="file://${RELEASE_ROOT}/clockin-sniper/dist/runtime/credentials.js" \
   "${VERSIONED_NODE}" --input-type=module -e '
@@ -246,8 +250,10 @@ RELEASE_RUNTIME_URL="file://${RELEASE_ROOT}/clockin-sniper/dist/runtime/credenti
     const manifest = await runtime.loadProductionWalletManifest();
     const { profile, authorization } =
       await runtime.loadStonkSafeLaunchProfileAndAuthorization(manifest);
+    const vaultKey = await runtime.loadVaultKey();
     process.stdout.write(JSON.stringify({
       walletCount: manifest.entries.length,
+      vaultKeyBytes: vaultKey.byteLength,
       profileId: profile.profileId,
       profileHash: profile.profileHash,
       authorizationId: authorization.authorizationId,
@@ -372,7 +378,7 @@ This mode is the default 24×7 state. It is not a real-snipe preparation window 
 
 ## Explicit paid RPC window
 
-Only after an explicit owner instruction to prepare for a real snipe, create the two independent root-owned markers. Their exact values are:
+Only after an explicit owner instruction to prepare for a real snipe, create the two independent markers as exact `root:clockin 0440` regular files. Root remains the sole owner and only root may create, replace, or revoke them; the non-secret contents are group-readable solely so paid services running as `User=clockin`, `Group=clockin` can perform their mandatory runtime checks. `clockin-observer` is not a member of `clockin` and must not be able to read either marker. Their exact values are:
 
 ```text
 CLOCKIN_PAID_RPC_APPROVED_V1
@@ -389,25 +395,31 @@ test ! -e /etc/clockin-sniper/PRODUCTION_ARM_APPROVED
 
 PAID_MARKER_TMP="$(mktemp /etc/clockin-sniper/.PAID_RPC_APPROVED.XXXXXX)"
 printf '%s\n' 'CLOCKIN_PAID_RPC_APPROVED_V1' >"${PAID_MARKER_TMP}"
-chown root:root "${PAID_MARKER_TMP}"
-chmod 0400 "${PAID_MARKER_TMP}"
+chown root:clockin "${PAID_MARKER_TMP}"
+chmod 0440 "${PAID_MARKER_TMP}"
 mv -T "${PAID_MARKER_TMP}" /etc/clockin-sniper/PAID_RPC_APPROVED
 
 ARM_MARKER_TMP="$(mktemp /etc/clockin-sniper/.PRODUCTION_ARM_APPROVED.XXXXXX)"
 printf '%s\n' 'CLOCKIN_PRODUCTION_ARM_APPROVED_V1' >"${ARM_MARKER_TMP}"
-chown root:root "${ARM_MARKER_TMP}"
-chmod 0400 "${ARM_MARKER_TMP}"
+chown root:clockin "${ARM_MARKER_TMP}"
+chmod 0440 "${ARM_MARKER_TMP}"
 mv -T "${ARM_MARKER_TMP}" /etc/clockin-sniper/PRODUCTION_ARM_APPROVED
 
 test -f /etc/clockin-sniper/PAID_RPC_APPROVED
 test -f /etc/clockin-sniper/PRODUCTION_ARM_APPROVED
-test "$(stat -c '%u:%g:%a' /etc/clockin-sniper/PAID_RPC_APPROVED)" = '0:0:400'
-test "$(stat -c '%u:%g:%a' /etc/clockin-sniper/PRODUCTION_ARM_APPROVED)" = '0:0:400'
+test "$(stat -c '%U:%G:%a' /etc/clockin-sniper/PAID_RPC_APPROVED)" = 'root:clockin:440'
+test "$(stat -c '%U:%G:%a' /etc/clockin-sniper/PRODUCTION_ARM_APPROVED)" = 'root:clockin:440'
+runuser -u clockin -- test -r /etc/clockin-sniper/PAID_RPC_APPROVED
+runuser -u clockin -- test -r /etc/clockin-sniper/PRODUCTION_ARM_APPROVED
+runuser -u clockin-observer -- test ! -r /etc/clockin-sniper/PAID_RPC_APPROVED
+runuser -u clockin-observer -- test ! -r /etc/clockin-sniper/PRODUCTION_ARM_APPROVED
 cmp --silent /etc/clockin-sniper/PAID_RPC_APPROVED \
   <(printf '%s\n' 'CLOCKIN_PAID_RPC_APPROVED_V1')
 cmp --silent /etc/clockin-sniper/PRODUCTION_ARM_APPROVED \
   <(printf '%s\n' 'CLOCKIN_PRODUCTION_ARM_APPROVED_V1')
 ```
+
+The owner/group/mode and both positive/negative readability checks are required deployment evidence, not optional hardening. `root:root 0400` is invalid because the paid services cannot read it; `root:clockin 0440` preserves continuous revocation while granting no write bit to group or world. A marker that is readable by `clockin-observer`, group/world-writable, or owned by a non-root UID blocks activation.
 
 Do not start Reconciler or Executor here: paid transport must remain dormant until the public handoff. Wallet preparation requires both markers because wrapping and approving are real signed production transactions. Exit readiness is operationally desirable but is not a signing prerequisite for lanes 2–10.
 

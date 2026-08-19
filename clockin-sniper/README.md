@@ -66,7 +66,9 @@ npm run wallets:create -- --output /absolute/external/secret/directory
 
 工具只在终端输出可验证 public address；private key 保持在 mode-0600 文件，manifest 不记录 key path。资金准备必须在首笔准备交易前冻结 10/10 plan：每 lane 预备 5U 对应 WETH + 10% buffer，加 wrap/approve/entry max Gas 后总计不超过 60U。Armed 后 exact buy raw 由 `quoteUsd8` 向下取整计算，并再验证 50U principal + entry max Gas 不超过 60U；禁止 infinite approval。
 
-生产部署按 `../docs/runbooks/production-deployment.md` 执行。Control Sentinel 使用独立无私钥账户、官方公共 RPC 和非敏感 `control.env`；它没有任何 systemd credential。Executor/Reconciler 受 root-owned 双 marker 和运行时复检约束，signer 只通过 systemd `LoadCredential` 注入。生产钱包当前各有 `0.0032 ETH`，但 WETH 余额与 pad allowance 均为 0；必须在 path disabled 时完成有回执、可恢复的 wrap/approve，公共 cursor caught-up 后才只启用 `clockin-executor.path`。模板、inactive unit 或本地 artifact/profile/auth 存在都不等于 `ENTRY_HOT_ARMED`。
+`vault_key` 必须表示精确 32 bytes，可使用裸 64 位 hex、小写 `0x` + 64 位 hex，或标准 base64（可带/不带 padding）。两种 hex 形式解码为相同字节；只改文本前缀时不得重新生成 key。部署预检只输出解码长度，不输出 key 内容。
+
+生产部署按 `../docs/runbooks/production-deployment.md` 执行。Control Sentinel 使用独立无私钥账户、官方公共 RPC 和非敏感 `control.env`；它没有任何 systemd credential。Executor/Reconciler 受两个精确 `root:clockin 0440` marker 和运行时复检约束；只有付费服务组可读，root 仍是唯一写入/撤销者，signer 只通过 systemd `LoadCredential` 注入。生产钱包当前各有 `0.0032 ETH`，但 WETH 余额与 pad allowance 均为 0；必须在 path disabled 时完成有回执、可恢复的 wrap/approve，公共 cursor caught-up 后才只启用 `clockin-executor.path`。模板、inactive unit 或本地 artifact/profile/auth 存在都不等于 `ENTRY_HOT_ARMED`。
 
 ## 解锁实盘所需输入
 

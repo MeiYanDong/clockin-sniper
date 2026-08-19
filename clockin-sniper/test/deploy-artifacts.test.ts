@@ -285,6 +285,9 @@ describe("hardened production service templates", () => {
     assert.match(runbook, /runuser -u clockin-observer -- env RELEASE_PACKAGE_DIR=/u);
     assert.match(runbook, /runuser -u clockin -- env RELEASE_PACKAGE_DIR=/u);
     assert.match(runbook, /await import\("ethers"\)/u);
+    assert.match(runbook, /await runtime\.loadVaultKey\(\)/u);
+    assert.match(runbook, /vaultKeyBytes: vaultKey\.byteLength/u);
+    assert.match(runbook, /exactly 64 hexadecimal characters/u);
     assert.match(runbook, /systemctl restart clockin-control\.service/u);
     assert.match(runbook, /\/proc\/\$\{CONTROL_MAIN_PID\}\/cmdline/u);
     assert.match(runbook, /clockin-sniper\/dist\/control-service\.js/u);
@@ -297,6 +300,19 @@ describe("hardened production service templates", () => {
     assert.match(runbook, /\/etc\/clockin-sniper\/public\/entry-manifest\.json/u);
     assert.match(runbook, /CLOCKIN_PAID_RPC_APPROVED_V1/u);
     assert.match(runbook, /CLOCKIN_PRODUCTION_ARM_APPROVED_V1/u);
+    assert.match(runbook, /chown root:clockin "\$\{PAID_MARKER_TMP\}"/u);
+    assert.match(runbook, /chmod 0440 "\$\{PAID_MARKER_TMP\}"/u);
+    assert.match(runbook, /chown root:clockin "\$\{ARM_MARKER_TMP\}"/u);
+    assert.match(runbook, /chmod 0440 "\$\{ARM_MARKER_TMP\}"/u);
+    assert.match(runbook, /root:clockin:440/u);
+    assert.match(
+      runbook,
+      /runuser -u clockin -- test -r \/etc\/clockin-sniper\/PAID_RPC_APPROVED/u,
+    );
+    assert.match(
+      runbook,
+      /runuser -u clockin-observer -- test ! -r \/etc\/clockin-sniper\/PAID_RPC_APPROVED/u,
+    );
     assert.match(runbook, /systemctl disable --now clockin-executor\.path/u);
     assert.match(runbook, /`static\/inactive`/u);
   });
