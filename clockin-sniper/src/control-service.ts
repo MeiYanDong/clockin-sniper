@@ -387,7 +387,7 @@ async function writeSnapshot(
     publicRpc: state.publicRpc.usageSnapshot(),
     publicLaunchHandoff: state.publicLaunchHandoff.snapshot(),
     monitoringPolicy: {
-      mode: "OFFICIAL_PUBLIC_HTTP_ONLY",
+      mode: "KEYLESS_PUBLIC_HTTP_FAILOVER",
       headPollMs: state.headPollMs,
       identityRefreshMs: state.identityRefreshMs,
       walletRefreshMs: state.walletRefreshMs,

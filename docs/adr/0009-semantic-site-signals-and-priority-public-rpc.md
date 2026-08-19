@@ -45,7 +45,8 @@ This keeps byte-level evidence without making it actionable. A foreground/backgr
 
 - `PublicControlRpc.request()` is foreground work for chain-head and identity observation.
 - `PublicControlRpc.requestBackground()` is for hourly Gas/balance/nonce readiness.
-- Both classes share the same hard-coded official endpoint, 500 ms physical minimum interval, request accounting and bounded HTTP-429 retry behavior.
+- Both classes share one compiled keyless endpoint pool, one 500 ms physical minimum interval,
+  per-route request accounting, an official-route circuit breaker and bounded fallback retry behavior.
 - After the currently in-flight physical call finishes, the scheduler always selects an available foreground request before the next background request. It does not cancel an in-flight request or manufacture concurrency.
 - Snapshot metering exposes foreground/background physical counts, current queue depths and maximum observed background depth.
 
@@ -56,7 +57,8 @@ This keeps byte-level evidence without making it actionable. A foreground/backgr
 - Framework-only page churn no longer looks like a launch signal.
 - A real status or candidate-address change remains visible and auditable without becoming authority.
 - A 31-call readiness pass cannot occupy 15+ seconds of FIFO positions ahead of a newly arrived head poll.
-- One limiter continues to enforce the public-provider cost/rate boundary; Control still has no paid fallback.
+- One limiter continues to enforce the keyless public-provider cost/rate boundary; Control still has
+  no paid or credential-configurable fallback.
 
 ### Negative
 
@@ -68,4 +70,6 @@ This keeps byte-level evidence without making it actionable. A foreground/backgr
 
 - Unit tests prove raw-only HTML changes preserve the semantic hash, launch transitions change status, candidate additions/removals are exact, arbitrary bundle addresses are ignored, a mainnet docs Factory is accepted, and the currently published testnet-archive Factory is rejected.
 - Unit tests hold one background request in flight, enqueue more readiness work and then enqueue a head request; the observed physical order must be background-in-flight, head, remaining background.
-- Production readback must show the new semantic snapshot fields, foreground/background accounting, advancing head/watchdog, and unchanged `OFFICIAL_PUBLIC_HTTP_ONLY` / `paidRpcCapability=false` boundaries.
+- Production readback must show the new semantic snapshot fields, foreground/background and
+  per-route accounting, advancing head/watchdog, and unchanged
+  `KEYLESS_PUBLIC_HTTP_FAILOVER` / `paidRpcCapability=false` boundaries.

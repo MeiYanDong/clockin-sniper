@@ -38,11 +38,11 @@
 
 ### 0.2 优先级
 
-| 优先级 | 含义 |
-|---|---|
-| P0 | 不完成就不能安全或正确地进入下一阶段 |
-| P1 | 生产闭环必需，但可以在基础模型完成后并行 |
-| P2 | 运维、效率或扩展能力，不阻塞核心代码开发 |
+| 优先级 | 含义                                     |
+| ------ | ---------------------------------------- |
+| P0     | 不完成就不能安全或正确地进入下一阶段     |
+| P1     | 生产闭环必需，但可以在基础模型完成后并行 |
+| P2     | 运维、效率或扩展能力，不阻塞核心代码开发 |
 
 ### 0.3 阶段门
 
@@ -1710,6 +1710,8 @@
 - [x] handoff 持久化 canonical block hash，默认等 2 个区块；连续两次证明 reorg 后写 immutable tombstone、CAS 失效旧 pointer、rewind cursor 并接受 replacement。
 - [x] 仅 canonical ACTIVE pointer 创建/替换时写 `active.signal`；tombstone/失效不唤醒 paid plane，`clockin-executor.path` 只观察 valid-only signal。
 - [x] 公共历史回补每 `<=2,000` blocks 持久化 cursor，公开 `cursor/confirmedHead/lag/caughtUp`；未追平 confirmation depth 时禁止宣称 public ready 或启用 paid path。
+- [x] 公共 Control 使用不可配置的 keyless HTTP pool；官方 public RPC 瞬时限流后熔断切换
+      固定 BlockReq public route，按 route 计数且不读取任何 Chainstack credential。
 - [x] Control 只在已有 pointer 仍 canonical 且 cursor caught-up 时重发 `active.signal`；Created 等待 15 分钟退出 paid Executor 后，公共侧仍监控同 id 晚到 Armed 并再次触发。
 - [x] 修复 reservation/execution-plan retry schema：新 observation 可复用同 lane/nonce 的新 plan，active nonce slot 仍保持唯一 fencing。
 - [x] 修复 Executor 重启：先恢复 canonical attempts/effects，完成 lane 不再错误要求保留已花掉的 WETH，只校验剩余 lane readiness。

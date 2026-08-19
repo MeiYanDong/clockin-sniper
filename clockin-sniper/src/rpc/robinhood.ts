@@ -3,6 +3,13 @@ import { JsonRpcRequestError, type JsonRpcRequester } from "./types.js";
 
 export const ROBINHOOD_MAINNET_CHAIN_ID = 4_663n;
 export const ROBINHOOD_PUBLIC_RPC_URL = "https://rpc.mainnet.chain.robinhood.com";
+/**
+ * Keyless public fallback used only by the always-on, non-signing Control plane.
+ * The paid Chainstack endpoints remain isolated in systemd credentials and are
+ * never loaded by Control.
+ */
+export const ROBINHOOD_KEYLESS_PUBLIC_RPC_FALLBACK_URL =
+  "https://robinhood-mainnet-rpc.blockreq.com/v1/rpc/public";
 export const ROBINHOOD_MAINNET_SEQUENCER_URL = "https://sequencer.mainnet.chain.robinhood.com";
 
 export interface RobinhoodRpcIdentity {

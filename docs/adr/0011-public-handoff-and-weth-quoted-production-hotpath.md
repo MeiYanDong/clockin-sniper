@@ -27,7 +27,9 @@ at `deadline`, while the trade gate rejects `block.timestamp >= deadline`; zero 
 
 ### Chain-first CA discovery
 
-- The 24×7 Control process uses only Robinhood's fixed official public HTTP RPC.
+- The 24×7 Control process uses only a fixed, keyless public HTTP pool. Robinhood's official endpoint
+  is primary; a compiled BlockReq public route is used only after a transient official failure. No
+  environment value or systemd credential can redirect the pool to Chainstack.
 - It scans only the exact WETH quoted pad and `LaunchCreated` topic with the indexed approved creator.
 - It rejects `externalToken=true` and reads exact `Clock In` / `CLOCKIN` token metadata at the event
   block. Metadata alone never authorizes a candidate.
@@ -35,7 +37,8 @@ at `deadline`, while the trade gate rejects `block.timestamp >= deadline`; zero 
   consumed later only as asynchronous cross-identity evidence; it cannot create or redirect a WETH
   execution handoff.
 - It binds the exact receipt log and canonical block hash and waits two public blocks before publishing
-  a handoff. X and the website remain asynchronous confirmation/conflict channels only.
+  a handoff. The paid executor then repeats canonical receipt/log/block checks through Chainstack.
+  X and the website remain asynchronous confirmation/conflict channels only.
 
 ### Durable reorg and boot behavior
 

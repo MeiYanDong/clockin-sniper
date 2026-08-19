@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
 
-import { ROBINHOOD_PUBLIC_RPC_URL } from "../src/rpc/robinhood.js";
+import {
+  ROBINHOOD_KEYLESS_PUBLIC_RPC_FALLBACK_URL,
+  ROBINHOOD_PUBLIC_RPC_URL,
+} from "../src/rpc/robinhood.js";
 import {
   PAID_RPC_APPROVAL_VALUE,
   validatePaidRpcApproval,
@@ -14,7 +17,7 @@ import {
 import { PublicControlRpc } from "../src/runtime/public-control-rpc.js";
 
 describe("public Control RPC cost boundary", () => {
-  it("cannot be configured away from the official public endpoint and records method usage", async () => {
+  it("uses only the compiled official endpoint while it is healthy and records route usage", async () => {
     const destinations: string[] = [];
     let now = Date.parse("2026-08-17T07:00:00.000Z");
     const fetchFn: typeof fetch = async (input, init) => {
@@ -36,8 +39,12 @@ describe("public Control RPC cost boundary", () => {
     assert.deepEqual(destinations, [ROBINHOOD_PUBLIC_RPC_URL, ROBINHOOD_PUBLIC_RPC_URL]);
     assert.deepEqual(rpc.usageSnapshot(), {
       providerId: "robinhood-public-http",
-      endpointClass: "OFFICIAL_PUBLIC_HTTP",
+      endpointClass: "KEYLESS_PUBLIC_HTTP_POOL",
+      activeRoute: "OFFICIAL",
+      officialCircuitOpenUntil: null,
+      failovers: 0,
       totalRequests: 2,
+      requestsByRoute: { OFFICIAL: 2, BLOCKREQ_FALLBACK: 0 },
       requestsByMethod: { eth_blockNumber: 1, eth_chainId: 1 },
       requestsByPriority: { foreground: 2, background: 0 },
       throttledRetries: 0,
@@ -48,13 +55,15 @@ describe("public Control RPC cost boundary", () => {
     });
   });
 
-  it("serializes public calls and retries HTTP 429 with bounded backoff", async () => {
+  it("fails over from an HTTP 429 and keeps traffic on the keyless fallback during cooldown", async () => {
     let now = Date.parse("2026-08-17T07:00:00.000Z");
-    let attempts = 0;
     const delays: number[] = [];
-    const fetchFn: typeof fetch = async (_input, init) => {
-      attempts += 1;
-      if (attempts === 1) return new Response("rate limited", { status: 429 });
+    const destinations: string[] = [];
+    const fetchFn: typeof fetch = async (input, init) => {
+      destinations.push(String(input));
+      if (String(input) === ROBINHOOD_PUBLIC_RPC_URL) {
+        return new Response("rate limited", { status: 429 });
+      }
       const request = JSON.parse(String(init?.body)) as {
         readonly id: number;
         readonly method: string;
@@ -72,6 +81,7 @@ describe("public Control RPC cost boundary", () => {
       fetchFn,
       now: () => now,
       minimumIntervalMs: 500,
+      officialCircuitBreakerMs: 60_000,
       sleep: async (milliseconds) => {
         delays.push(milliseconds);
         now += milliseconds;
@@ -83,18 +93,27 @@ describe("public Control RPC cost boundary", () => {
     ]);
     assert.equal(block, "0x10");
     assert.equal(chainId, "0x1237");
-    assert.deepEqual(delays, [1_000, 500]);
+    assert.deepEqual(destinations, [
+      ROBINHOOD_PUBLIC_RPC_URL,
+      ROBINHOOD_KEYLESS_PUBLIC_RPC_FALLBACK_URL,
+      ROBINHOOD_KEYLESS_PUBLIC_RPC_FALLBACK_URL,
+    ]);
+    assert.deepEqual(delays, [500, 500]);
     assert.deepEqual(rpc.usageSnapshot(), {
       providerId: "robinhood-public-http",
-      endpointClass: "OFFICIAL_PUBLIC_HTTP",
+      endpointClass: "KEYLESS_PUBLIC_HTTP_POOL",
+      activeRoute: "BLOCKREQ_FALLBACK",
+      officialCircuitOpenUntil: "2026-08-17T07:01:00.000Z",
+      failovers: 1,
       totalRequests: 3,
+      requestsByRoute: { OFFICIAL: 1, BLOCKREQ_FALLBACK: 2 },
       requestsByMethod: { eth_blockNumber: 2, eth_chainId: 1 },
       requestsByPriority: { foreground: 3, background: 0 },
       throttledRetries: 1,
       pendingForeground: 0,
       pendingBackground: 0,
       maximumBackgroundQueueDepth: 0,
-      lastRequestAt: "2026-08-17T07:00:01.500Z",
+      lastRequestAt: "2026-08-17T07:00:01.000Z",
     });
   });
 

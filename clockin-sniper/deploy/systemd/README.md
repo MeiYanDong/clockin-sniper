@@ -6,7 +6,9 @@ Every service that can read a paid RPC credential is gated by `/etc/clockin-snip
 
 Security boundaries:
 
-- `clockin-observer` runs Control Sentinel with the hard-coded Robinhood official public HTTP endpoint; it receives no credentials of any kind, does not read Execution `strategy.env`, and cannot activate paid transport;
+- `clockin-observer` runs Control Sentinel with a hard-coded keyless public HTTP pool (Robinhood
+  official primary plus the fixed BlockReq public fallback); it receives no credentials of any kind,
+  does not read Execution `strategy.env`, and cannot activate paid transport;
 - `/etc/clockin-sniper/control.env` contains only non-sensitive timing/local status settings; use `deploy/control.env.example` as the reviewed template;
 - `clockin-executor.path` is the only boot-enabled paid-side trigger: it watches only the valid-activation edge at `/var/lib/clockin-handoff/outbox/active.signal`; durable `current.json` pointers and reorg tombstones are canonical readback inputs but never path triggers; the executor service itself has no `WantedBy` and is not boot-enabled;
 - Control durably commits public catch-up after every `<=2,000`-block chunk and publishes `cursor/confirmedHead/lag/caughtUp`; do not enable the path until `caughtUp=true`, and do not synthesize `active.signal` from an unverified stale pointer;
