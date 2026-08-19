@@ -345,7 +345,10 @@ On Ubuntu 24.04, do not assume `systemd-notify --watchdog` exists. The portable 
 1. Confirm the staged `/etc/clockin-sniper/control.env` is owned by `root:clockin-status`, mode `0640`, and contains no RPC URL or secret.
 2. Ensure `/etc/clockin-sniper/PAID_RPC_APPROVED` and `/etc/clockin-sniper/PRODUCTION_ARM_APPROVED` are absent. If either exists, use the paid-window closure procedure instead of silently removing it.
 3. Run `systemctl disable --now clockin-executor.path`, stop every static paid service, then enable and start only `clockin-control`.
-4. Verify `/health=200`, `/ready=503`, Dashboard HTTP 200, advancing watchdog/head, and `monitoringPolicy.mode=OFFICIAL_PUBLIC_HTTP_ONLY` with `paidRpcCapability=false`, `minimumRequestIntervalMs=500`, and bounded `throttledRetries`.
+4. Verify `/health=200`, `/ready=503`, Dashboard HTTP 200, advancing watchdog/head, and
+   `monitoringPolicy.mode=KEYLESS_PUBLIC_HTTP_FAILOVER` with `paidRpcCapability=false`,
+   `minimumRequestIntervalMs=500`, a known `activeRoute`, per-route counters and bounded
+   `failovers` / `throttledRetries`.
 5. Verify the Control process has no systemd credentials directory, no RPC/Chainstack environment variable names, and no execution process. `/ready=503` is expected until the full Execution Plane is armed.
 
 Use this exact cold-start state transition and readback:
@@ -427,7 +430,10 @@ Never create either marker from Control, a website watcher, an alert handler, a 
 
 ## Fail-closed real-snipe startup sequence
 
-1. Confirm `clockin-control` is healthy on the official public endpoint and record the current public snapshot. The redacted Control status must show a known confirmed head, cursor equal to that confirmed head, `PUBLIC_HANDOFF_LAG_BLOCKS=0`, and `PUBLIC_HANDOFF_CAUGHT_UP=YES`; do not enable the path while historical catch-up is incomplete.
+1. Confirm `clockin-control` is healthy on one compiled keyless route and record the current public
+   snapshot. The redacted Control status must show a known confirmed head, cursor equal to that
+   confirmed head, `PUBLIC_HANDOFF_LAG_BLOCKS=0`, and `PUBLIC_HANDOFF_CAUGHT_UP=YES`; do not enable
+   the path while historical catch-up is incomplete.
 2. Record the owner's explicit real-snipe preparation approval; create and validate both `PAID_RPC_APPROVED` and `PRODUCTION_ARM_APPROVED`. These markers authorize the bounded one-shot preparation, but do not make a wallet ready by themselves.
 3. Require current chain ID 4663, genesis fingerprint, exact quoted-pad and WETH runtime identities, approved creator, frozen Created/Armed/getter/buy bindings, time sync, paid WSS/HTTP health, and SQLite migration success.
 4. Verify all ten public wallet/key correspondences. Before any preparation transaction, calculate all ten complete plans from a fresh ETH/USD and Gas snapshot and prove they remain inside the 60U all-in cap. Do not broadcast a partial plan.
@@ -527,7 +533,7 @@ Both markers are deployment interlocks, not proof by themselves. Removing either
 3. Run `systemctl disable --now clockin-executor.path`, then stop preparer, Executor, Reconciler, and Exit. If either count is non-zero, keep the required recovery/exit services and paid marker available or record an explicit manual-takeover incident instead.
 4. Confirm the path is inactive and all four static paid-service PIDs are zero.
 5. Remove `PRODUCTION_ARM_APPROVED` and `PAID_RPC_APPROVED`.
-6. Confirm Control remains active in `OFFICIAL_PUBLIC_HTTP_ONLY` mode and save a closure receipt.
+6. Confirm Control remains active in `KEYLESS_PUBLIC_HTTP_FAILOVER` mode and save a closure receipt.
 
 Do not run this block until step 2 is proven:
 

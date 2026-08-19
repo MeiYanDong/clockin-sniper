@@ -28,18 +28,18 @@
 
 ### 2.1 已明确的业务目标
 
-| 编号 | 需求 | 本方案理解 |
-|---|---|---|
-| BIZ-01 | 第一时间狙击 ClockIn | 主要触发器是已验证 Factory 的 launch/activation 事件，不等待公开 CA；已知 Factory 热路径与未知 Factory 预警并行运行。 |
-| BIZ-02 | 税率从初始值递减 | 2026-08-20 实证默认为 300 秒 `9999 bps` buffer，随后从 `3300 bps` 开始每分钟下降 `100 bps`；运行时必须动态读 getter，不把该值当成全平台永久常量。 |
-| BIZ-03 | 从初始税率到 0 分 10 批 | 业务意图是覆盖完整税率区间。实际最后一档取合约真实 floor；若真实 floor 为 0%，最后一档为 0%；若为 1%，不得伪造 0%。 |
-| BIZ-04 | 每批 5U | 每笔投入的 WETH quote principal 名义值为 5U，税从 5U 输入中扣除，native ETH 只用于 WETH deposit 和 Gas；ClockIn 总名义本金上限 50U。 |
-| BIZ-05 | 实盘生产，不要 Shadow/dry-run | 生产 executor 只有真实签名与真实广播路径；fork/replay 只作为离线验证工具，不是生产运行模式。 |
+| 编号   | 需求                            | 本方案理解                                                                                                                                                                               |
+| ------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BIZ-01 | 第一时间狙击 ClockIn            | 主要触发器是已验证 Factory 的 launch/activation 事件，不等待公开 CA；已知 Factory 热路径与未知 Factory 预警并行运行。                                                                    |
+| BIZ-02 | 税率从初始值递减                | 2026-08-20 实证默认为 300 秒 `9999 bps` buffer，随后从 `3300 bps` 开始每分钟下降 `100 bps`；运行时必须动态读 getter，不把该值当成全平台永久常量。                                        |
+| BIZ-03 | 从初始税率到 0 分 10 批         | 业务意图是覆盖完整税率区间。实际最后一档取合约真实 floor；若真实 floor 为 0%，最后一档为 0%；若为 1%，不得伪造 0%。                                                                      |
+| BIZ-04 | 每批 5U                         | 每笔投入的 WETH quote principal 名义值为 5U，税从 5U 输入中扣除，native ETH 只用于 WETH deposit 和 Gas；ClockIn 总名义本金上限 50U。                                                     |
+| BIZ-05 | 实盘生产，不要 Shadow/dry-run   | 生产 executor 只有真实签名与真实广播路径；fork/replay 只作为离线验证工具，不是生产运行模式。                                                                                             |
 | BIZ-06 | 部署云服务器、CA 出来前持续准备 | 无私钥 Control 使用 Robinhood 官方公共 HTTP RPC 常驻；Chainstack 只在用户明确进入真实狙击准备/交易/恢复/退出窗口后启用。CA 不是唯一发现信号，但任何软信号都不能自动开启付费 RPC 或签名。 |
-| BIZ-07 | 防止换地址、换 Factory | 同时监控已知 Factory、关联地址集群、全链目标 topic、合约部署、官网字段和外部流动性事件，并维护版本化 Factory Registry。 |
-| BIZ-08 | 参考 B20/MM 和 Pons 经验 | 复用 same-raw、UNKNOWN、nonce 隔离、receipt 核账、Validity Envelope、内外盘分离等通用能力，不盲目复用单钱包/固定目标假设。 |
-| BIZ-09 | 私钥不能进入仓库 | 10 个执行私钥必须在仓库外或 Secret Manager/systemd credentials 中；日志、数据库、Git、npm 包不得出现私钥或完整带凭证 RPC。 |
-| BIZ-10 | 买入后能退出 | 交付标准包含真实可调用的内盘 sell adapter、外盘 swap adapter、route migration、净回款计算和逐钱包退出状态机。 |
+| BIZ-07 | 防止换地址、换 Factory          | 同时监控已知 Factory、关联地址集群、全链目标 topic、合约部署、官网字段和外部流动性事件，并维护版本化 Factory Registry。                                                                  |
+| BIZ-08 | 参考 B20/MM 和 Pons 经验        | 复用 same-raw、UNKNOWN、nonce 隔离、receipt 核账、Validity Envelope、内外盘分离等通用能力，不盲目复用单钱包/固定目标假设。                                                               |
+| BIZ-09 | 私钥不能进入仓库                | 10 个执行私钥必须在仓库外或 Secret Manager/systemd credentials 中；日志、数据库、Git、npm 包不得出现私钥或完整带凭证 RPC。                                                               |
+| BIZ-10 | 买入后能退出                    | 交付标准包含真实可调用的内盘 sell adapter、外盘 swap adapter、route migration、净回款计算和逐钱包退出状态机。                                                                            |
 
 ### 2.2 本方案不把以下内容当成已证实事实
 
@@ -70,12 +70,12 @@
 
 ### 3.1 决策一：狙击对象与预算如何组织
 
-| 方案 | 描述 | 优点 | 缺点 | 结论 |
-|---|---|---|---|---|
-| A | 只做 ClockIn | 最简单、不会分散预算 | Factory 换版或首币热度机会无法形成独立能力 | 不选 |
-| B | 不管 ClockIn，见首币就买 | 触发最早 | 极易买到非目标、偷跑币或低质量首发 | 不选 |
-| C | ClockIn 与首个官方 launch 双策略隔离 | 同时覆盖目标币和范式机会；预算、身份、退出互不污染 | 模块更多 | **推荐并作为默认方案** |
-| D | ClockIn 没命中就把 50U 自动切给首币 | 资金利用率高 | 把“目标未出现”错误转换为“可买其他币”，风险不可控 | 明确禁止 |
+| 方案 | 描述                                 | 优点                                               | 缺点                                             | 结论                   |
+| ---- | ------------------------------------ | -------------------------------------------------- | ------------------------------------------------ | ---------------------- |
+| A    | 只做 ClockIn                         | 最简单、不会分散预算                               | Factory 换版或首币热度机会无法形成独立能力       | 不选                   |
+| B    | 不管 ClockIn，见首币就买             | 触发最早                                           | 极易买到非目标、偷跑币或低质量首发               | 不选                   |
+| C    | ClockIn 与首个官方 launch 双策略隔离 | 同时覆盖目标币和范式机会；预算、身份、退出互不污染 | 模块更多                                         | **推荐并作为默认方案** |
+| D    | ClockIn 没命中就把 50U 自动切给首币  | 资金利用率高                                       | 把“目标未出现”错误转换为“可买其他币”，风险不可控 | 明确禁止               |
 
 默认策略：
 
@@ -86,12 +86,12 @@
 
 ### 3.2 决策二：钱包模型
 
-| 方案 | 描述 | 对 2 分钟窗口的影响 | 风险 | 结论 |
-|---|---|---|---|---|
-| A | 1 个 EOA 连续买 10 次 | 受 per-wallet cooldown、receipt、连续 nonce 阻塞 | 一笔 UNKNOWN 可卡住后九笔 | 当前实现，目标版本不采用 |
-| B | 10 个 EOA，每个只负责 1 档 5U | 每个钱包 nonce/cooldown 独立，可按税率并行准备 | 需要多钱包资金与密钥管理 | **推荐并作为默认方案** |
-| C | 155 个 EOA 蚂蚁搬家 | 容量极大 | 资金碎片、密钥、Gas、回收和退出复杂度远超 50U 需要 | 不选 |
-| D | 中介合约批量买 | 调度方便 | 可能触发 EOA-only/anti-contract 限制 | 不选，除非最终合约证明允许 |
+| 方案 | 描述                          | 对 2 分钟窗口的影响                              | 风险                                               | 结论                       |
+| ---- | ----------------------------- | ------------------------------------------------ | -------------------------------------------------- | -------------------------- |
+| A    | 1 个 EOA 连续买 10 次         | 受 per-wallet cooldown、receipt、连续 nonce 阻塞 | 一笔 UNKNOWN 可卡住后九笔                          | 当前实现，目标版本不采用   |
+| B    | 10 个 EOA，每个只负责 1 档 5U | 每个钱包 nonce/cooldown 独立，可按税率并行准备   | 需要多钱包资金与密钥管理                           | **推荐并作为默认方案**     |
+| C    | 155 个 EOA 蚂蚁搬家           | 容量极大                                         | 资金碎片、密钥、Gas、回收和退出复杂度远超 50U 需要 | 不选                       |
+| D    | 中介合约批量买                | 调度方便                                         | 可能触发 EOA-only/anti-contract 限制               | 不选，除非最终合约证明允许 |
 
 默认钱包拓扑：
 
@@ -103,12 +103,12 @@
 
 ### 3.3 决策三：税率估计与买入时机
 
-| 方案 | 描述 | 问题 | 结论 |
-|---|---|---|---|
-| A | 本地按 120 秒线性计时 | block timestamp、启动点、floor 或公式可能不同 | 不选 |
-| B | 小钱包不断微量买入测税 | 每次 probe 都消耗 Gas/税、改变池状态、可能触发 cooldown | 仅作为 ABI 不可读时的独立后备，不默认启用 |
-| C | 读合约 declared fee，第一笔 5U 同时做 canary，receipt 持续校准 | 速度、信息和资金成本平衡最好 | **推荐并作为默认方案** |
-| D | 10 笔全部完成后再核算 | 发现机制错误时已无法停止未发 tranche | 不选 |
+| 方案 | 描述                                                           | 问题                                                    | 结论                                      |
+| ---- | -------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------- |
+| A    | 本地按 120 秒线性计时                                          | block timestamp、启动点、floor 或公式可能不同           | 不选                                      |
+| B    | 小钱包不断微量买入测税                                         | 每次 probe 都消耗 Gas/税、改变池状态、可能触发 cooldown | 仅作为 ABI 不可读时的独立后备，不默认启用 |
+| C    | 读合约 declared fee，第一笔 5U 同时做 canary，receipt 持续校准 | 速度、信息和资金成本平衡最好                            | **推荐并作为默认方案**                    |
+| D    | 10 笔全部完成后再核算                                          | 发现机制错误时已无法停止未发 tranche                    | 不选                                      |
 
 默认规则：
 
@@ -120,12 +120,12 @@
 
 ### 3.4 决策四：退出模式
 
-| 方案 | 描述 | 问题 | 结论 |
-|---|---|---|---|
-| A | 不自动卖，只记录余额 | 无法形成经济闭环 | 当前实现，目标版本必须替换 |
-| B | 固定倍数、只走一个 Router | launch pool 到外盘的生命周期变化会使 route 失效 | 不选 |
-| C | 先把 10 个钱包 token 归集再卖 | 可能产生 transfer tax、黑名单、maxWallet 或额外延迟 | 首版不选 |
-| D | 内盘/外盘双 route，按钱包卖出，本金优先 | 能适应 finalize 前后，并避免早期归集风险 | **推荐并作为默认方案** |
+| 方案 | 描述                                    | 问题                                                | 结论                       |
+| ---- | --------------------------------------- | --------------------------------------------------- | -------------------------- |
+| A    | 不自动卖，只记录余额                    | 无法形成经济闭环                                    | 当前实现，目标版本必须替换 |
+| B    | 固定倍数、只走一个 Router               | launch pool 到外盘的生命周期变化会使 route 失效     | 不选                       |
+| C    | 先把 10 个钱包 token 归集再卖           | 可能产生 transfer tax、黑名单、maxWallet 或额外延迟 | 首版不选                   |
+| D    | 内盘/外盘双 route，按钱包卖出，本金优先 | 能适应 finalize 前后，并避免早期归集风险            | **推荐并作为默认方案**     |
 
 初始参数建议（均可配置，尚需用户最终确认）：
 
@@ -190,11 +190,11 @@ ExpectedNetEdge(t)
 
 ### 4.4 最早可推断、最早可授权与最终结果信号
 
-| 级别 | 示例 | 用途 | 是否可直接授权花钱 |
-|---|---|---|---|
-| S2 预警信号 | 关联地址部署合约、资金/owner/implementation 关系、官网 bundle 变化、外部 Pair/LP 事件 | 提前编译候选 Factory/Profile，预热执行器 | 否 |
-| S1 可执行信号 | 已验证 Factory 发出可解码 launch/activation 事件，token/pool 代码和机制 profile 在同一 canonical block 可读 | 冻结目标并形成 entry intent | 依身份等级决定 |
-| S0 结果信号 | 官方 CA、canonical receipt、token delta、finalize、外部流动性与真实 sell quote | 确认/纠错、核账与退出 | CA 只做确认；receipt 才是经济结果 |
+| 级别          | 示例                                                                                                        | 用途                                     | 是否可直接授权花钱                |
+| ------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------- | --------------------------------- |
+| S2 预警信号   | 关联地址部署合约、资金/owner/implementation 关系、官网 bundle 变化、外部 Pair/LP 事件                       | 提前编译候选 Factory/Profile，预热执行器 | 否                                |
+| S1 可执行信号 | 已验证 Factory 发出可解码 launch/activation 事件，token/pool 代码和机制 profile 在同一 canonical block 可读 | 冻结目标并形成 entry intent              | 依身份等级决定                    |
+| S0 结果信号   | 官方 CA、canonical receipt、token delta、finalize、外部流动性与真实 sell quote                              | 确认/纠错、核账与退出                    | CA 只做确认；receipt 才是经济结果 |
 
 CA 通常是 S0/S1.5 确认信号，可能晚于最有价值的 entry 时点；名字是弱候选字段；Factory event 才是主触发器。
 
@@ -259,13 +259,13 @@ flowchart LR
 
 ### 5.2 建议进程
 
-| 进程 | 是否持有私钥 | 职责 | 故障影响 |
-|---|---:|---|---|
-| `clockin-control-sentinel` | 否 | 24×7 使用官方公共 HTTP RPC 监控链头/已配置日志、Factory 候选与官网 CA；不持有付费 RPC capability | 失去候选/官网 fallback；Execution Plane 不因此取得付费或签名授权 |
-| `clockin-executor` | 是 | ClockIn/首币策略路由、10 lane entry、same-raw 广播 | 新 entry 暂停；已签 UNKNOWN 由 reconciler 接管 |
-| `clockin-reconciler` | 否或仅可访问 signed-tx vault | receipt、token delta、Gas、UNKNOWN 恢复 | 不得产生新 intent；恢复后补齐经济事实 |
-| `clockin-exit` | 是 | 内盘/外盘 quote、授权、sell/swap、回款核账 | position 保留并告警；不能因 entry 停止而自动停止 |
-| `clockin-ops` | 否 | localhost health/readiness/API/只读 dashboard | 不影响链上执行 |
+| 进程                       |                 是否持有私钥 | 职责                                                                                             | 故障影响                                                         |
+| -------------------------- | ---------------------------: | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `clockin-control-sentinel` |                           否 | 24×7 使用官方公共 HTTP RPC 监控链头/已配置日志、Factory 候选与官网 CA；不持有付费 RPC capability | 失去候选/官网 fallback；Execution Plane 不因此取得付费或签名授权 |
+| `clockin-executor`         |                           是 | ClockIn/首币策略路由、10 lane entry、same-raw 广播                                               | 新 entry 暂停；已签 UNKNOWN 由 reconciler 接管                   |
+| `clockin-reconciler`       | 否或仅可访问 signed-tx vault | receipt、token delta、Gas、UNKNOWN 恢复                                                          | 不得产生新 intent；恢复后补齐经济事实                            |
+| `clockin-exit`             |                           是 | 内盘/外盘 quote、授权、sell/swap、回款核账                                                       | position 保留并告警；不能因 entry 停止而自动停止                 |
+| `clockin-ops`              |                           否 | localhost health/readiness/API/只读 dashboard                                                    | 不影响链上执行                                                   |
 
 首个可交付版本可在一个 Node.js service 中运行这些模块，但边界、数据库 lease 和权限必须按上述进程模型设计，以便后续拆分而不改变业务语义。
 
@@ -474,13 +474,13 @@ OBSERVED
 
 ### 8.3 推荐的分级授权
 
-| 等级 | 条件 | 可做动作 |
-|---|---|---|
-| L0 Candidate | name/topic/官网/关联地址任一命中 | 记录、预取代码、不得签名 |
-| L1 Factory Verified | chainId、Factory runtime/implementation hash、event ABI 与 Registry 完全匹配 | 解码和冻结 launch |
-| L2 ClockIn Bound | L1 + creator/metadata/suffix/token/pool profile 满足 ClockIn policy | 允许第 1 个 5U lane |
-| L3 Independent Confirmed | L2 + 官方 CA 匹配，或预先批准的高强度链上绑定组合 | 允许后续九个 lane |
-| L4 Effect Confirmed | canonical receipt + token delta | 形成真实 position/effect |
+| 等级                     | 条件                                                                         | 可做动作                 |
+| ------------------------ | ---------------------------------------------------------------------------- | ------------------------ |
+| L0 Candidate             | name/topic/官网/关联地址任一命中                                             | 记录、预取代码、不得签名 |
+| L1 Factory Verified      | chainId、Factory runtime/implementation hash、event ABI 与 Registry 完全匹配 | 解码和冻结 launch        |
+| L2 ClockIn Bound         | L1 + creator/metadata/suffix/token/pool profile 满足 ClockIn policy          | 允许第 1 个 5U lane      |
+| L3 Independent Confirmed | L2 + 官方 CA 匹配，或预先批准的高强度链上绑定组合                            | 允许后续九个 lane        |
+| L4 Effect Confirmed      | canonical receipt + token delta                                              | 形成真实 position/effect |
 
 为兼顾速度与误买风险，推荐 `HYBRID_CA_GATE`：
 
@@ -524,13 +524,13 @@ Profile 检测输入包括：
 
 ### 9.1 钱包角色
 
-| 钱包 | Entry 职责 | Entry 上限 | 后续职责 |
-|---|---|---:|---|
-| `entry-01` | 初始费率档 + live canary | 5U | 持有 lot-01，按原钱包退出 |
-| `entry-02` | 第 2 税率档 | 5U | 持有 lot-02，按原钱包退出 |
-| `entry-03`…`entry-09` | 中间税率档 | 各 5U | 各自持仓和退出 |
-| `entry-10` | 实际 floor 档 | 5U | 持有 lot-10，按原钱包退出 |
-| `first-launch-canary` | 可选首币策略 | 默认 0U，显式授权后 5U | 与 ClockIn 完全隔离 |
+| 钱包                  | Entry 职责               |             Entry 上限 | 后续职责                  |
+| --------------------- | ------------------------ | ---------------------: | ------------------------- |
+| `entry-01`            | 初始费率档 + live canary |                     5U | 持有 lot-01，按原钱包退出 |
+| `entry-02`            | 第 2 税率档              |                     5U | 持有 lot-02，按原钱包退出 |
+| `entry-03`…`entry-09` | 中间税率档               |                  各 5U | 各自持仓和退出            |
+| `entry-10`            | 实际 floor 档            |                     5U | 持有 lot-10，按原钱包退出 |
+| `first-launch-canary` | 可选首币策略             | 默认 0U，显式授权后 5U | 与 ClockIn 完全隔离       |
 
 ### 9.2 5U 的精确定义
 
@@ -605,32 +605,32 @@ targetFee[i] = S - round((S - F) × i / (N - 1)), i = 0...9
 示例一，若最终合约确认 `40% → 0%`：
 
 | Tranche | 目标 fee bps | 目标费率 |
-|---:|---:|---:|
-| 1 | 4000 | 40.00% |
-| 2 | 3556 | 35.56% |
-| 3 | 3111 | 31.11% |
-| 4 | 2667 | 26.67% |
-| 5 | 2222 | 22.22% |
-| 6 | 1778 | 17.78% |
-| 7 | 1333 | 13.33% |
-| 8 | 889 | 8.89% |
-| 9 | 444 | 4.44% |
-| 10 | 0 | 0.00% |
+| ------: | -----------: | -------: |
+|       1 |         4000 |   40.00% |
+|       2 |         3556 |   35.56% |
+|       3 |         3111 |   31.11% |
+|       4 |         2667 |   26.67% |
+|       5 |         2222 |   22.22% |
+|       6 |         1778 |   17.78% |
+|       7 |         1333 |   13.33% |
+|       8 |          889 |    8.89% |
+|       9 |          444 |    4.44% |
+|      10 |            0 |    0.00% |
 
 示例二，若最终合约 floor 实际为 `1%`：
 
 | Tranche | 目标 fee bps | 目标费率 |
-|---:|---:|---:|
-| 1 | 4000 | 40.00% |
-| 2 | 3567 | 35.67% |
-| 3 | 3133 | 31.33% |
-| 4 | 2700 | 27.00% |
-| 5 | 2267 | 22.67% |
-| 6 | 1833 | 18.33% |
-| 7 | 1400 | 14.00% |
-| 8 | 967 | 9.67% |
-| 9 | 533 | 5.33% |
-| 10 | 100 | 1.00% |
+| ------: | -----------: | -------: |
+|       1 |         4000 |   40.00% |
+|       2 |         3567 |   35.67% |
+|       3 |         3133 |   31.33% |
+|       4 |         2700 |   27.00% |
+|       5 |         2267 |   22.67% |
+|       6 |         1833 |   18.33% |
+|       7 |         1400 |   14.00% |
+|       8 |          967 |    9.67% |
+|       9 |          533 |    5.33% |
+|      10 |          100 |    1.00% |
 
 档位以 bps 整数持久化，禁止用浮点数参与签名决策。
 
@@ -1284,15 +1284,15 @@ Dashboard 文字必须区分：
 
 以下是工程目标，不是当前已测事实，必须在目标云机上 benchmark：
 
-| 指标 | 初始目标 | 说明 |
-|---|---:|---|
-| exact WSS log 到本地 deterministic identity decision | p95 ≤ 20ms | 不含外部网络传输 |
-| identity 冻结到第一次 sendRawTransaction 调用发出 | p95 ≤ 150ms | 包含同块 reads、本地签名与 fanout 调度 |
-| 同 raw 多 route fanout 调度差 | p95 ≤ 20ms | 不要求 provider 响应同时返回 |
-| receipt polling interval | 默认 250ms，可按 RPC 限额调整 | WSS receipt/log 可进一步加速 |
-| WSS 断线 gap backfill | 恢复后不遗漏 canonical logs | 延迟以区块计量 |
-| Control Sentinel 24h 可用性 | ≥ 99.9% 目标 | 生产监控目标 |
-| 本地时钟偏差 | ≤ 250ms 目标 | 决策仍以 chain state 为准 |
+| 指标                                                 |                      初始目标 | 说明                                   |
+| ---------------------------------------------------- | ----------------------------: | -------------------------------------- |
+| exact WSS log 到本地 deterministic identity decision |                    p95 ≤ 20ms | 不含外部网络传输                       |
+| identity 冻结到第一次 sendRawTransaction 调用发出    |                   p95 ≤ 150ms | 包含同块 reads、本地签名与 fanout 调度 |
+| 同 raw 多 route fanout 调度差                        |                    p95 ≤ 20ms | 不要求 provider 响应同时返回           |
+| receipt polling interval                             | 默认 250ms，可按 RPC 限额调整 | WSS receipt/log 可进一步加速           |
+| WSS 断线 gap backfill                                |   恢复后不遗漏 canonical logs | 延迟以区块计量                         |
+| Control Sentinel 24h 可用性                          |                  ≥ 99.9% 目标 | 生产监控目标                           |
+| 本地时钟偏差                                         |                  ≤ 250ms 目标 | 决策仍以 chain state 为准              |
 
 所有关键节点记录单调时钟：
 
@@ -1312,26 +1312,26 @@ Dashboard 文字必须区分：
 
 ## 21. 故障矩阵与预期行为
 
-| 故障 | 新 Entry | 既有 Position/Exit | 恢复/证据 |
-|---|---|---|---|
-| WSS 断线 | 通过 HTTP head/backfill 补桥，避免重复 | 不影响 quote 轮询 | 记录 gap block 范围 |
-| 主 RPC 失败 | 切备用已验证 RPC | 切备用 route provider | 不改变 plan/tx bytes |
-| direct Sequencer 不可用 | 使用标准 production RPC | 无特殊影响 | route health 降级告警 |
-| Factory code hash 变化 | 该 profile 停止新 entry | 既有 position 继续 | `STALE_REVERIFY_REQUIRED` |
-| 同名假 token | 不通过 Factory/Profile，不买 | 无 position | 记录 rejection reason |
-| 官网 CA 延迟 | L2 可发 lane 1；后续按 CA policy | 无影响 | 异步持续抓取 |
-| 官网 CA 冲突 | 停止未发 lanes | 已有 position 继续退出 | `IDENTITY_CONFLICT` |
-| 机制变为 99%/99min | ClockIn profile 不执行 | 无新 position | 进入独立 profile 分析 |
-| lane 1 revert | 停止后续 lanes | 无 position或处理已有 lot | receipt/trace |
-| lane 1 success 无 token | 停止后续 lanes | 若其他 lot 存在继续 exit | balance/log/trace |
-| lane N UNKNOWN | 只冻结 lane N reservation | 其他钱包可继续；同钱包 exit 等 nonce | same-raw + nonce/receipt |
-| 某钱包余额不足 | 该 lane not ready，不挪用其他 lane | 其他钱包正常 | readiness 告警 |
-| 5U 超过 cap | 默认不发该 lane | 无影响 | 明确 incompatible，不静默缩量 |
-| quote 超时 | lane 1 可按 SPEED_CANARY policy；后续按配置等待/跳过 | exit 不得无 quote 盲卖 | quote source/age |
-| finalize 同块发生 | route detector 切换并重算 | 使用可执行净值最佳 route | finalize receipt + liquidity |
-| sell revert | 不重复旧 calldata | position 保留，切 route/复核 | receipt/trace/allowance |
-| 数据库重启 | 不重复 intent/budget | 恢复 position/exit | WAL + unique constraints |
-| reorg | 冻结受影响 lane，重新核对 identity/effect | 回滚未 final effect | blockHash/removed log |
+| 故障                    | 新 Entry                                             | 既有 Position/Exit                   | 恢复/证据                     |
+| ----------------------- | ---------------------------------------------------- | ------------------------------------ | ----------------------------- |
+| WSS 断线                | 通过 HTTP head/backfill 补桥，避免重复               | 不影响 quote 轮询                    | 记录 gap block 范围           |
+| 主 RPC 失败             | 切备用已验证 RPC                                     | 切备用 route provider                | 不改变 plan/tx bytes          |
+| direct Sequencer 不可用 | 使用标准 production RPC                              | 无特殊影响                           | route health 降级告警         |
+| Factory code hash 变化  | 该 profile 停止新 entry                              | 既有 position 继续                   | `STALE_REVERIFY_REQUIRED`     |
+| 同名假 token            | 不通过 Factory/Profile，不买                         | 无 position                          | 记录 rejection reason         |
+| 官网 CA 延迟            | L2 可发 lane 1；后续按 CA policy                     | 无影响                               | 异步持续抓取                  |
+| 官网 CA 冲突            | 停止未发 lanes                                       | 已有 position 继续退出               | `IDENTITY_CONFLICT`           |
+| 机制变为 99%/99min      | ClockIn profile 不执行                               | 无新 position                        | 进入独立 profile 分析         |
+| lane 1 revert           | 停止后续 lanes                                       | 无 position或处理已有 lot            | receipt/trace                 |
+| lane 1 success 无 token | 停止后续 lanes                                       | 若其他 lot 存在继续 exit             | balance/log/trace             |
+| lane N UNKNOWN          | 只冻结 lane N reservation                            | 其他钱包可继续；同钱包 exit 等 nonce | same-raw + nonce/receipt      |
+| 某钱包余额不足          | 该 lane not ready，不挪用其他 lane                   | 其他钱包正常                         | readiness 告警                |
+| 5U 超过 cap             | 默认不发该 lane                                      | 无影响                               | 明确 incompatible，不静默缩量 |
+| quote 超时              | lane 1 可按 SPEED_CANARY policy；后续按配置等待/跳过 | exit 不得无 quote 盲卖               | quote source/age              |
+| finalize 同块发生       | route detector 切换并重算                            | 使用可执行净值最佳 route             | finalize receipt + liquidity  |
+| sell revert             | 不重复旧 calldata                                    | position 保留，切 route/复核         | receipt/trace/allowance       |
+| 数据库重启              | 不重复 intent/budget                                 | 恢复 position/exit                   | WAL + unique constraints      |
+| reorg                   | 冻结受影响 lane，重新核对 identity/effect            | 回滚未 final effect                  | blockHash/removed log         |
 
 ---
 
@@ -1439,40 +1439,40 @@ BOOT
 
 依据当前 `clockin-sniper` 源码和 capability manifest：
 
-| 当前能力 | 目标处理 |
-|---|---|
-| 精确 Factory `TokenLaunched` WSS + subscribe-before-backfill | 直接复用，抽成 `KnownFactoryChannel` |
-| Factory runtime code hash 校验 | 直接复用，扩展 proxy implementation 与 Registry revision |
-| name/symbol/creator/metadata/suffix identity | 复用并升级为分级授权 |
-| 首个有效 launch 冻结 | 直接复用，增加 blockHash/txIndex/profile hash/reorg |
-| exact-block pool reads | 直接复用，cap/cooldown 必须从“记录”升级为“决策输入” |
-| native ETH `buy(uint256,bytes32)` | 作为一个 EntryAdapter 保留，不再视为通用 ABI |
-| 第一笔优先签名、后九笔暖路径签名 | 思路复用，改为 10 个独立 signer/lane |
-| direct Sequencer + production RPC same-raw fanout | 直接复用并增加 SignedTx Vault/route telemetry |
-| accepted/known/unknown | 直接复用状态语义 |
-| UNKNOWN same-raw rebroadcast | 直接复用，改成 per-wallet isolation/restart vault |
-| receipt + token delivery 核账 | 直接复用并扩展完整 EffectRecord |
-| wallet lease | 改造成 10 wallet transaction coordinator |
-| repository-external secret、secret scan、npm pack 审计 | 必须保留并扩展到 10 key files |
+| 当前能力                                                     | 目标处理                                                 |
+| ------------------------------------------------------------ | -------------------------------------------------------- |
+| 精确 Factory `TokenLaunched` WSS + subscribe-before-backfill | 直接复用，抽成 `KnownFactoryChannel`                     |
+| Factory runtime code hash 校验                               | 直接复用，扩展 proxy implementation 与 Registry revision |
+| name/symbol/creator/metadata/suffix identity                 | 复用并升级为分级授权                                     |
+| 首个有效 launch 冻结                                         | 直接复用，增加 blockHash/txIndex/profile hash/reorg      |
+| exact-block pool reads                                       | 直接复用，cap/cooldown 必须从“记录”升级为“决策输入”      |
+| native ETH `buy(uint256,bytes32)`                            | 作为一个 EntryAdapter 保留，不再视为通用 ABI             |
+| 第一笔优先签名、后九笔暖路径签名                             | 思路复用，改为 10 个独立 signer/lane                     |
+| direct Sequencer + production RPC same-raw fanout            | 直接复用并增加 SignedTx Vault/route telemetry            |
+| accepted/known/unknown                                       | 直接复用状态语义                                         |
+| UNKNOWN same-raw rebroadcast                                 | 直接复用，改成 per-wallet isolation/restart vault        |
+| receipt + token delivery 核账                                | 直接复用并扩展完整 EffectRecord                          |
+| wallet lease                                                 | 改造成 10 wallet transaction coordinator                 |
+| repository-external secret、secret scan、npm pack 审计       | 必须保留并扩展到 10 key files                            |
 
 ### 24.2 当前必须重构
 
-| 当前实现 | 问题 | 目标需求 |
-|---|---|---|
-| 单 EOA、连续 nonce N…N+9 | cooldown/receipt/UNKNOWN 串行，难以覆盖 2 分钟 | 10 个 EOA，一 lane 一 nonce |
-| tranche N+1 等 tranche N token delivery + cooldown | 单钱包正确，但多钱包不需要全局串行 | lane 1 canary gate 后，2–10 独立调度 |
-| `chainAuthorizedTrancheCount = 1` 且 2–10 一律等官网 CA | CA 可能晚于窗口 | 实现 `HYBRID_CA_GATE` 与预批准强身份组合 |
-| 只监听启动时已知 Factory | Factory 换版时无法预警/自动 armed | Control Sentinel + topic-wide + address cluster + registry |
-| 固定一个 event/pool ABI | 平台版本可能变化 | Factory/Pool/Entry/Exit Adapter Registry |
-| `minTokensOut = 1` 默认 | 无真实价格保护 | lane 1 speed canary + lanes 2–10 quote-bounded |
-| 只读取 declared fee | 无实际总摩擦估计 | canary/receipt/quote estimator |
-| `currentWindowCap/windowMaxBuyBps/eoaOnlySecs` 主要记录 | 可能导致 5U revert 或违规假设 | 纳入 sizing/eligibility/profile |
-| native ETH only | 最终 quoteAsset 可能不同 | adapter 能力声明；先完成 native，ERC20 独立实现 |
-| File NDJSON 单会话 ledger | 多钱包原子 reservation/recovery 不足 | SQLite WAL + append-only audit + NDJSON export |
-| position 只记录余额 | 无成本 lot、净清算价值 | wallet-level PositionLot + aggregate position |
-| automatedExit = unsupported | 经济闭环缺失 | 内盘 sell + 外盘 swap + route migration |
-| 没有可执行 PnL | 页面涨幅无法兑现 | net sell quote、Gas、税、impact、实际回款 |
-| 没有 Control/Execution 权限隔离 | 官网/AI 逻辑与花钱边界不清 | 无私钥 sentinel + 独立复核 executor |
+| 当前实现                                                | 问题                                           | 目标需求                                                   |
+| ------------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------- |
+| 单 EOA、连续 nonce N…N+9                                | cooldown/receipt/UNKNOWN 串行，难以覆盖 2 分钟 | 10 个 EOA，一 lane 一 nonce                                |
+| tranche N+1 等 tranche N token delivery + cooldown      | 单钱包正确，但多钱包不需要全局串行             | lane 1 canary gate 后，2–10 独立调度                       |
+| `chainAuthorizedTrancheCount = 1` 且 2–10 一律等官网 CA | CA 可能晚于窗口                                | 实现 `HYBRID_CA_GATE` 与预批准强身份组合                   |
+| 只监听启动时已知 Factory                                | Factory 换版时无法预警/自动 armed              | Control Sentinel + topic-wide + address cluster + registry |
+| 固定一个 event/pool ABI                                 | 平台版本可能变化                               | Factory/Pool/Entry/Exit Adapter Registry                   |
+| `minTokensOut = 1` 默认                                 | 无真实价格保护                                 | lane 1 speed canary + lanes 2–10 quote-bounded             |
+| 只读取 declared fee                                     | 无实际总摩擦估计                               | canary/receipt/quote estimator                             |
+| `currentWindowCap/windowMaxBuyBps/eoaOnlySecs` 主要记录 | 可能导致 5U revert 或违规假设                  | 纳入 sizing/eligibility/profile                            |
+| native ETH only                                         | 最终 quoteAsset 可能不同                       | adapter 能力声明；先完成 native，ERC20 独立实现            |
+| File NDJSON 单会话 ledger                               | 多钱包原子 reservation/recovery 不足           | SQLite WAL + append-only audit + NDJSON export             |
+| position 只记录余额                                     | 无成本 lot、净清算价值                         | wallet-level PositionLot + aggregate position              |
+| automatedExit = unsupported                             | 经济闭环缺失                                   | 内盘 sell + 外盘 swap + route migration                    |
+| 没有可执行 PnL                                          | 页面涨幅无法兑现                               | net sell quote、Gas、税、impact、实际回款                  |
+| 没有 Control/Execution 权限隔离                         | 官网/AI 逻辑与花钱边界不清                     | 无私钥 sentinel + 独立复核 executor                        |
 
 ### 24.3 当前行为必须显式废止
 
@@ -1829,22 +1829,22 @@ Fork/replay 的目标是验证 calldata、状态变化和经济口径，不作�
 
 ## 30. 用户需求追踪矩阵
 
-| 用户原始诉求 | 对应设计 |
-|---|---|
-| “第一时间狙击” | Known Factory hot subscription、Control Sentinel、预热钱包/nonce/资金、same-raw fanout、性能分段 |
-| “命中名字还是持续监控 CA” | 名字仅候选；Factory 是主触发；CA 是独立确认；HYBRID_CA_GATE |
-| “如果换地址换合约” | 全链 topic、地址集群、CREATE/proxy、Factory Registry、profile versioning |
-| “从 up 那个池子交叉验证” | external Pair/LP/finalize channel 与 Route Registry |
-| “网页监听最后保底” | 结构化官网/JSON/bundle watcher，保存 content hash，不能越过链上复核 |
-| “40% 两分钟递减” | actual fee getter、mechanism profile、10 档公式、chain state 驱动 |
-| “10 批，每次 5U” | 10 one-shot EOA、每 lane 名义最多 5U、principal 50U、all-in 60U |
-| “不用蚂蚁搬家，小钱包测税” | 第一笔 5U 同时做 canary，不额外无限 probe；0.25U adapter 仅后备 |
-| “实盘，不要模拟” | 生产 executor 仅真实路径；fork/replay 独立于生产 |
-| “云服务器实时准备” | Control/Execution services、systemd、readiness、外部 credentials、region benchmark |
-| “私钥不能在仓库” | 10 个外部 key files/Secret Manager、0600/0700、scan/package audit |
-| “内盘外盘买卖要模拟清楚” | 双 Route Exit、finalize migration、fork buy/sell、可执行净回款 |
-| “对比他的思路与当前程序” | 多源 sentinel + 10 EOA + canary + exit；第 24 节逐项迁移矩阵 |
-| “首币 + ClockIn” | 双策略隔离、首币默认 monitor-only、同 CA dedupe |
+| 用户原始诉求               | 对应设计                                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------------------ |
+| “第一时间狙击”             | Known Factory hot subscription、Control Sentinel、预热钱包/nonce/资金、same-raw fanout、性能分段 |
+| “命中名字还是持续监控 CA”  | 名字仅候选；Factory 是主触发；CA 是独立确认；HYBRID_CA_GATE                                      |
+| “如果换地址换合约”         | 全链 topic、地址集群、CREATE/proxy、Factory Registry、profile versioning                         |
+| “从 up 那个池子交叉验证”   | external Pair/LP/finalize channel 与 Route Registry                                              |
+| “网页监听最后保底”         | 结构化官网/JSON/bundle watcher，保存 content hash，不能越过链上复核                              |
+| “40% 两分钟递减”           | actual fee getter、mechanism profile、10 档公式、chain state 驱动                                |
+| “10 批，每次 5U”           | 10 one-shot EOA、每 lane 名义最多 5U、principal 50U、all-in 60U                                  |
+| “不用蚂蚁搬家，小钱包测税” | 第一笔 5U 同时做 canary，不额外无限 probe；0.25U adapter 仅后备                                  |
+| “实盘，不要模拟”           | 生产 executor 仅真实路径；fork/replay 独立于生产                                                 |
+| “云服务器实时准备”         | Control/Execution services、systemd、readiness、外部 credentials、region benchmark               |
+| “私钥不能在仓库”           | 10 个外部 key files/Secret Manager、0600/0700、scan/package audit                                |
+| “内盘外盘买卖要模拟清楚”   | 双 Route Exit、finalize migration、fork buy/sell、可执行净回款                                   |
+| “对比他的思路与当前程序”   | 多源 sentinel + 10 EOA + canary + exit；第 24 节逐项迁移矩阵                                     |
+| “首币 + ClockIn”           | 双策略隔离、首币默认 monitor-only、同 CA dedupe                                                  |
 
 ---
 
@@ -1852,26 +1852,26 @@ Fork/replay 的目标是验证 calldata、状态变化和经济口径，不作�
 
 2026-08-16，用户确认“退出最高滑点为 20%、授权有效一周，其余按推荐方案”。这里的 20% 被解释并实现为独立、二次确认的 `BREAK_GLASS` 绝对上限；常规自动/人工退出仍为 5%，且不能自动升级。完整决策由 [ADR 0006](./adr/0006-clockin-policy-v2-risk-and-authorization.md) 固化。
 
-| 决策域 | 最终值 | 执行语义 |
-|---|---:|---|
-| ClockIn principal | 50U | 10 个独立 one-shot EOA，每 lane 名义最多 5U |
-| 全包风险上限 | 60U | principal + entry/approval/最多三次 sell Gas + 30% Gas margin；禁止自动补款 |
-| 首币策略 | 0U | monitor-only，不借用 ClockIn 预算 |
-| 身份 gate | `HYBRID_CA_GATE` | lane 1 需要 L2；lanes 2–10 需要 L3 或 launch 前批准的强绑定 |
-| cap sizing | `SHRINK_TO_CAP` | 最多 5U、最少 1U；不足 1U 跳过；不拆分、不重分配；缩量后必须按同本金重报价 |
-| catch-up | `QUOTE_RANKED_BOUNDED` | 每个 canonical block 最多 2 lanes；无可信 quote 时最多一 lane |
-| 价格源 | 双源冻结 | 最大陈旧 30 秒，最大偏差 2%；固定 wei 仅能在 arming 前人工冻结 |
-| 授权 | 最长 7 天 | launch 前授权，事件后确定性自动执行；绑定 chain/profile/config/wallet/budget scope |
-| 初始止损 | -30% | 基于入场后可执行净清算基线；税窗结束且 route 可执行后，连续 2 个 canonical blocks 确认 |
-| 回本前最长持仓 | 60 分钟 | route 可执行时退出全部剩余仓位 |
-| 本金优先 | 2× | 基于可执行经济价值触发，并以实际回款更新进度 |
-| 第二止盈 | 3× | 卖出初始 token 数量的 10% |
-| runner | 25% drawdown / 24 小时 | momentum 在 replay 验证前禁用 |
-| 常规退出滑点 | 5% | 自动退出与普通 `EXIT_NOW` 的硬上限 |
-| 应急退出滑点 | 20% | 仅显式 `BREAK_GLASS`；新鲜 quote、理由、第二确认和审计 ID 缺一不可 |
-| 无流动性 | 告警并重试 | 只重试已验证 route，不用页面价格，不无限扩大滑点 |
-| 部署拓扑 | 1 active + 1 keyless observer | 区域由可重复 benchmark 决定；observer 无 signer credential |
-| micro probe | 默认禁用 | 不用无限小钱包买入来探税 |
+| 决策域            |                        最终值 | 执行语义                                                                               |
+| ----------------- | ----------------------------: | -------------------------------------------------------------------------------------- |
+| ClockIn principal |                           50U | 10 个独立 one-shot EOA，每 lane 名义最多 5U                                            |
+| 全包风险上限      |                           60U | principal + entry/approval/最多三次 sell Gas + 30% Gas margin；禁止自动补款            |
+| 首币策略          |                            0U | monitor-only，不借用 ClockIn 预算                                                      |
+| 身份 gate         |              `HYBRID_CA_GATE` | lane 1 需要 L2；lanes 2–10 需要 L3 或 launch 前批准的强绑定                            |
+| cap sizing        |               `SHRINK_TO_CAP` | 最多 5U、最少 1U；不足 1U 跳过；不拆分、不重分配；缩量后必须按同本金重报价             |
+| catch-up          |        `QUOTE_RANKED_BOUNDED` | 每个 canonical block 最多 2 lanes；无可信 quote 时最多一 lane                          |
+| 价格源            |                      双源冻结 | 最大陈旧 30 秒，最大偏差 2%；固定 wei 仅能在 arming 前人工冻结                         |
+| 授权              |                     最长 7 天 | launch 前授权，事件后确定性自动执行；绑定 chain/profile/config/wallet/budget scope     |
+| 初始止损          |                          -30% | 基于入场后可执行净清算基线；税窗结束且 route 可执行后，连续 2 个 canonical blocks 确认 |
+| 回本前最长持仓    |                       60 分钟 | route 可执行时退出全部剩余仓位                                                         |
+| 本金优先          |                            2× | 基于可执行经济价值触发，并以实际回款更新进度                                           |
+| 第二止盈          |                            3× | 卖出初始 token 数量的 10%                                                              |
+| runner            |        25% drawdown / 24 小时 | momentum 在 replay 验证前禁用                                                          |
+| 常规退出滑点      |                            5% | 自动退出与普通 `EXIT_NOW` 的硬上限                                                     |
+| 应急退出滑点      |                           20% | 仅显式 `BREAK_GLASS`；新鲜 quote、理由、第二确认和审计 ID 缺一不可                     |
+| 无流动性          |                    告警并重试 | 只重试已验证 route，不用页面价格，不无限扩大滑点                                       |
+| 部署拓扑          | 1 active + 1 keyless observer | 区域由可重复 benchmark 决定；observer 无 signer credential                             |
+| micro probe       |                      默认禁用 | 不用无限小钱包买入来探税                                                               |
 
 `clockin-policy-v2.productionArmable=true` 只表示上述 owner policy 已完整冻结。它不代表当前主网协议、钱包资金、云部署或退出 route 已就绪；系统总状态仍由独立 readiness gates 决定。
 
@@ -1980,11 +1980,11 @@ official Factory/ABI
 
 RPC 在系统中不是一个统一的“连接状态”，而是三类不同能力：
 
-| 能力 | 常驻是否需要 | 允许的 transport | 是否可花钱 |
-|---|---:|---|---:|
-| 发现候选、网站变化、链头推进 | 是 | Robinhood 官方公共 HTTP RPC + 公共网页 | 否 |
-| 对最终 Factory/Profile 做热监听和 exact-block 复核 | 仅实盘准备窗口 | Chainstack HTTP/WSS + 官方 Sequencer 只读/预检 | 否 |
-| 签名、same-raw 广播、receipt 恢复、退出 | 仅授权交易窗口或仍有 exposure 时 | Chainstack HTTP/WSS + 官方 direct Sequencer | 是 |
+| 能力                                               |                     常驻是否需要 | 允许的 transport                               | 是否可花钱 |
+| -------------------------------------------------- | -------------------------------: | ---------------------------------------------- | ---------: |
+| 发现候选、网站变化、链头推进                       |                               是 | Robinhood 官方公共 HTTP RPC + 公共网页         |         否 |
+| 对最终 Factory/Profile 做热监听和 exact-block 复核 |                   仅实盘准备窗口 | Chainstack HTTP/WSS + 官方 Sequencer 只读/预检 |         否 |
+| 签名、same-raw 广播、receipt 恢复、退出            | 仅授权交易窗口或仍有 exposure 时 | Chainstack HTTP/WSS + 官方 direct Sequencer    |         是 |
 
 因此“看见信号”“允许产生 RPC 成本”“允许签名/广播”必须是三个独立状态。名字、官网 CA、关联钱包、网站 hash 或候选 event 只能提高观察置信度；它们不能创建付费批准文件、实盘 arm marker 或启动资金服务。
 
@@ -2077,10 +2077,10 @@ stateDiagram-v2
 
 每个 allowlisted 官方页面保存两层证据：
 
-| 层 | 内容 | 用途 | 可否触发资金动作 |
-|---|---|---|---:|
-| raw | 完整响应体 SHA-256 | 取证、定位页面字节变化 | 否 |
-| semantic | 可见 launch 状态、ClockIn/Robinhood marker、可见或带 Factory/token/contract/pool/CA 标签的地址集合 | 告警和人工/链上复核入口 | 否 |
+| 层       | 内容                                                                                               | 用途                    | 可否触发资金动作 |
+| -------- | -------------------------------------------------------------------------------------------------- | ----------------------- | ---------------: |
+| raw      | 完整响应体 SHA-256                                                                                 | 取证、定位页面字节变化  |               否 |
+| semantic | 可见 launch 状态、ClockIn/Robinhood marker、可见或带 Factory/token/contract/pool/CA 标签的地址集合 | 告警和人工/链上复核入口 |               否 |
 
 `COMING_SOON / OPEN / PAUSED / UNKNOWN` 状态变化和候选地址集合变化为 `ACTION`；其他 marker 变化为 `INFO`；仅 raw hash 改变不产生事件。候选地址必须始终带 `unverified` 语义，只有经过 chainId、runtime/proxy、Factory family、event provenance、机制与退出 profile 的既有 L0–L4 流程后才可能升级。官方 `/docs` 地址表使用独立 `LAUNCHER_DOCS` scope：只接受 `Testnet Archive` 之前的主网 `Launcher Factory`，明确拒绝 archive/testnet Factory。
 
@@ -2188,6 +2188,10 @@ lanes 2–10 必须在同一时点同时满足：
 - Public handoff 在发布前绑定 receipt exact log、canonical block hash 与至少 2 个后续区块。若旧候选被公共 RPC 连续两次证明发生 reorg，系统写入 immutable tombstone、CAS 失效 pointer、rewind cursor，再允许 canonical replacement；瞬时 RPC 错误不得失效候选或推进 cursor。
 - handoff 文件是非敏感的 paid-plane 证据，不直接充当任意文件变化的唤醒信号。只有 canonical ACTIVE pointer 才写独立 `active.signal`；reorg tombstone/失效不得触发 paid service。`clockin-executor.path` 只观察 `active.signal`，是唯一 boot-enabled paid trigger；Control 启动会在确认 pointer 仍 canonical 后重发 signal，以覆盖“pointer 先存在、path 后启动”的竞态。
 - Public Control 的历史回补按至多 2,000 blocks 的 chunk 逐段 durable commit cursor，并公开 `cursor/confirmedHead/lag`。只有追平 confirmation depth 才可声明 public handoff ready、允许启用 paid path；中途 429/503 从最后成功 chunk 恢复，不能从部署块全量重扫。
+- Public Control 的链 transport 是不可由环境改写的无密钥池：Robinhood 官方 public HTTP 为
+  primary；官方出现 429/5xx/timeout 时打开 60 秒熔断并切换固定 BlockReq public route。两条
+  public route 都不能签名或广播，且 canonical handoff 在签名前仍由 Chainstack 重验；这不是
+  将付费 RPC 提前常驻。
 - `LaunchArmed` 只表示 launch 已配置，不表示应立即买。执行器必须从 `getLaunch/currentTaxBps/quoteBuy` 读当前税率、窗口、deadline、oracle freshness 和 token out，再构造 `buy(id, quoteIn, minTokensOut, ref)`。Created 后 15 分钟没有 Armed 时，paid Executor 退出以停止 Chainstack 消耗；keyless Public Control 继续监听同 id Armed，并在晚到 Armed 出现时重新写有效 signal，因此 15 分钟不是放弃目标。
 - X 和官网 watcher 为服务器异步信号，不依赖用户浏览器，也不处于 discovery→sign→broadcast 热路。它们的作用是事后确认 official CA 或将 mismatch 升级为冲突告警。
 
@@ -2218,13 +2222,13 @@ Exit 仍应尽快实现 quoted 路由并取得真实回执，但当前 generic E
 
 ### 37.4 实现、武装与交易效果证据
 
-| 层级 | 2026-08-20 当前状态 | 能证明什么 |
-|---|---|---|
-| 本地实现 | `LOCAL_FULL_GATE_PASSED`：quoted adapter/discovery/public handoff/reorg recovery/readiness/preparation/executor/paid lifecycle 已通过 386/386、两套 coverage、clean-tree verify 与真实 archive audit；仓库外 profile + 7 天 authorization 仍需随最终 artifact 重生 | 证明本地实现与发布边界，不证明云机已运行或交易已发生 |
-| 生产部署 | quoted artifact/profile/auth 未部署；资金服务 disabled/inactive；两 marker absent | 线上当前只能看，知道 CA 也不会买 |
-| 钱包 readiness | 每钱包 `0.0032 ETH`，但 `0 WETH / 0 allowance` | 还不能调用 quoted buy，必须先 wrap/approve 并回读 10/10 |
-| launch 前 entry 武装 | `ENTRY_HOT_ARMED` receipt 尚不存在 | 它只能证明公共观测、付费唤醒、签名与入场准备就绪，不能写“已成交” |
-| launch 后买入效果 | 无 canonical entry receipt/effect | 真实事件发生后才能升级为 `CANONICAL_ENTRY_EFFECT_CONFIRMED`；无此 receipt 是当前效果限制，不是 launch 前 `ENTRY_HOT_ARMED` 的 blocker |
-| 自动退出 | `QUOTED_EXIT_UNSUPPORTED`，无 canonical exit receipt | 入场可按已接受风险独立武装，但不得声称自动退出就绪 |
+| 层级                 | 2026-08-20 当前状态                                                                                                                                                                                                                                                | 能证明什么                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 本地实现             | `LOCAL_FULL_GATE_PASSED`：quoted adapter/discovery/public handoff/reorg recovery/readiness/preparation/executor/paid lifecycle 已通过 386/386、两套 coverage、clean-tree verify 与真实 archive audit；仓库外 profile + 7 天 authorization 仍需随最终 artifact 重生 | 证明本地实现与发布边界，不证明云机已运行或交易已发生                                                                                  |
+| 生产部署             | quoted artifact/profile/auth 未部署；资金服务 disabled/inactive；两 marker absent                                                                                                                                                                                  | 线上当前只能看，知道 CA 也不会买                                                                                                      |
+| 钱包 readiness       | 每钱包 `0.0032 ETH`，但 `0 WETH / 0 allowance`                                                                                                                                                                                                                     | 还不能调用 quoted buy，必须先 wrap/approve 并回读 10/10                                                                               |
+| launch 前 entry 武装 | `ENTRY_HOT_ARMED` receipt 尚不存在                                                                                                                                                                                                                                 | 它只能证明公共观测、付费唤醒、签名与入场准备就绪，不能写“已成交”                                                                      |
+| launch 后买入效果    | 无 canonical entry receipt/effect                                                                                                                                                                                                                                  | 真实事件发生后才能升级为 `CANONICAL_ENTRY_EFFECT_CONFIRMED`；无此 receipt 是当前效果限制，不是 launch 前 `ENTRY_HOT_ARMED` 的 blocker |
+| 自动退出             | `QUOTED_EXIT_UNSUPPORTED`，无 canonical exit receipt                                                                                                                                                                                                               | 入场可按已接受风险独立武装，但不得声称自动退出就绪                                                                                    |
 
 当前总状态因此仍是 `NOT_HOT_ARMED`。本地 final gate 已通过；剩余顺序为：生成 checksum artifact/profile/auth → 部署与当前进程/hash 回读 → 公共 cursor 追平 confirmed head → 在 path disabled 时创建双 marker 并完成 10/10 wrap/approve/readiness → 只 enable/start `clockin-executor.path` → 回读 valid-only `active.signal`、handoff 前零付费进程及所有当前门禁 → 生成 launch 前 `ENTRY_HOT_ARMED` receipt。真实 launch 后还必须另存 canonical receipt/delta/EffectRecord，才能声称成交。禁止 launch 前手动常驻 paid Executor/Reconciler，当前 generic Exit 不得随 quoted entry 启动或被写成已武装。

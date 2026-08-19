@@ -9,7 +9,11 @@
 
 The original Control Sentinel loaded authenticated Chainstack HTTP/WSS credentials and refreshed wallet readiness every five seconds. One refresh performed two identity calls, one gas-price call, and three calls for each of ten wallets, or about 34 paid RPC calls before WSS-triggered work. Even without WSS callbacks this implied at least 587,520 paid calls per day. The owner stopped the service after observing excessive Chainstack consumption.
 
-The operational requirement is now exact: continuous pre-launch observation may use the official Robinhood public RPC, while Chainstack may be used only after the owner deliberately begins a real-snipe preparation window and while transactions, reconciliation, or exits may still require it. A website change, name match, candidate CA, address-cluster event, or other soft signal must never activate paid transport or signing by itself.
+The operational requirement is now exact: continuous pre-launch observation may use a compiled,
+keyless public-RPC pool, while Chainstack may be used only after the owner deliberately begins a
+real-snipe preparation window and while transactions, reconciliation, or exits may still require it.
+A website change, name match, candidate CA, address-cluster event, or other soft signal must never
+activate paid transport or signing by itself.
 
 ## Options considered
 
@@ -29,9 +33,11 @@ This preserves continuous low-cost discovery and makes paid capability a deliber
 
 ### Always-on Control
 
-- `clockin-control` has exactly one chain transport: the hard-coded official public HTTP endpoint `https://rpc.mainnet.chain.robinhood.com`.
+- `clockin-control` has one compiled keyless transport pool: Robinhood's official public HTTP endpoint
+  is primary and the fixed BlockReq Robinhood public route is the bounded fallback. Neither endpoint
+  is accepted from environment, command line, profile or credentials.
 - Control accepts no RPC URL from environment, command line, strategy configuration, or systemd credentials. Its unit has no `LoadCredential` directive and reads only `/etc/clockin-sniper/control.env`, which may contain non-sensitive timing and local HTTP/status settings.
-- The cold cadence is a two-second head poll, five-minute chain-identity recheck, hourly public wallet-readiness refresh, and thirty-second website fingerprint refresh. Head and identity tasks use independent in-process overlap guards so their aligned timer periods cannot suppress identity rechecks. All physical public JSON-RPC calls still share one serialized 500 ms minimum-interval queue; HTTP 429 receives at most two retries with one- and two-second backoff. Each physical request and throttled retry is counted in the Control snapshot.
+- The cold cadence is a two-second head poll, five-minute chain-identity recheck, hourly public wallet-readiness refresh, and thirty-second website fingerprint refresh. Head and identity tasks use independent in-process overlap guards so their aligned timer periods cannot suppress identity rechecks. All physical public JSON-RPC calls still share one serialized 500 ms minimum-interval queue. A transient failure on the official route opens a sixty-second circuit and immediately moves the request to the fixed keyless fallback; transient fallback failures receive at most two retries with one- and two-second backoff. Each physical request, route, failover and throttled retry is counted in the Control snapshot.
 - Public monitoring is observation evidence only. It cannot sign, broadcast, create an authorization, create an approval marker, or start another service.
 
 ### Paid RPC window
@@ -55,12 +61,17 @@ This preserves continuous low-cost discovery and makes paid capability a deliber
 
 - Cold observation uses HTTP polling rather than paid WSS and may see a block up to the configured polling interval later, plus provider/network variance.
 - The paid provider is not pre-warmed from soft signals. Human approval and service startup add latency, so this mode deliberately gives up some FCFS competitiveness to satisfy the cost rule.
-- The official public endpoint is rate-limited and not an appropriate execution transport; it is never used for signing/broadcast fanout.
+- Both public routes are best-effort observation transports, not execution transports. Neither is
+  used for signing/broadcast fanout, and the paid Executor independently revalidates every handoff
+  against Chainstack before any signature.
 
 ### Follow-up evidence
 
-- Automated tests must prove Control cannot be configured to another RPC and has no paid credential mount.
-- Deployment readback must prove Control is the only active process, has no credentials directory or RPC environment variables, reports `OFFICIAL_PUBLIC_HTTP_ONLY`, advances its public request counters, and completes the paced wallet-readiness burst without an unresolved HTTP 429.
+- Automated tests must prove Control cannot be configured outside the compiled keyless pool and has
+  no paid credential mount.
+- Deployment readback must prove Control is the only active process, has no credentials directory or
+  RPC environment variables, reports `KEYLESS_PUBLIC_HTTP_FAILOVER`, advances its per-route counters,
+  and completes canonical handoff catch-up without an unresolved public-RPC failure.
 - Deployment readback must also prove all paid services are disabled/inactive and both approval markers are absent.
 
 ## Follow-up note — 2026-08-20
