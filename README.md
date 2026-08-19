@@ -6,7 +6,7 @@ Robinhood Chain (`chainId=4663`) 上的 ClockIn / Stonk Launcher 生产架构实
 
 仓库已经实现并测试 v2 的 Canonical Model、SQLite WAL 状态、Factory Control Sentinel、10 个独立 one-shot EOA、动态税率十档入场、WETH quoted buy、7 天 scope-bound 授权、same-raw 广播与 UNKNOWN 恢复、双阶段退出与 5%/20% 分离滑点、readiness、只读 Dashboard、告警、systemd 模板和发布边界。
 
-当前状态是 `IMPLEMENTED_FINAL_GATE_PENDING / PRODUCTION_NOT_DEPLOYED / NOT_HOT_ARMED`，不是“已成交”。2026-08-20 的主网证据已取代“最终 Factory/ABI 未发布”这一旧 blocker：ClockIn 当前主路是已验证的 WETH quoted pad，热路为精确 pad + approved creator 的 `LaunchCreated(id, token, creator, externalToken)` 识别 CA，再等待同 `id` 的 `LaunchArmed`，然后按链上 `getLaunch/currentTaxBps/quoteBuy` 的当前值构造 `buy(id, quoteIn, minTokensOut, ref)`。X/官网不参与热路，只做异步确认或 CA 冲突告警。“已实现 + targeted tests”不代表本次 clean-tree 全量门禁或 release readback 已完成。
+当前状态是 `LOCAL_FULL_GATE_PASSED / PRODUCTION_NOT_DEPLOYED / NOT_HOT_ARMED`，不是“已成交”。2026-08-20 的主网证据已取代“最终 Factory/ABI 未发布”这一旧 blocker：ClockIn 当前主路是已验证的 WETH quoted pad，热路为精确 pad + approved creator 的 `LaunchCreated(id, token, creator, externalToken)` 识别 CA，再等待同 `id` 的 `LaunchArmed`，然后按链上 `getLaunch/currentTaxBps/quoteBuy` 的当前值构造 `buy(id, quoteIn, minTokensOut, ref)`。X/官网不参与热路，只做异步确认或 CA 冲突告警。本地 clean-tree `verify`、真实 npm archive 与 secret/public/history gates 已通过，但这仍不代表云机已部署或钱包已准备。
 
 本地已完成 quoted adapter、Created→Armed discovery、exact-metadata public handoff、reorg replacement、动态税率/报价、WETH readiness/preparation、restart recovery 与真实执行器代码及测试。但这些还没有部署到 `47.251.28.201`；线上仍只有无私钥 Control `enabled/active`，Executor/Reconciler/Exit `disabled/inactive`，两个 marker absent，所以线上当前知道 CA 也不会买。10 个钱包最新回读均为 `0 WETH / 0 allowance`，尚未执行 wrap/approve；每个仍有 `0.0032 ETH`，但“ETH 足够支付准备金与 Gas”不等于“WETH 已就绪”。最终 artifact 必须重新生成与其 hash 绑定的 immutable profile 和 7 天 authorization。
 
