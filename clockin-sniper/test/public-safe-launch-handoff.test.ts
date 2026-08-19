@@ -738,6 +738,36 @@ describe("public launch handoff strict reader", () => {
     }
   });
 
+  it("does not issue mkdir or chmod when the exact shared children already exist", async () => {
+    const directory = await temporaryDirectory();
+    try {
+      for (const child of [
+        PUBLIC_LAUNCH_HANDOFF_RECORDS_DIRECTORY,
+        PUBLIC_LAUNCH_HANDOFF_INVALIDATIONS_DIRECTORY,
+      ]) {
+        const childPath = join(directory, child);
+        await mkdir(childPath, { mode: 0o0750 });
+        await chmod(childPath, 0o2750);
+      }
+      let mutationCalls = 0;
+      const rejectMutation = async (): Promise<void> => {
+        mutationCalls += 1;
+        throw Object.assign(new Error("RestrictSUIDSGID blocked directory mutation"), {
+          code: "EPERM",
+        });
+      };
+      const store = new PublicLaunchHandoffStore(directory, {
+        create: rejectMutation,
+        setMode: rejectMutation,
+      });
+
+      await store.initialize();
+      assert.equal(mutationCalls, 0);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("re-signals an existing immutable handoff for reboot-safe PathChanged activation", async () => {
     const directory = await temporaryDirectory();
     try {

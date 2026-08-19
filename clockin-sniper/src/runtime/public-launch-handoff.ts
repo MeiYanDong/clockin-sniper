@@ -591,22 +591,42 @@ async function inspectHandoffRoot(path: string, label: string): Promise<Director
   return root;
 }
 
+export interface PublicLaunchHandoffDirectoryMutations {
+  readonly create: (path: string, mode: number) => Promise<void>;
+  readonly setMode: (path: string, mode: number) => Promise<void>;
+}
+
+const DEFAULT_DIRECTORY_MUTATIONS: PublicLaunchHandoffDirectoryMutations = Object.freeze({
+  create: async (path: string, mode: number): Promise<void> => {
+    await mkdir(path, { recursive: false, mode });
+  },
+  setMode: async (path: string, mode: number): Promise<void> => {
+    await chmod(path, mode);
+  },
+});
+
 async function createSharedChildDirectory(
   path: string,
   label: string,
   root: Readonly<{ uid: number; gid: number }>,
+  allowCreate: boolean,
+  mutations: PublicLaunchHandoffDirectoryMutations,
 ): Promise<void> {
-  let created = false;
-  try {
-    await mkdir(path, { recursive: false, mode: PUBLIC_LAUNCH_HANDOFF_DIRECTORY_MODE });
-    created = true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  const existing = await inspectDirectory(path, label, root);
+  if (existing !== null) {
+    if (existing.uid !== currentUid()) {
+      throw new Error(`${label} is not owned by the Control service uid`);
+    }
+    return;
   }
+
+  if (!allowCreate) throw new Error(`${label} must be pre-provisioned by tmpfiles`);
+
   // UMask=0077 deliberately removes the group bits requested by mkdir. Only a
-  // directory created by this process is normalized; an existing production
-  // directory must already match tmpfiles exactly and is never silently repaired.
-  if (created) await chmod(path, PUBLIC_LAUNCH_HANDOFF_DIRECTORY_MODE);
+  // non-production directory created by this process is normalized; production
+  // never issues mkdir/chmod and requires the exact tmpfiles layout to exist.
+  await mutations.create(path, 0o0750);
+  await mutations.setMode(path, PUBLIC_LAUNCH_HANDOFF_DIRECTORY_MODE);
   const metadata = await inspectDirectory(path, label, root);
   if (metadata === null) throw new Error(`${label} was not created`);
   if (metadata.uid !== currentUid()) {
@@ -663,14 +683,19 @@ export class PublicLaunchHandoffStore {
   readonly directory: string;
   readonly recordsDirectory: string;
   readonly invalidationsDirectory: string;
+  readonly #directoryMutations: PublicLaunchHandoffDirectoryMutations;
 
-  constructor(directory = PUBLIC_LAUNCH_HANDOFF_DEFAULT_DIRECTORY) {
+  constructor(
+    directory = PUBLIC_LAUNCH_HANDOFF_DEFAULT_DIRECTORY,
+    directoryMutations = DEFAULT_DIRECTORY_MUTATIONS,
+  ) {
     this.directory = resolvePublicLaunchHandoffDirectory(directory);
     this.recordsDirectory = join(this.directory, PUBLIC_LAUNCH_HANDOFF_RECORDS_DIRECTORY);
     this.invalidationsDirectory = join(
       this.directory,
       PUBLIC_LAUNCH_HANDOFF_INVALIDATIONS_DIRECTORY,
     );
+    this.#directoryMutations = directoryMutations;
   }
 
   async initialize(): Promise<void> {
@@ -682,15 +707,20 @@ export class PublicLaunchHandoffStore {
       throw new Error("public launch handoff directory is not owned by the Control service uid");
     }
     const rootIdentity = Object.freeze({ uid: root.uid, gid: root.gid });
+    const allowCreate = this.directory !== resolve(PUBLIC_LAUNCH_HANDOFF_DEFAULT_DIRECTORY);
     await createSharedChildDirectory(
       this.recordsDirectory,
       "public launch handoff records directory",
       rootIdentity,
+      allowCreate,
+      this.#directoryMutations,
     );
     await createSharedChildDirectory(
       this.invalidationsDirectory,
       "public launch handoff invalidations directory",
       rootIdentity,
+      allowCreate,
+      this.#directoryMutations,
     );
   }
 
