@@ -19,6 +19,7 @@
 - `[x]`：已经完成并有可回读证据；
 - `IMPLEMENTED_FINAL_GATE_PENDING`：代码和 targeted tests 已完成，但本次 clean-tree 全量门禁/release readback 未完成；对应任务仍保持 `[ ]`；
 - `LOCAL_FULL_GATE_PASSED`：clean-tree verify、两套 coverage、secret/history/public-scope 与真实 archive audit 已通过；仍不能代替生产部署、钱包 readiness 或链上 receipt；
+- `ENTRY_HOT_ARMED`：launch 前 quoted entry 的 artifact/profile/auth、公共 cursor、10/10 WETH/allowance/Gas/nonce、双 marker 与 valid-only path 已有生产回执；它不代表已成交或退出已武装；
 - 被外部信息阻塞的任务仍保持 `[ ]`，在任务下记录 `BLOCKED_BY`；
 - 测试通过、配置存在、服务器启用、真实 receipt 是四种不同证据，不能互相替代；
 - launch 前 `ENTRY_HOT_ARMED` 只证明 entry 自动触发与资金准备就绪；真实买入只能由 launch 后 canonical receipt/delta/`EffectRecord` 证明；
@@ -34,7 +35,7 @@
 - [x] Capability manifest 与真实能力一致，不把 `planned/tested` 写成 `verified_current`。
 - [x] CHANGELOG、Tech Spec 或 ADR 按变更性质更新。
 - [x] 提交信息使用 Conventional Commits；本次紧密耦合的 v2 schema/modules/tests/docs 作为一个交付单元。
-- [x] 如果产生链上动作，保存 txHash、receipt、资产变化和 EffectRecord；本次未签名/广播任何有效交易。
+- [x] 如果产生链上动作，保存 txHash、receipt、资产变化和 EffectRecord；本次 20 笔资金准备交易已有 canonical/redacted receipt，尚无 CLOCKIN buy、token delta 或 entry `EffectRecord`。
 
 ### 0.2 优先级
 
@@ -49,7 +50,7 @@
 - [ ] `GATE-A SPEC_READY`：最终 Factory/Profile 事实与用户参数已确认。
 - [x] `GATE-B CORE_READY`：Canonical model、SQLite、预算与钱包 lane 完成。
 - [ ] `GATE-C SENTINEL_READY`：已知和未知 Factory 监控完成。
-- [ ] `GATE-D ENTRY_READY`：10 EOA、fee bands、canary 和 same-raw 完成。
+- [x] `GATE-D ENTRY_READY`：10 EOA、fee bands、canary、same-raw 与 launch 前 `ENTRY_HOT_ARMED` 回执完成；尚无 live effect。
 - [ ] `GATE-E EXIT_READY`：内盘/外盘退出与净清算价值完成。
 - [ ] `GATE-F PROD_READY`：CI/CD、云部署、readiness、recovery 和安全审计完成。
 - [ ] `GATE-G LIVE_EFFECT`：出现真实 receipt、token delta、position 与退出证据后才可标记。
@@ -1209,7 +1210,7 @@
 
 目标：云机以非 root、可重启、仓库外 credentials 运行。
 
-`DEPLOYED_PUBLIC_MONITORING; LOCAL_QUOTED_EXECUTION_IMPLEMENTED; PRODUCTION_EXECUTION_NOT_DEPLOYED`。`47.251.28.201` 上的无私钥 Control 仍为 `enabled/active`；三项付费服务 `disabled/inactive`，两个 marker absent。quoted Factory/ABI 旧 blocker 已被 2026-08-20 证据取代，但新 Executor/profile/auth 未部署且钱包 `0 WETH / 0 allowance`，因此公共监控在线仍不等于授权资金执行。
+`ENTRY_HOT_ARMED / NO_LIVE_EFFECT / QUOTED_GENERIC_EXIT_UNSUPPORTED`。`47.251.28.201` 已部署 quoted release/profile/authorization；无私钥 Control active、public cursor caught up，valid-only path enabled/active waiting，双 marker 为 `root:clockin 0440`。无 CA/handoff 时 Wallet Preparer/Executor/Reconciler/generic Exit 均 static inactive、PID `0`，这是零付费进程的正确 armed-idle 状态，不是成交证据。
 
 - [x] 创建 Control Sentinel unit。
 - [x] 创建 Executor unit。
@@ -1230,7 +1231,8 @@
 - [x] 四个 production unit 指向同一 immutable release；Control enabled/active，Executor/Reconciler/Exit installed、disabled、inactive，arm marker absent，见 [2026-08-17-production-runtime-deployment.md](./receipts/2026-08-17-production-runtime-deployment.md)。
 - [x] 按用户指令停止 Chainstack 流量：Control 已 `disable --now`，四个 unit 均 `disabled/inactive`，无残留 ClockIn 进程、timer 或 cron，见 [2026-08-17-rpc-monitoring-pause.md](./receipts/2026-08-17-rpc-monitoring-pause.md)。
 - [x] 按 ADR 0008 恢复 public-only Control：无 credential/Execution env，三个付费 unit 保持 disabled/inactive，见 [2026-08-17-public-rpc-control-deployment.md](./receipts/2026-08-17-public-rpc-control-deployment.md)。
-- [ ] Executor/Reconciler/Exit 在最终协议证据完成后授权、启动并回读 canonical state。
+- [x] 部署 commit `9014c45df1370112803110b64e683caab65d9ac4` 的 quoted release；Control、valid-only path、双 marker、10/10 wallet readiness 与 paid-service idle 状态已生产回读，见 [2026-08-20-clockin-entry-hot-armed.md](./receipts/2026-08-20-clockin-entry-hot-armed.md)。
+- [ ] 真实 handoff 后回读 quoted Executor/Reconciler 自动启动与 canonical state；generic quoted Exit 保持 `UNSUPPORTED`/inactive。
 
 验收：
 
@@ -1375,9 +1377,9 @@
 
 目标：在 launch 前生成一份可审计的 `ENTRY_HOT_ARMED` 证明，且与 launch 后 canonical 买入 effect 分开。
 
-`BLOCKED_BY: ENTRY_READINESS_RECEIPT_NOT_COMPLETE`。已创建 [receipts/production-readiness.md](./receipts/production-readiness.md) 负面回执，逐项记录证据、blocker 和 owner，不伪造 `ENTRY_HOT_ARMED`。
+`COMPLETED: ENTRY_HOT_ARMED_2026_08_20`。当前生产回执见 [2026-08-20-clockin-entry-hot-armed.md](./receipts/2026-08-20-clockin-entry-hot-armed.md)；旧 [production-readiness.md](./receipts/production-readiness.md) 保留为当时的负面历史快照。
 
-当前运行态为 `DEPLOYED_PUBLIC_CONTROL_HARDENED / LOCAL_FULL_GATE_PASSED / NOT_HOT_ARMED`。quoted 主路协议证据与本地 clean-tree 门禁已完成；当前 blocker 是新 artifact/profile/auth 还未部署、两 marker absent、付费服务 disabled/inactive 且 10 个钱包均为 `0 WETH / 0 allowance`。
+当前运行态为 `ENTRY_HOT_ARMED / NO_LIVE_EFFECT / QUOTED_GENERIC_EXIT_UNSUPPORTED`。Control active 且 cursor/head `40914339`、lag `0`；path enabled/active waiting，双 marker present；10/10 钱包准备完成。CA/handoff 尚未出现，因此 paid services 仍 static inactive、PID `0`，没有 buy receipt。
 
 - [x] chainId/current head。
 - [x] 官方公共 HTTP RPC health（当前生产 Control readback）。
@@ -1386,22 +1388,22 @@
 - [x] 本地 exact quoted-pad Created/Armed subscription/backfill 实现与测试。
 - [ ] 生产云机 quoted pad/WETH/creator current bytecode readback。
 - [ ] 生产云机 exact quoted-pad subscription 运行回读。
-- [x] 10/10 wallet address/balance/nonces（每个 `0.0032 ETH`、latest/pending `0/0`）。
-- [ ] 准备期一次性冻结 10% WETH buffer + wrap/approve/entry 最大 Gas，并证明合计 `<=60U`（协议代码/targeted test 已实现，待 final gate）。
+- [x] 10/10 wallet current readiness：每个 nonce `2`、WETH 与 exact-pad allowance 均为 `2407976970983877` raw，并保有正数 native Gas；readback block `40908857`。
+- [x] 准备期一次性冻结 10% WETH buffer + wrap/approve/entry 最大 Gas，并由 20 笔 canonical preparation receipts 与 terminal recovery/readiness 回读完成生产准备。
 - [ ] launch 准备窗口内取新鲜双源 external ETH/USD snapshot；它不进入 Armed 后签名热路。
 - [ ] Armed 后用 `quoteUsd8` 计算并向下取整每 lane 不超过 5U，再证明 50U principal + entry max Gas `<=60U`。
 - [x] 本地仓库外 quoted profile/config hash/7 天 authorization 生成。
-- [ ] 生产安装后 quoted profile/config/auth hash/scope/expiry 回读。
+- [x] 生产安装后 quoted release/profile/7 天 authorization 与 artifact/capability identity 回读；deployed capability revision `17`、hash `bc26f6d42442c1d99f51097aab86000934b8266636294ce5a3e85f01501da888`。
 - [x] DB/leases/vault readiness。
 - [ ] quoted Exit adapter readiness；当前 generic Exit 明确 `UNSUPPORTED`，不再阻塞 entry lanes 2–10，但必须在回执中作为持仓风险限制披露。
-- [ ] open UNKNOWN/positions。
+- [x] 当前无 handoff、无 paid process、无 buy attempt/receipt，因此无 entry UNKNOWN 或 position；这不替代未来真实事件后的 Reconciler 回读。
 - [x] keyless Control deployed artifact SHA/systemd readback。
 - [x] Executor/Reconciler/Exit 的未武装 artifact SHA 和 installed/disabled/inactive systemd readback。
-- [ ] entry-hot Executor/Reconciler artifact SHA/systemd readback；generic Exit 保持不启动。
+- [x] entry-hot quoted Executor/Reconciler artifact SHA/systemd readback；path enabled/active waiting，二者在无 handoff 时 static inactive、PID `0`，generic Exit 保持不启动。
 
 验收：
 
-- [ ] launch 前 receipt 明确写 `ENTRY_HOT_ARMED`，不写“已成交”或“自动退出已武装”。
+- [x] launch 前 receipt 明确写 `ENTRY_HOT_ARMED`，不写“已成交”或“自动退出已武装”。
 - [ ] launch 后 canonical receipt/WETH delta/token delta/`EffectRecord` 另行产生 `CANONICAL_ENTRY_EFFECT_CONFIRMED`，不回写伪装 launch 前 readiness。
 - [x] 任一缺口有具体 blocker 和 owner。
 
@@ -1441,7 +1443,7 @@
 - [x] GitHub Release v0.1.0 附 Tech Spec、ADRs、known limitations、测试/覆盖率与 checksum。
 - [x] 云机 Control 仅部署用户批准、可追溯到 commit `61d9be5` 的 artifact SHA；该批准不授权资金执行。
 - [x] 生产运行时升级到 capability revision 5 / commit `16d02f0`；四服务 artifact SHA、Control watchdog 与三项资金服务 disabled/inactive 状态已回读。
-- [ ] Hot Executor 仅部署最终 `HOT_ARMED` 后批准的 release artifact。
+- [x] quoted Executor 仅随批准的 immutable release 部署；deployed commit/archive/build metadata/capability rev17 已回读，启动仍由 valid-only path 和双 marker 控制。
 
 验收：
 
@@ -1658,14 +1660,15 @@
 - [x] 本可执行 todo 已按小故事卡、阶段、测试和验收拆解。
 - [x] v2 Canonical/SQLite/Control/10-EOA/Entry/Recovery/Position/Exit-policy/Ops 与 `clockin-policy-v2` 已实现；生产 profile/adapters/三服务/interlock/watchdog、公共/付费 RPC 隔离、公共限速退避、独立身份复核调度与 5U 分级 canary 已补齐并通过 251 项测试。
 - [x] 默认 live 入口在主网证据不完整时失败关闭，旧单钱包入口不进入 release artifact。
-- [x] 已生成 10 个仓库外 one-shot EOA，完成本地与服务器 10/10 key/address correspondence，并为每个钱包注入 `0.0032 ETH`；生产回读 nonce 均为 `0/0`。
-- [x] 已在 `47.251.28.201` 部署并验证 revision-11 public-only keyless Control Sentinel；四路 semantic 官网信号、主网 docs Factory/testnet archive 边界与 foreground/background 调度已生效，vault key/官方 Sequencer credential 已 root-only 准备；当前只有 Control enabled/active，三个付费服务 disabled/inactive，无付费 capability，两个 marker absent，HOT 审计结论为 `NOT_HOT_ARMED`。
+- [x] 已生成 10 个仓库外 one-shot EOA并完成 20 笔 canonical preparation transactions；block `40908857` 的生产回读为 10/10 nonce `2`、WETH/allowance 各 `2407976970983877` raw、native Gas 为正数。
+- [x] 已在 `47.251.28.201` 部署并验证 quoted release/profile/authorization；Control active/caught-up，valid-only path enabled/active waiting，双 marker 为 `root:clockin 0440`。无 CA/handoff 时 paid services static inactive、PID `0`，quoted entry 结论为 `ENTRY_HOT_ARMED`，但没有 live buy effect。
 
 ### 下一批必须先完成
 
 - [x] 完成 STORY-000～005 的仓库实现：Public 仓库、CI/CD 配置和工程质量基线。
 - [x] 完成 STORY-014：用户资金、价格、授权、cap 与退出参数冻结。
 - [x] 用 2026-08-20 verified WETH quoted pad/creator/events/getters/buy 证据取代 STORY-010～012 的旧“未发布” blocker；可执行任务转入 STORY-123。
+- [x] 完成 STORY-123 的 quoted artifact 部署、资金准备、公共 catch-up、双 marker、valid-only path 与 launch 前 `ENTRY_HOT_ARMED` 回执。
 - [ ] 完成 STORY-013 中仍未有真实回执的 sell/finalize/external exit 部分；该项不再阻塞 lanes 2–10 entry。
 - [x] 在不越过 `GATE-A` 授权的前提下完成通用资金执行核心；默认入口继续 fail closed。
 
@@ -1677,7 +1680,7 @@
 
 目标：以已验证 quoted pad 和 approved creator 为最早确定性触发，在不等待 X/官网的情况下完成 `LaunchCreated → LaunchArmed → dynamic tax/quote → real buy`。
 
-当前代码状态为 `LOCAL_FULL_GATE_PASSED`，生产状态为 `NOT_HOT_ARMED`。本节公共观测、协议/executor、release/security 已通过 386/386、两套 coverage、clean-tree verify、secret/history/public-scope 与真实 npm archive audit；这不等于生产部署或钱包准备。
+当前代码状态为 `LOCAL_FULL_GATE_PASSED`，quoted entry 生产状态为 `ENTRY_HOT_ARMED`。本节公共观测、协议/executor、release/security 已通过 386/386、两套 coverage、clean-tree verify、secret/history/public-scope 与真实 npm archive audit；生产 artifact/profile/auth、20 笔准备交易、10/10 readiness、双 marker 与 valid-only path 另有生产回执。CA 尚未出现，仍无 buy effect，generic quoted Exit 仍 `UNSUPPORTED`。
 
 协议证据与身份：
 
@@ -1744,17 +1747,17 @@ Release 与安全最终门禁：
 生产部署与资金准备：
 
 - [x] 对当前本地完整代码运行 format/lint/typecheck/386 tests/两套 coverage/secret tree+525 history blobs/public-scope/production audit/真实 package archive audit，结果全部通过。
-- [ ] 构建 checksum-verified immutable artifact，部署 quoted Executor 到 `47.251.28.201`，回读 artifact hash 与 systemd `ExecStart`。
-- [ ] 将仓库外 quoted profile 与 7 天 authorization 以 root-only/systemd credential 边界安装到云机，回读非敏感 hash/scope/expiry。
-- [ ] 用新鲜 ETH/USD 与 gas snapshot 重算每钱包 5U WETH principal + 10% buffer + Gas，确认 10/10 仍在 60U all-in cap 内。
-- [ ] 在任何一笔准备交易前，先确认 10 个计划全部 executable，避免半数钱包已 wrap 而后续失败。
-- [ ] 逐钱包执行 WETH deposit 和对精确 quoted pad 的 amount-bounded approve；保存 canonical receipt/nonce 回执，不记录 raw/private key。
-- [ ] 回读 10/10 `WETH balance >= principal reserve`、`allowance >= principal reserve`、native Gas、`latestNonce===pendingNonce`。当前实况为 0/10：所有钱包都是 `0 WETH / 0 allowance`。
-- [ ] 创建并校验 root-owned `PAID_RPC_APPROVED` 与 `PRODUCTION_ARM_APPROVED`；仅运行一次性 Wallet Preparer，不提前启动 Reconciler/Executor。
-- [ ] Preparer canonical recovery journal 完全 terminal 且 public cursor caught-up 后，启用/启动 `clockin-executor.path`；Executor/Reconciler/generic Exit 保持 disabled/inactive，等待 valid-only public handoff 自动触发。
+- [x] 构建 checksum-verified immutable artifact，部署 quoted Executor 到 `47.251.28.201`，回读 deployed commit `9014c45df1370112803110b64e683caab65d9ac4`、archive SHA-256 `6f46419ff70c50e43b3b3105dd436c9a030087e85deecf93f9b65bb9833c1f0f`、build metadata SHA-256 `6bf1f858be2a975b60b1b893dfd859040db5deca4e142d486d3549c384ed0839` 与 systemd release identity。
+- [x] 将仓库外 quoted profile 与 7 天 authorization 以 root-only/systemd credential 边界安装到云机，回读 deployed capability revision `17` 与 manifest hash。
+- [x] 用准备期价格/Gas plan 冻结每钱包 5U WETH principal + 10% buffer + Gas，并以实际 preparation receipts/Gas 与最终 readiness 完成 10/10 all-in gate。
+- [x] 在首笔准备交易前冻结 10/10 executable plan；preparer 后续形成完整 10 deposit + 10 approve canonical receipt 集，而非半数准备状态。
+- [x] 逐钱包执行 WETH deposit 和对精确 quoted pad 的 amount-bounded approve；保存 20 个 canonical receipt/nonce 的 redacted mode-0600 回执，不记录 private key。
+- [x] 在 block `40908857` 回读 10/10：每个 WETH balance 与 exact-pad allowance 均为 `2407976970983877` raw、nonce `2`、native Gas 为正数。
+- [x] 创建并校验 root-owned `PAID_RPC_APPROVED` 与 `PRODUCTION_ARM_APPROVED`（`root:clockin 0440`）；Wallet Preparer 已完成并停止，未提前常驻 Reconciler/Executor。
+- [x] Preparer canonical recovery journal terminal 且 public cursor caught up 后，启用/启动 `clockin-executor.path`；当前 path enabled/active waiting，Executor/Reconciler/generic Exit 在无 handoff 时 static inactive、PID `0`。
 - [ ] 在 Ubuntu 实测 path-before-Control、已有 pointer boot replay、无 handoff 零付费进程、handoff 后 Executor+Reconciler 自动启动。
 - [ ] 确认 X/官网 watcher 的失败不会阻塞链上热路，且 mismatch 能产生异步冲突告警。
-- [ ] 生成 launch 前 `ENTRY_HOT_ARMED` 回执；在回执完成前继续声明 `NOT_HOT_ARMED`且“线上不会买”。
+- [x] 生成 launch 前 [ENTRY_HOT_ARMED 回执](./receipts/2026-08-20-clockin-entry-hot-armed.md)，明确它不代表已成交或自动退出已武装。
 
 真实事件验收：
 
@@ -1767,8 +1770,8 @@ Release 与安全最终门禁：
 
 验收：
 
-- [ ] launch 前 `ENTRY_HOT_ARMED` 回执证明 path enabled、public cursor caught-up，且无 handoff 时 Executor/Reconciler 仍 inactive。
+- [x] launch 前 `ENTRY_HOT_ARMED` 回执证明 path enabled、public cursor caught-up，且无 handoff 时 Executor/Reconciler 仍 inactive。
 - [ ] 真实 handoff 后状态证明 quoted Executor + Reconciler 自动 active，而不是只有 Control 在看。
-- [ ] 钱包证据明确证明 10/10 WETH/allowance/native-Gas/nonce ready。
+- [x] 钱包证据明确证明 10/10 WETH/allowance/native-Gas/nonce ready。
 - [ ] 实盘经济证据不以 CA、tx hash 或 RPC accepted 代替 canonical receipt/effect。
-- [ ] 回执明确 generic quoted Exit `UNSUPPORTED`，不把 entry 武装或买入 effect 写成自动退出已武装。
+- [x] 回执明确 generic quoted Exit `UNSUPPORTED`，不把 entry 武装或买入 effect 写成自动退出已武装。
