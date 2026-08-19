@@ -48,7 +48,7 @@ export interface ContractLogSubscription {
 export interface WebSocketContractLogsClientOptions {
   readonly providerId: string;
   readonly url: string;
-  readonly address: Hex;
+  readonly address?: Hex;
   readonly topic0: Hex;
   readonly setupTimeoutMs?: number;
   readonly webSocketFactory?: LogWebSocketFactory;
@@ -114,11 +114,11 @@ export function parseRpcContractLog(
   });
 }
 
-/** Exact-address/topic standard JSON-RPC log subscription for the durable lane. */
+/** Exact-address/topic or topic-only standard JSON-RPC log subscription. */
 export class WebSocketContractLogsClient {
   readonly providerId: string;
   readonly #url: string;
-  readonly #address: Hex;
+  readonly #address: Hex | undefined;
   readonly #topic0: Hex;
   readonly #setupTimeoutMs: number;
   readonly #webSocketFactory: LogWebSocketFactory;
@@ -129,7 +129,7 @@ export class WebSocketContractLogsClient {
     if (parsedUrl.protocol !== "wss:" && parsedUrl.protocol !== "ws:") {
       throw new RangeError("WebSocket JSON-RPC URL must use ws or wss");
     }
-    assertAddress("logs address", options.address);
+    if (options.address !== undefined) assertAddress("logs address", options.address);
     assertHex("logs topic0", options.topic0);
     if (options.topic0.length !== 66) throw new RangeError("logs topic0 must be 32 bytes");
     const setupTimeoutMs = options.setupTimeoutMs ?? 5_000;
@@ -138,7 +138,8 @@ export class WebSocketContractLogsClient {
     }
     this.providerId = options.providerId;
     this.#url = options.url;
-    this.#address = getAddress(options.address) as Hex;
+    this.#address =
+      options.address === undefined ? undefined : (getAddress(options.address) as Hex);
     this.#topic0 = options.topic0;
     this.#setupTimeoutMs = setupTimeoutMs;
     this.#webSocketFactory = options.webSocketFactory ?? defaultWebSocketFactory;
@@ -242,12 +243,16 @@ export class WebSocketContractLogsClient {
           );
           return;
         }
+        const filter =
+          this.#address === undefined
+            ? { topics: [this.#topic0] }
+            : { address: this.#address, topics: [this.#topic0] };
         socket.send(
           JSON.stringify({
             jsonrpc: "2.0",
             id: subscribeRequestId,
             method: "eth_subscribe",
-            params: ["logs", { address: this.#address, topics: [this.#topic0] }],
+            params: ["logs", filter],
           }),
         );
         return;
@@ -272,10 +277,10 @@ export class WebSocketContractLogsClient {
       }
       try {
         const log = parseRpcContractLog(this.providerId, payload.params?.result);
-        if (
-          log.address.toLowerCase() !== this.#address.toLowerCase() ||
-          log.topics[0]?.toLowerCase() !== this.#topic0.toLowerCase()
-        ) {
+        const wrongAddress =
+          this.#address !== undefined && log.address.toLowerCase() !== this.#address.toLowerCase();
+        const wrongTopic = log.topics[0]?.toLowerCase() !== this.#topic0.toLowerCase();
+        if (wrongAddress || wrongTopic) {
           throw new Error(`${this.providerId} delivered a log outside the bound filter`);
         }
         onLog(log);

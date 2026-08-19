@@ -1,4 +1,4 @@
-import { getAddress, isHexString } from "ethers";
+import { getAddress, isHexString, ZeroAddress } from "ethers";
 
 import type { Address, Hex32 } from "../core/canonical.js";
 
@@ -10,6 +10,8 @@ interface BaseBroadcastSnapshot {
 
 export interface EntryBroadcastSnapshot extends BaseBroadcastSnapshot {
   readonly kind: "ENTRY_BUY";
+  readonly principalAsset: Address;
+  readonly principalAssetKind: "NATIVE" | "ERC20";
   readonly principalBalanceBeforeRaw: string;
   readonly tokenBalanceBeforeRaw: string;
   readonly plannedPrincipalRaw: string;
@@ -92,10 +94,26 @@ export function parseProductionBroadcastSnapshot(value: unknown): ProductionBroa
   if (input.formatVersion !== 1) throw new TypeError("snapshot formatVersion must be 1");
   const validityExpiresAt = timestamp(input.validityExpiresAt, "snapshot.validityExpiresAt");
   if (input.kind === "ENTRY_BUY") {
+    const principalAssetKind = input.principalAssetKind ?? "NATIVE";
+    if (principalAssetKind !== "NATIVE" && principalAssetKind !== "ERC20") {
+      throw new TypeError("snapshot.principalAssetKind must be NATIVE or ERC20");
+    }
+    const principalAsset =
+      input.principalAsset === undefined
+        ? (ZeroAddress as Address)
+        : address(input.principalAsset, "snapshot.principalAsset");
+    if (
+      (principalAssetKind === "NATIVE") !==
+      (principalAsset.toLowerCase() === ZeroAddress.toLowerCase())
+    ) {
+      throw new TypeError("snapshot principal kind and asset disagree");
+    }
     return Object.freeze({
       formatVersion: 1,
       kind: "ENTRY_BUY",
       validityExpiresAt,
+      principalAsset,
+      principalAssetKind,
       principalBalanceBeforeRaw: decimal(
         input.principalBalanceBeforeRaw,
         "snapshot.principalBalanceBeforeRaw",

@@ -16,6 +16,7 @@ WorkingDirectory=@ARTIFACT_DIR@/clockin-sniper
 EnvironmentFile=-/etc/clockin-sniper/control.env
 Environment=CLOCKIN_MANIFEST_PATH=/etc/clockin-sniper/public/entry-manifest.json
 Environment=CLOCKIN_STATE_DIR=/var/lib/clockin-control
+Environment=CLOCKIN_PUBLIC_HANDOFF_DIR=/var/lib/clockin-handoff/outbox
 ExecStart=@CONTROL_EXECUTABLE@
 Restart=on-failure
 RestartSec=2s
@@ -49,7 +50,7 @@ RestrictRealtime=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 AmbientCapabilities=
-ReadWritePaths=/var/lib/clockin-control /run/clockin-control /run/clockin-status
+ReadWritePaths=/var/lib/clockin-control /var/lib/clockin-handoff /run/clockin-control /run/clockin-status
 
 [Install]
 WantedBy=multi-user.target

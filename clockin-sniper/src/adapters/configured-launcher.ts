@@ -7,6 +7,7 @@ import {
   type LaunchCandidate,
   type LaunchIdentity,
 } from "../core/canonical.js";
+import type { LaunchCodeIdentityTier } from "../entry/bounded-canary-policy.js";
 import type { ExactBlockRef, PoolObservation, PoolReadAdapter } from "../entry/pool-observation.js";
 import { observePoolAt } from "../entry/pool-observation.js";
 import { quantityToHex } from "../rpc/hex.js";
@@ -143,6 +144,7 @@ export class ConfiguredLauncherPoolRuntime implements PoolReadAdapter {
     readonly requester: JsonRpcRequester;
     readonly profile: ProductionProtocolProfile;
     readonly identity: LaunchIdentity;
+    readonly requiredCodeIdentityTier?: LaunchCodeIdentityTier;
   }) {
     if (
       input.identity.state !== "FROZEN" ||
@@ -151,13 +153,15 @@ export class ConfiguredLauncherPoolRuntime implements PoolReadAdapter {
     ) {
       throw new CanonicalInvariantError("PROFILE_STALE", "identity and production profile differ");
     }
+    const codeIdentityTier = input.requiredCodeIdentityTier ?? "PROFILE_ALLOWLISTED";
     if (
-      !input.profile.mechanism.tokenRuntimeCodeHashes.some(
+      codeIdentityTier === "PROFILE_ALLOWLISTED" &&
+      (!input.profile.mechanism.tokenRuntimeCodeHashes.some(
         (hash) => hash.toLowerCase() === input.identity.tokenRuntimeCodeHash.toLowerCase(),
       ) ||
-      !input.profile.mechanism.poolRuntimeCodeHashes.some(
-        (hash) => hash.toLowerCase() === input.identity.poolRuntimeCodeHash.toLowerCase(),
-      )
+        !input.profile.mechanism.poolRuntimeCodeHashes.some(
+          (hash) => hash.toLowerCase() === input.identity.poolRuntimeCodeHash.toLowerCase(),
+        ))
     ) {
       throw new CanonicalInvariantError(
         "PROFILE_UNSUPPORTED",
@@ -311,7 +315,15 @@ export async function verifyConfiguredCodeIdentity(input: {
   readonly profile: ProductionProtocolProfile;
   readonly blockNumber: bigint | "latest";
   readonly identity?: LaunchIdentity;
-}): Promise<Readonly<{ factoryCodeHash: Hex; tokenCodeHash?: Hex; poolCodeHash?: Hex }>> {
+  readonly requiredCodeIdentityTier?: LaunchCodeIdentityTier;
+}): Promise<
+  Readonly<{
+    factoryCodeHash: Hex;
+    tokenCodeHash?: Hex;
+    poolCodeHash?: Hex;
+    codeIdentityTier?: LaunchCodeIdentityTier;
+  }>
+> {
   const blockTag = input.blockNumber === "latest" ? "latest" : quantityToHex(input.blockNumber);
   const targets = [input.profile.factory.address];
   if (input.identity !== undefined)
@@ -347,18 +359,24 @@ export async function verifyConfiguredCodeIdentity(input: {
   if (input.identity === undefined) return Object.freeze({ factoryCodeHash });
   const tokenCodeHash = hashes[1] as Hex;
   const poolCodeHash = hashes[2] as Hex;
-  if (
-    !input.profile.mechanism.tokenRuntimeCodeHashes.some(
+  const allowlisted =
+    input.profile.mechanism.tokenRuntimeCodeHashes.some(
       (expected) => expected.toLowerCase() === tokenCodeHash.toLowerCase(),
-    ) ||
-    !input.profile.mechanism.poolRuntimeCodeHashes.some(
+    ) &&
+    input.profile.mechanism.poolRuntimeCodeHashes.some(
       (expected) => expected.toLowerCase() === poolCodeHash.toLowerCase(),
-    )
-  ) {
+    );
+  const requiredCodeIdentityTier = input.requiredCodeIdentityTier ?? "PROFILE_ALLOWLISTED";
+  if (requiredCodeIdentityTier === "PROFILE_ALLOWLISTED" && !allowlisted) {
     throw new CanonicalInvariantError(
       "PROFILE_UNSUPPORTED",
       "token or pool code hash is not allowlisted",
     );
   }
-  return Object.freeze({ factoryCodeHash, tokenCodeHash, poolCodeHash });
+  return Object.freeze({
+    factoryCodeHash,
+    tokenCodeHash,
+    poolCodeHash,
+    codeIdentityTier: allowlisted ? "PROFILE_ALLOWLISTED" : "NON_EMPTY_OBSERVED",
+  });
 }

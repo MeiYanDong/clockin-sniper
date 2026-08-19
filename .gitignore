@@ -29,6 +29,7 @@
 !**/.env.example
 **/wallet-backup*
 **/*private-key*
+**/*.key
 **/*.keystore
 **/*.pem
 **/*.p12

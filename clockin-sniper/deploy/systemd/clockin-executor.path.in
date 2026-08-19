@@ -1,0 +1,11 @@
+[Unit]
+Description=Start the ClockIn paid executor only after a public LaunchCreated handoff
+Wants=clockin-control.service
+Before=clockin-control.service
+
+[Path]
+PathChanged=/var/lib/clockin-handoff/outbox/active.signal
+Unit=clockin-executor.service
+
+[Install]
+WantedBy=multi-user.target

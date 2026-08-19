@@ -48,6 +48,7 @@ export interface EntryEffectBuildResult {
   readonly principalRefundRaw: bigint;
   readonly tokenBalanceDeltaRaw: bigint;
   readonly transferLogTokenOutRaw: bigint;
+  readonly externalTokenDeltaRaw: bigint;
   readonly gasCostRaw: bigint;
 }
 
@@ -104,14 +105,17 @@ export function buildEntryEffect(evidence: EntryReceiptEvidence): EntryEffectBui
       : 0n;
   const tokenBalanceDeltaRaw = evidence.tokenBalanceAfterRaw - evidence.tokenBalanceBeforeRaw;
   const positiveTokenDelta = tokenBalanceDeltaRaw > 0n ? tokenBalanceDeltaRaw : 0n;
-  const deliveryAgrees = positiveTokenDelta === evidence.transferLogTokenOutRaw;
+  const deliveryCoversReceipt = positiveTokenDelta >= evidence.transferLogTokenOutRaw;
+  const externalTokenDeltaRaw = deliveryCoversReceipt
+    ? positiveTokenDelta - evidence.transferLogTokenOutRaw
+    : 0n;
 
   const result: EffectRecord["result"] =
     evidence.receiptStatus === 0
       ? "REVERTED"
-      : positiveTokenDelta === 0n
+      : evidence.transferLogTokenOutRaw === 0n
         ? "SUCCESS_NO_TOKENS"
-        : deliveryAgrees
+        : deliveryCoversReceipt
           ? "SUCCESS"
           : "DISPUTED";
   const effectId = `entry-effect:${stableHash({
@@ -161,10 +165,15 @@ export function buildEntryEffect(evidence: EntryReceiptEvidence): EntryEffectBui
             since: evidence.observedAt,
           })
         : known(evidence.declaredFeeBps, evidence),
-    actualOutputRaw: known(positiveTokenDelta.toString(), evidence),
+    actualOutputRaw: known(evidence.transferLogTokenOutRaw.toString(), evidence),
     settlement: result === "SUCCESS" ? "RESIDUAL_POSITION" : "FAILED",
     positionLotIds: result === "SUCCESS" ? Object.freeze([lotId]) : Object.freeze([]),
-    evidenceIds: Object.freeze([...evidence.evidenceIds]),
+    evidenceIds: Object.freeze([
+      ...evidence.evidenceIds,
+      ...(externalTokenDeltaRaw === 0n
+        ? []
+        : [`external-token-delta-raw:${externalTokenDeltaRaw.toString()}`]),
+    ]),
     observedAt: evidence.observedAt,
   });
 
@@ -179,8 +188,8 @@ export function buildEntryEffect(evidence: EntryReceiptEvidence): EntryEffectBui
           laneId: evidence.laneId,
           walletAddress: evidence.walletAddress,
           tokenAddress: evidence.tokenAddress,
-          quantityRaw: positiveTokenDelta.toString(),
-          remainingRaw: positiveTokenDelta.toString(),
+          quantityRaw: evidence.transferLogTokenOutRaw.toString(),
+          remainingRaw: evidence.transferLogTokenOutRaw.toString(),
           principalCostRaw: principalSpentRaw.toString(),
           entryGasCostRaw: gasCostRaw.toString(),
           buyFrictionRaw: Object.freeze({
@@ -229,6 +238,7 @@ export function buildEntryEffect(evidence: EntryReceiptEvidence): EntryEffectBui
     principalRefundRaw,
     tokenBalanceDeltaRaw,
     transferLogTokenOutRaw: evidence.transferLogTokenOutRaw,
+    externalTokenDeltaRaw,
     gasCostRaw,
   });
 }

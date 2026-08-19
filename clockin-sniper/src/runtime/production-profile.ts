@@ -1,14 +1,15 @@
 import {
   EventFragment,
   FunctionFragment,
-  Interface,
-  ZeroAddress,
   getAddress,
+  Interface,
   isHexString,
+  ZeroAddress,
 } from "ethers";
 
 import { CLOCKIN_POLICY_V2 } from "../config/strategy-config.js";
-import { stableHash, type Address, type Hex32 } from "../core/canonical.js";
+import { type Address, type Hex32, stableHash } from "../core/canonical.js";
+import { BOUNDED_CANARY_POLICY_HASH } from "../entry/bounded-canary-policy.js";
 import type { CapScope, CooldownScope } from "../identity/mechanism-profiler.js";
 import type { WalletManifest } from "../wallets/wallet-manifest.js";
 
@@ -143,6 +144,13 @@ export interface ProductionAuthorization {
   readonly expiresAt: string;
   readonly evidenceIds: readonly string[];
   readonly reason: string;
+}
+
+/** Minimal immutable profile identity used by the shared seven-day authorization envelope. */
+export interface ProductionAuthorizationProfileRef {
+  readonly profileId: string;
+  readonly revision: number;
+  readonly profileHash: string;
 }
 
 export type ProductionProfileDraft = Omit<ProductionProtocolProfile, "profileHash">;
@@ -620,9 +628,7 @@ export function parseProductionProfile(value: unknown): ProductionProtocolProfil
   const launchEventTopic = hex32(factoryInput.launchEventTopic, "factory.launchEventTopic");
   const launchFields = parseLaunchFields(factoryInput.launchFields);
   const routeValues = exitInput.routes;
-  if (!Array.isArray(routeValues) || routeValues.length === 0) {
-    throw new TypeError("at least one verified exit route is required");
-  }
+  if (!Array.isArray(routeValues)) throw new TypeError("exit.routes must be an array");
   const capScope = stringValue(mechanismInput.capScope, "mechanism.capScope");
   if (capScope !== "PER_TX" && capScope !== "PER_WALLET" && capScope !== "GLOBAL") {
     throw new TypeError("mechanism.capScope must be explicit");
@@ -789,7 +795,7 @@ export function productionWalletManifestHash(manifest: WalletManifest): string {
 }
 
 export function productionAuthorizationBinding(
-  profile: ProductionProtocolProfile,
+  profile: ProductionAuthorizationProfileRef,
   manifest: WalletManifest,
 ): Readonly<{ walletManifestHash: string; scopeHash: string; riskEnvelopeHash: string }> {
   const walletManifestHash = productionWalletManifestHash(manifest);
@@ -813,6 +819,7 @@ export function productionAuthorizationBinding(
     breakGlassExitMaximumSlippageBps: CLOCKIN_POLICY_V2.breakGlassExitMaximumSlippageBps,
     maximumSellTransactionsPerWallet: CLOCKIN_POLICY_V2.maximumSellTransactionsPerWallet,
     automaticTopUpPolicy: CLOCKIN_POLICY_V2.automaticTopUpPolicy,
+    boundedCanaryPolicyHash: BOUNDED_CANARY_POLICY_HASH,
   });
   return Object.freeze({ walletManifestHash, scopeHash, riskEnvelopeHash });
 }
@@ -820,7 +827,7 @@ export function productionAuthorizationBinding(
 export function createProductionAuthorization(input: {
   readonly authorizationId: string;
   readonly actorRef: string;
-  readonly profile: ProductionProtocolProfile;
+  readonly profile: ProductionAuthorizationProfileRef;
   readonly manifest: WalletManifest;
   readonly issuedAt: string;
   readonly expiresAt: string;
@@ -854,7 +861,7 @@ export function createProductionAuthorization(input: {
 
 export function parseProductionAuthorization(
   value: unknown,
-  profile: ProductionProtocolProfile,
+  profile: ProductionAuthorizationProfileRef,
   manifest: WalletManifest,
   now = new Date().toISOString(),
 ): ProductionAuthorization {

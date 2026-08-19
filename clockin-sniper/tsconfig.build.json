@@ -10,12 +10,11 @@
   },
   "include": [
     "src/v2-index.ts",
-    "src/live-v2.ts",
     "src/control-service.ts",
-    "src/executor-service.ts",
+    "src/stonk-safe-launch-executor-service.ts",
+    "src/prepare-stonk-safe-launch-wallets.ts",
     "src/reconciler-service.ts",
-    "src/exit-service.ts",
-    "src/create-wallet-batch.ts"
+    "src/exit-service.ts"
   ],
   "exclude": ["test/**/*.ts"]
 }

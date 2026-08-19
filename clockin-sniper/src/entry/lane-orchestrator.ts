@@ -55,6 +55,8 @@ export class TenLaneOrchestrator {
   #lastBlockHash: string | null = null;
   #canaryCalibrated = false;
   #stopUnsent = false;
+  #laterLaneExecutionReady = false;
+  #laterLaneExecutionReason = "full deployment gate has not been evaluated";
   #lastGlobalDispatchTimestamp: bigint | null = null;
 
   constructor(plan: FeeBandPlan, config: LaneOrchestratorConfig) {
@@ -99,6 +101,26 @@ export class TenLaneOrchestrator {
   applyCanaryCalibration(stopUnsentLanes: boolean): void {
     this.#canaryCalibrated = !stopUnsentLanes;
     this.#stopUnsent = stopUnsentLanes;
+  }
+
+  setLaterLaneExecutionReadiness(ready: boolean, reason: string): void {
+    const normalized = reason.trim();
+    if (!ready && normalized.length === 0) {
+      throw new TypeError("a blocked later-lane gate requires a reason");
+    }
+    this.#laterLaneExecutionReady = ready;
+    this.#laterLaneExecutionReason = ready ? "full deployment gate is ready" : normalized;
+  }
+
+  deferDispatchedLane(laneId: string, reason: string): void {
+    const lane = this.#lanes.find((candidate) => candidate.laneId === laneId);
+    if (lane === undefined) throw new Error(`lane ${laneId} is unknown`);
+    if (lane.state !== "DISPATCHED") {
+      throw new Error(`lane ${laneId} cannot be deferred from ${lane.state}`);
+    }
+    lane.state = "DEFERRED";
+    lane.dispatchedPrincipalRaw = 0n;
+    lane.reason = reason;
   }
 
   recordLaneOutcome(
@@ -206,6 +228,10 @@ export class TenLaneOrchestrator {
         lane.reason = "later lanes require calibrated canary and L3 identity";
         return false;
       }
+      if (lane.trancheNumber > 1 && !this.#laterLaneExecutionReady) {
+        lane.reason = `later lanes require full deployment readiness: ${this.#laterLaneExecutionReason}`;
+        return false;
+      }
       return observation.currentFeeBps <= lane.targetFeeBps;
     });
 
@@ -227,21 +253,17 @@ export class TenLaneOrchestrator {
     if (this.#config.catchUpPolicy === "ALL_ELIGIBLE") {
       selected = quotable;
     } else if (this.#config.catchUpPolicy === "QUOTE_RANKED_BOUNDED") {
-      if (eligible.some((lane) => lane.trancheNumber > 1) && quotable.length === 0) {
-        selected = eligible.slice(0, 1);
-      } else {
-        selected = [...quotable]
-          .sort((left, right) => {
-            const leftOut = quotes.get(left.laneId)?.expectedTokenOutRaw ?? 0n;
-            const rightOut = quotes.get(right.laneId)?.expectedTokenOutRaw ?? 0n;
-            return leftOut === rightOut
-              ? left.trancheNumber - right.trancheNumber
-              : leftOut > rightOut
-                ? -1
-                : 1;
-          })
-          .slice(0, this.#config.maxConcurrentCatchUpLanes);
-      }
+      selected = [...quotable]
+        .sort((left, right) => {
+          const leftOut = quotes.get(left.laneId)?.expectedTokenOutRaw ?? 0n;
+          const rightOut = quotes.get(right.laneId)?.expectedTokenOutRaw ?? 0n;
+          return leftOut === rightOut
+            ? left.trancheNumber - right.trancheNumber
+            : leftOut > rightOut
+              ? -1
+              : 1;
+        })
+        .slice(0, this.#config.maxConcurrentCatchUpLanes);
     } else {
       selected = quotable.slice(0, 1);
     }
@@ -297,10 +319,7 @@ export class TenLaneOrchestrator {
       }
       lane.state = "DISPATCHED";
       lane.dispatchedPrincipalRaw = principalRaw;
-      lane.reason =
-        lane.trancheNumber > 1 && !quoteIsValid(lane.laneId)
-          ? "QUOTE_UNAVAILABLE: explicit one-per-block fallback requires downstream minOut policy"
-          : "fee, identity, canary, quote and cap eligible";
+      lane.reason = "fee, identity, canary, deployment, quote and cap eligible";
       decisions.push(
         Object.freeze({
           laneId: lane.laneId,

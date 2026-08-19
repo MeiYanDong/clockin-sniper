@@ -26,6 +26,8 @@ export interface FeeBandPlanContext {
   readonly launchId: string;
   readonly mechanismProfileRevision: number;
   readonly createdAt: string;
+  /** Dynamic on-chain tax window. Legacy profiles default to 120 seconds. */
+  readonly windowDurationMs?: number;
 }
 
 export function planTenFeeBands(
@@ -51,7 +53,7 @@ export function planTenFeeBands(
     startFeeBps,
     floorFeeBps,
     batchCount: 10,
-    windowDurationMs: 120_000,
+    windowDurationMs: context.windowDurationMs ?? 120_000,
     grossUsdMicrosPerBatch: nominalUsdMicros,
   });
   const lanes = bands.map(

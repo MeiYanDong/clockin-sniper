@@ -132,14 +132,52 @@ describe("wallet readiness and price snapshot", () => {
       automaticTopUpAllowed: false,
     });
     assert.equal(report.hotArmed, true);
+    assert.equal(report.canaryArmed, true);
+    assert.equal(report.laterLanesArmed, true);
     assert.equal(report.principalReadyWallets, 10);
     assert.equal(report.exitGasReadyWallets, 10);
     assert.equal(report.nonceCleanWallets, 10);
     assert.equal(report.rows[0]?.exitGasRequiredWei, 350n);
+    assert.equal(report.rows[0]?.canaryTotalRequiredWei, 5_000_130n);
     assert.equal(report.rows[0]?.gasSafetyMarginWei, 135n);
     assert.equal(report.aggregateRequiredWei, 50_005_850n);
     assert.equal(report.allInCapReady, true);
     assert.equal(report.automaticTopUpAllowed, false);
+  });
+
+  it("keeps the first 5U wallet armed without claiming the remaining 45U is ready", async () => {
+    const manifest = nonSecretManifest();
+    const canaryAddress = manifest.entries[0]?.address.toLowerCase();
+    if (canaryAddress === undefined) throw new Error("canary wallet fixture missing");
+    const requester: JsonRpcRequester = {
+      providerId: "fixture",
+      async request<T>(method: string, params: readonly unknown[] = []): Promise<T> {
+        if (method === "eth_chainId") return "0x1237" as T;
+        if (method === "eth_getBalance") {
+          const balance = String(params[0]).toLowerCase() === canaryAddress ? 5_000_130n : 1_000n;
+          return `0x${balance.toString(16)}` as T;
+        }
+        if (method === "eth_getTransactionCount") return "0x0" as T;
+        throw new Error(`unexpected ${method}`);
+      },
+    };
+    const report = await inspectWalletReadiness(requester, manifest, {
+      batchValueWei: 5_000_000n,
+      entryGasLimit: 100n,
+      entryMaxFeePerGasWei: 1n,
+      approvalGasLimit: 50n,
+      sellGasLimit: 100n,
+      exitMaxFeePerGasWei: 1n,
+      maximumSellTransactions: 3,
+      gasSafetyMarginBps: 3_000,
+      aggregateAllInCapWei: 60_000_000n,
+      automaticTopUpAllowed: false,
+    });
+    assert.equal(report.canaryArmed, true);
+    assert.equal(report.laterLanesArmed, false);
+    assert.equal(report.hotArmed, false);
+    assert.equal(report.canaryReadyWallets, 1);
+    assert.equal(report.laterLaneReadyWallets, 0);
   });
 
   it("pinpoints an underfunded or pending wallet without blocking report construction", async () => {

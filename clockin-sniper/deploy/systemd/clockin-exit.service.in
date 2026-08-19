@@ -5,6 +5,7 @@ After=network-online.target time-sync.target
 StartLimitIntervalSec=60s
 StartLimitBurst=8
 ConditionPathExists=/etc/clockin-sniper/PAID_RPC_APPROVED
+ConditionPathExists=/etc/clockin-sniper/PRODUCTION_ARM_APPROVED
 
 [Service]
 Type=notify
@@ -65,6 +66,3 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 AmbientCapabilities=
 ReadWritePaths=/var/lib/clockin-sniper /run/clockin-exit /run/clockin-status
-
-[Install]
-WantedBy=multi-user.target

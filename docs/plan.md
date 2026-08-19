@@ -1,11 +1,11 @@
 # ClockIn / Stonk Launcher 生产级狙击系统需求方案
 
-> 文档状态：`SPEC_DRAFT_FOR_CONFIRMATION`
-> 规格版本：`v1.0`
+> 文档状态：`SPEC_WITH_2026_08_20_QUOTED_HOTPATH_CORRECTION`
+> 规格版本：`v1.1`
 > 编制日期：`2026-08-16`
 > 目标网络：Robinhood Chain Mainnet，`chainId = 4663`
 > 目标代码库：`/Users/myandong/Projects/RH-pons-狙击/clockin-sniper`
-> 本文性质：产品需求、协议需求、系统设计、实施拆分与验收标准；本阶段不实现代码、不创建新钱包、不签名、不广播交易。
+> 本文性质：产品需求、协议需求、系统设计、实施拆分与验收标准；前文保留初始设计历史，2026-08-20 当前 as-built 边界以第 37 节为准。
 
 ---
 
@@ -31,9 +31,9 @@
 | 编号 | 需求 | 本方案理解 |
 |---|---|---|
 | BIZ-01 | 第一时间狙击 ClockIn | 主要触发器是已验证 Factory 的 launch/activation 事件，不等待公开 CA；已知 Factory 热路径与未知 Factory 预警并行运行。 |
-| BIZ-02 | 40% 税率约 2 分钟递减 | 40%/2 分钟是当前 ClockIn 画像，不得当成全平台永久常量；执行时以最终合约读取结果和机制 profile 为准。 |
+| BIZ-02 | 税率从初始值递减 | 2026-08-20 实证默认为 300 秒 `9999 bps` buffer，随后从 `3300 bps` 开始每分钟下降 `100 bps`；运行时必须动态读 getter，不把该值当成全平台永久常量。 |
 | BIZ-03 | 从初始税率到 0 分 10 批 | 业务意图是覆盖完整税率区间。实际最后一档取合约真实 floor；若真实 floor 为 0%，最后一档为 0%；若为 1%，不得伪造 0%。 |
-| BIZ-04 | 每批 5U | 每笔投入的 quote principal 名义值为 5U，税从 5U 输入中扣除，Gas 不计入 5U；ClockIn 总名义本金上限 50U。 |
+| BIZ-04 | 每批 5U | 每笔投入的 WETH quote principal 名义值为 5U，税从 5U 输入中扣除，native ETH 只用于 WETH deposit 和 Gas；ClockIn 总名义本金上限 50U。 |
 | BIZ-05 | 实盘生产，不要 Shadow/dry-run | 生产 executor 只有真实签名与真实广播路径；fork/replay 只作为离线验证工具，不是生产运行模式。 |
 | BIZ-06 | 部署云服务器、CA 出来前持续准备 | 无私钥 Control 使用 Robinhood 官方公共 HTTP RPC 常驻；Chainstack 只在用户明确进入真实狙击准备/交易/恢复/退出窗口后启用。CA 不是唯一发现信号，但任何软信号都不能自动开启付费 RPC 或签名。 |
 | BIZ-07 | 防止换地址、换 Factory | 同时监控已知 Factory、关联地址集群、全链目标 topic、合约部署、官网字段和外部流动性事件，并维护版本化 Factory Registry。 |
@@ -42,6 +42,8 @@
 | BIZ-10 | 买入后能退出 | 交付标准包含真实可调用的内盘 sell adapter、外盘 swap adapter、route migration、净回款计算和逐钱包退出状态机。 |
 
 ### 2.2 本方案不把以下内容当成已证实事实
+
+> 以下为 2026-08-16 的原始未知清单。其中 WETH quoted pad/creator/Created/Armed/getters/buy 和当前默认税率参数已在 2026-08-20 升级为 verified evidence；当前未知项与生产 blocker 以第 37 节为准。
 
 - ClockIn 最终主网 CA；
 - 最终 Launcher Factory 地址、runtime code hash、proxy implementation、creator；
@@ -638,7 +640,10 @@ targetFee[i] = S - round((S - F) × i / (N - 1)), i = 0...9
 - 当 `declaredFeeBps <= lane.targetFeeBps` 时，lane 进入 `FEE_ELIGIBLE`；
 - 本地 wall-clock 的“第几秒”只用于观测，不用于替代链上 fee；
 - 交易有效期绑定 chain timestamp/block/window，而不是进程启动时间；
-- 第 10 lane 只有在实际 fee 到达真实 floor 或窗口明确结束条件满足时才触发。
+- 第 10 lane 只有在实际 fee 到达合约窗口内真实**可成交** floor 时才触发；若税率数学上在
+  `deadline` 才归零、而交易门在 `block.timestamp >= deadline` 拒绝，则 0% 不可成交，最后
+  一档必须取最后一个可达离散税率（当前默认是一个 decay step，即 1%）。窗口结束绝不是
+  补发第 10 笔的触发条件。
 
 ### 10.3 第一笔 5U
 
@@ -1897,7 +1902,7 @@ Fork/replay 的目标是验证 calldata、状态变化和经济口径，不作�
 - 10 个仓库外 one-shot EOA 已在生产链逐个回读，每个余额为 `0.0032 ETH`，`latestNonce=0`、`pendingNonce=0`；私钥不进入仓库、日志或回执。
 - `47.251.28.201` 上的无私钥 `clockin-control` 已改为 Robinhood 官方公共 HTTP RPC 并恢复 `enabled/active`。生产回读确认 chainId `4663`、链头推进、`Type=notify` 30 秒 watchdog、`/health=200`、`/ready=503` 和 Dashboard 可读；Control 无 `LoadCredential`、无 Execution env、无 RPC/Chainstack 环境变量名，snapshot 报告 `OFFICIAL_PUBLIC_HTTP_ONLY` 与 `paidRpcCapability=false`。
 - Executor、Reconciler、Exit 的生产 entrypoint、SQLite schema、systemd unit 和确定性 renderer 已实现并安装；三项付费服务保持 `disabled/inactive`，并由固定 `PAID_RPC_APPROVED` marker 约束。该 marker 与 Executor 的 `PRODUCTION_ARM_APPROVED` 均 absent，最终 profile/授权缺失时不能启动资金执行。
-- 2026-08-17 官方页面仍未发布可冻结的主网 Launcher Factory、ClockIn CA 和最终 buy/sell/finalize ABI；当前总状态继续是 `NOT_HOT_ARMED`。
+- 历史快照：2026-08-17 当时尚未发布可冻结的主网 Launcher Factory/ABI，因此当时结论为 `NOT_HOT_ARMED`。该协议 blocker 已被 2026-08-20 quoted 主路证据取代；当前仍 `NOT_HOT_ARMED` 是因为尚未部署、marker absent 且钱包 WETH/allowance 未准备。
 
 ### 33.2 Profile 和动态地址绑定
 
@@ -2017,12 +2022,18 @@ Executor 的签名/广播还必须额外满足：
 ```text
 PAID_RPC_APPROVED
 + PRODUCTION_ARM_APPROVED
-+ final Factory/Profile/ABI
++ exact Factory/launch/mechanism/native-buy Profile
 + <=7-day bound authorization
-+ current 10-wallet/price/Gas/nonce readiness
++ current entry-01 5U/price/entry-Gas/nonce readiness
 + Reconciler READY
-+ Exit READY
 + zero unresolved UNKNOWN before new entry
+
+then, before lanes 2-10 only:
++ canonical canary EffectRecord
++ L3/L4 identity
++ token/Pool code allowlisted
++ entry-02-10 full readiness
++ Exit READY with verified executable route
 ```
 
 ### 34.4 状态转换与关闭规则
@@ -2031,8 +2042,10 @@ PAID_RPC_APPROVED
 stateDiagram-v2
     [*] --> PUBLIC_MONITORING
     PUBLIC_MONITORING --> PAID_PREPARING: owner explicitly approves a real-snipe window
-    PAID_PREPARING --> HOT_ARMED: all production gates pass
+    PAID_PREPARING --> CANARY_PREARMED: bounded 5U gates pass
+    CANARY_PREARMED --> HOT_ARMED: canonical effect and expansion gates pass
     PAID_PREPARING --> PUBLIC_MONITORING: no tx, no UNKNOWN, no position; stop paid services then remove marker
+    CANARY_PREARMED --> RECOVERING_OR_EXITING: canary attempted or position opened
     HOT_ARMED --> RECOVERING_OR_EXITING: tx attempted or position opened
     RECOVERING_OR_EXITING --> PUBLIC_MONITORING: all attempts terminal and exposure zero; stop paid services then remove marker
     HOT_ARMED --> PUBLIC_MONITORING: no tx submitted and owner aborts
@@ -2092,7 +2105,7 @@ same official endpoint + same pacing + same bounded 429 retry
 
 ### 35.4 实盘武装关系
 
-这两项改良提高观察质量和冷态响应，但不改变武装顺序。官网 `OPEN`、候选地址或链头推进只能要求立即复核；它们不能自动创建 `PAID_RPC_APPROVED` 或 `PRODUCTION_ARM_APPROVED`。只有官方最终 Factory/ABI、可执行买卖/退出 route、immutable profile、有效授权与 current readiness 全部通过后，才进入付费 WSS 与签名/广播状态。
+这两项改良提高观察质量和冷态响应，但不让软信号获得资金权限。官网 `OPEN`、候选地址或链头推进只能要求立即复核；它们不能自动创建 `PAID_RPC_APPROVED` 或 `PRODUCTION_ARM_APPROVED`。根据 ADR 0010，最终 Factory/launch/mechanism/native-buy Profile、有效授权与 canary readiness 通过后，可进入仅一笔 5U 的 `CANARY_PREARMED`；可执行 sell/exit route 仍是余下 45U 的硬门。
 
 该决策由 [ADR 0009](./adr/0009-semantic-site-signals-and-priority-public-rpc.md) 固化。
 
@@ -2100,4 +2113,118 @@ same official endpoint + same pacing + same bounded 429 retry
 
 2026-08-18，commit `de854f1` / capability revision 11 已部署到 `47.251.28.201`。生产 snapshot 回读 ClockIn、Launcher、Launcher docs、Safe Launch 四页 semantic scope、foreground/background 计数、10/10 wallet readiness、公共链头和 watchdog；`/docs` 当前为 `COMING_SOON`、主网候选为 0，测试网归档地址未被升级。Control 仍无 credential/paid capability，三项资金服务仍 disabled/inactive。
 
-用户的实盘准备授权已进入审计记录。可独立准备的 vault key 和官方 Sequencer credential 已按仓库外/root-only 边界完成，invalid-empty-transaction 探针确认 Sequencer write method 且未发送有效交易。官方主 Launcher 仍为 `COMING_SOON`，Factory/ABI/profile/authorization/exit route 不存在，所以 HOT 预检结论为 `NOT_HOT_ARMED`，两个 marker 未创建。完整证据见 [2026-08-18 deployment and arming receipt](./receipts/2026-08-18-control-hardening-and-arming-audit.md)。
+历史快照：2026-08-18 的武装审计当时以主 Launcher `COMING_SOON` 和 Factory/ABI/profile/authorization/exit route 不存在为 blocker，结论为 `NOT_HOT_ARMED`，两个 marker 未创建。2026-08-20 已得到 quoted 主路与本地 profile/authorization，但尚未部署、两 marker 仍 absent、钱包仍为 `0 WETH / 0 allowance`，所以当前结论仍为 `NOT_HOT_ARMED`。历史证据见 [2026-08-18 deployment and arming receipt](./receipts/2026-08-18-control-hardening-and-arming-audit.md)，当前规格见第 37 节。
+
+---
+
+## 36. Bounded canary execution tiers（2026-08-20）
+
+### 36.1 问题与设计目标
+
+旧实现在策略层允许 lane 1 以 L2 身份抢跑，但 Executor 启动和每次签名前仍统一要求 Exit 就绪、退出路径已验证且 10 个钱包全量就绪。因此“lane 1 是 5U canary”只存在于模型，实际运行仍被 50U 的完整门禁阻断。
+
+新目标不是删除不变量，而是让每个不变量只约束它真正要保护的资金规模：
+
+```text
+5U bounded canary
+  → 验证这是正确 Factory 产生的可调用买入路径
+  → canonical receipt + token delta 产生真实经济效果
+  → 再用 code allowlist + official CA + executable exit 解锁余下 45U
+```
+
+### 36.2 `BOUNDED_CANARY` 最小不变量
+
+首笔只能是 ClockIn lane 1，每个 launch 最多一次，名义本金不得超过 5U。它必须同时满足：
+
+1. chainId、Factory runtime hash、Factory event 来源和 L2 ClockIn 身份正确；
+2. launch block 上 token/Pool runtime code 非空，并保存实际 code hash；
+3. 使用冻结 ABI 在 exact block 成功读取 fee/window/cap/cooldown/EOA-only/quoteAsset；
+4. `previewBuy` 成功返回正数可执行输出，5U 不超过当前 cap；
+5. 新鲜 5U 价格快照、entry-01 签名器/余额/Gas/nonce、SQLite WAL/租约正常；
+6. Reconciler 当前可用，且没有未决 `UNKNOWN`；
+7. 付费 RPC marker、资金 arm marker、7 天以内 scope-bound authorization、same-raw 和加密 vault 边界仍然有效。
+
+首笔可以不要求“token/Pool hash 事先已在 allowlist”和“Exit 已有可执行路径”。这两项是显式、有上限的风险接受，最大暴露为一笔 5U，不可传染到后续 lane。
+
+### 36.3 `FULL_DEPLOYMENT` 扩张门（已被第 37 节的 quoted 主路纠正）
+
+lanes 2–10 必须在同一时点同时满足：
+
+- lane 1 已产生 canonical `SUCCESS` EffectRecord，实际 token delta 不低于最低校准值；
+- official CA 确认冻结 token，身份达到 L3/L4；
+- token 和 Pool 实际 runtime hash 均在当前 immutable Profile allowlist；
+- Reconciler/Exit 状态新鲜，profile/auth/WAL 匹配，零未决 attempt，10 个 exit signer 就绪；
+- Exit 至少拥有一条已验证、当前可执行的 route；
+- entry-02–10 的 principal/entry Gas/exit Gas/nonce 就绪；
+- 每个待派发 lane 都有同一 exact block、同一 principal 的新鲜 quote。
+
+任一扩张条件短暂变差时，尚未签名的 lane 回到 `DEFERRED`，不得记为 `FAILED_FINAL`，不得永久消耗该 lane 的预算。没有可信 quote 时也保持 `DEFERRED`，不再产生无下游 minOut 实现的伪 fallback 派发。
+
+### 36.4 ETH 与 STONKBROKER 路径（历史设计，已被第 37 节取代）
+
+- native ETH 是默认、主路径；只要 ETH Pool 满足 canary 不变量，缺少 STONKBROKER 不得阻塞首笔。
+- STONKBROKER/ERC20-permit 是 optional route，只有最终双 Pool event、spender、permit domain/nonce/deadline 和 buy calldata 都已确认后才能升级为可执行 adapter。
+- 当前不需要为 ETH canary 预先持有 STONKBROKER；也不能因为未知 ERC20 路径而自动 approve、买入或调仓。
+
+`BOUNDED_CANARY_POLICY_HASH` 已纳入 production authorization 的 risk-envelope hash。旧授权不能在无感知的情况下承接新风险边界。系统服务顺序改为必须先有 Reconciler，Exit 并行预热；Exit 未就绪不阻塞 5U canary，但绝对阻塞余下 45U。完整决策见 [ADR 0010](./adr/0010-bounded-canary-and-staged-expansion.md)。
+
+---
+
+## 37. Verified CLOCKIN quoted hot path 纠正（2026-08-20）
+
+本节是最新 as-built 规格，在冲突时取代第 1–36 节及本文任何其他地方的旧“当前实盘”结论，包括“最终 Factory/ABI 未发布”、“native ETH 为当前主路”、“外部 ETH/USD 价格源位于 CA→签名热路”和“Exit 阻塞 lanes 2–10”。旧结论保留仅用于解释演进历史，不再是当前实盘规格。
+
+本节使用四层不可互换的证据状态：
+
+1. `IMPLEMENTED_FINAL_GATE_PENDING`：代码和定向测试已存在，但本次最终 clean-tree 全量门禁、archive 和 release readback 尚未完成；
+2. `ENTRY_HOT_ARMED`：launch 前生产回执，必须证明 artifact/profile/auth、公共 cursor caught-up、10/10 WETH/allowance/Gas/nonce、双 marker 与 valid-only path 全部当前有效；
+3. `CANONICAL_ENTRY_EFFECT_CONFIRMED`：launch 后经 canonical receipt、WETH/token delta 和 `EffectRecord` 证明真实成交；
+4. `QUOTED_EXIT_UNSUPPORTED`：当前 generic Exit 不能解析 quoted profile，这是已接受的持仓风险限制，不会被 entry 回执或买入 effect 伪装成“自动退出已武装”。
+
+### 37.1 链上身份与 CA 热路
+
+- 主路为精确 WETH quoted pad。24×7 public Control 先按 exact pad/topic/approved creator/`externalToken=false` 过滤，并在事件精确块读取 token 的 exact `Clock In`/`CLOCKIN` metadata；名称、symbol、X 文案或网页 CA 单独仍不能创建交易意图。
+- `LaunchCreated` 的 token 字段就是 CA，`id` 是 quoted pad 的买入标识。Created 后不等待官方发 X，而是订阅并回补同 `id` 的 `LaunchArmed`。paid discovery 必须直接接收 public handoff 已冻结的 `pad/id/token/txHash/logIndex/blockNumber/blockHash`，只等待该目标的 Armed；同 creator 随后创建的其他同名币不能污染或阻塞既定目标。
+- Public handoff 在发布前绑定 receipt exact log、canonical block hash 与至少 2 个后续区块。若旧候选被公共 RPC 连续两次证明发生 reorg，系统写入 immutable tombstone、CAS 失效 pointer、rewind cursor，再允许 canonical replacement；瞬时 RPC 错误不得失效候选或推进 cursor。
+- handoff 文件是非敏感的 paid-plane 证据，不直接充当任意文件变化的唤醒信号。只有 canonical ACTIVE pointer 才写独立 `active.signal`；reorg tombstone/失效不得触发 paid service。`clockin-executor.path` 只观察 `active.signal`，是唯一 boot-enabled paid trigger；Control 启动会在确认 pointer 仍 canonical 后重发 signal，以覆盖“pointer 先存在、path 后启动”的竞态。
+- Public Control 的历史回补按至多 2,000 blocks 的 chunk 逐段 durable commit cursor，并公开 `cursor/confirmedHead/lag`。只有追平 confirmation depth 才可声明 public handoff ready、允许启用 paid path；中途 429/503 从最后成功 chunk 恢复，不能从部署块全量重扫。
+- `LaunchArmed` 只表示 launch 已配置，不表示应立即买。执行器必须从 `getLaunch/currentTaxBps/quoteBuy` 读当前税率、窗口、deadline、oracle freshness 和 token out，再构造 `buy(id, quoteIn, minTokensOut, ref)`。Created 后 15 分钟没有 Armed 时，paid Executor 退出以停止 Chainstack 消耗；keyless Public Control 继续监听同 id Armed，并在晚到 Armed 出现时重新写有效 signal，因此 15 分钟不是放弃目标。
+- X 和官网 watcher 为服务器异步信号，不依赖用户浏览器，也不处于 discovery→sign→broadcast 热路。它们的作用是事后确认 official CA 或将 mismatch 升级为冲突告警。
+
+### 37.2 机制与十档计划
+
+- 已验证的当前默认 launch 参数是 300 秒 `9999 bps` anti-bot buffer，随后从 `3300 bps` 开始每分钟降 `100 bps`。这些是当前 profile 证据，不是永久硬编码常量。
+- `9999 bps` buffer 内任何 5U 买入都几乎全部成为税，默认策略必须跳过。第一档在 dynamic tax 达到当前 `startTaxBps` 时触发；后续九档由当次 `start/最后可成交 floor` 计算，每笔都重新 quote 和 minOut。
+- 当前 verified source 在 `block.timestamp >= deadline` 拒绝 buy。实际最低可成交税必须按 `deadline - 1` 推导：先断言 `deadline = startTime + bufferSeconds + windowSeconds`，再令 `maxStep=floor((windowSeconds-1)/60)`、`floor=max(0,startTaxBps-maxStep*decayPerMinuteBps)`。当前默认 `3300/100/1980` 的 floor 是 `100 bps = 1%`；更长窗口可以在 deadline 前出现可成交 0%，非整除 decay 也完全合法，均不得用整除或“零点恰好等于窗口”的假设拒绝。
+- 十档授权要求窗口内至少存在 10 个不同、可成交的实际税率状态；不能用理论 `start/decay` 商代替窗口枚举，也不能把十个 lane 全堆在同一高税档。
+- 每 lane 名义 principal 为 5U WETH，十 lane 合计最多 50U。native ETH 只用于事前 WETH deposit 和 Gas，当前 CLOCKIN 主路不需 STONK。
+- 每笔 exact WETH principal 以 `LaunchArmed.quoteUsd8` 的协议 oracle 单位换算并向下取整，保证不超过名义 5U；Coinbase/Kraken 只用于准备期交叉定价与告警，不能处于 CA→Armed→签名热路。运行时必须同时证明 `oracleFresh=true`。
+- quoted pad 不提供可在同一笔 helper 交易中完成的 permit/multicall 快路；因此 wrap 与 approve 是 launch 前 readiness，必须用精确/有界 allowance，禁止 infinite approval。准备余额/allowance 使用 10% 容量 buffer，但执行器永远只花当次 oracle 换算的 5U，不把 buffer 当本金授权。
+- 首笔准备交易前必须一次性冻结并证明：10 个钱包的 buffered WETH、wrap/approve/entry 最大 Gas 合计在 60U all-in cap 内；Armed 后还要按当次 `quoteUsd8` 重新证明 50U principal 加 entry 最大 Gas不超过 60U。价格漂移超过 buffer 时 fail closed 并要求重新准备，不能静默增加单笔本金。
+- 每次本地签名前必须再次验证双 marker、canonical handoff、quote 未超过 15 秒且仍绑定同 canonical block，以及 `baseFee + priorityFee <= authorized maxFee`；瞬时 quote/base-fee 不满足只把 lane 延后，不能消耗 lane 或擅自加价。
+
+### 37.3 分级门禁的最新结论
+
+lane 1 仍是最多 5U 的 bounded canary。lanes 2–10 不再等待 Exit 路由就绪，但必须同时满足：
+
+1. canary 已有 canonical success receipt 与 token balance effect，不用 tx hash/accepted 代替；
+2. Reconciler 状态新鲜、WAL 可用、零 unresolved `UNKNOWN`；
+3. 当前 quoted profile 与 7 天 authorization 的 hash/scope/expiry 一致；
+4. 新 launch 开始前必须 10/10 signer 地址对应、clean nonce、native Gas、WETH principal 和 pad allowance 都就绪；canary canonical 完成后，已成交 wallet 从 EffectRecord 恢复，只要求尚未成交的剩余 lane 继续满足资金/allowance/nonce readiness；
+5. 同 id launch 仍在 window/deadline 内，每一 lane 都得到正数且签名前仍新鲜的当前 `quoteBuy` 和 minOut；canary 虽使用显式 `minOut=1` 风险策略，也不能绕过 quote freshness/canonical-block 校验；
+6. dispatch 的 reservation、nonce slot、plan、attempt 和 pre-broadcast snapshot 具有可恢复的持久化边界：只在能够证明 snapshot/广播从未发生时才可原子 invalidation 并释放；一旦存在广播可能性，只允许 same-raw reconciliation。
+
+Exit 仍应尽快实现 quoted 路由并取得真实回执，但当前 generic Exit 不能解析 quoted profile，因而本次只能称为“entry 已武装”，不能称为“自动退出已武装”。它不再是后续九笔买入的前置，这是用户接受的有界风险取舍；不允许借此放宽 canary canonical effect、Reconciliation 或钱包准备度。
+
+### 37.4 实现、武装与交易效果证据
+
+| 层级 | 2026-08-20 当前状态 | 能证明什么 |
+|---|---|---|
+| 本地实现 | `IMPLEMENTED_FINAL_GATE_PENDING`：quoted adapter/discovery/public handoff/reorg recovery/readiness/preparation/executor/paid lifecycle 代码与 targeted tests 已存在；仓库外 profile + 7 天 authorization 需随最终 artifact 重生 | 证明定向行为，不证明本次全量门禁通过、云机已运行或交易已发生 |
+| 生产部署 | quoted artifact/profile/auth 未部署；资金服务 disabled/inactive；两 marker absent | 线上当前只能看，知道 CA 也不会买 |
+| 钱包 readiness | 每钱包 `0.0032 ETH`，但 `0 WETH / 0 allowance` | 还不能调用 quoted buy，必须先 wrap/approve 并回读 10/10 |
+| launch 前 entry 武装 | `ENTRY_HOT_ARMED` receipt 尚不存在 | 它只能证明公共观测、付费唤醒、签名与入场准备就绪，不能写“已成交” |
+| launch 后买入效果 | 无 canonical entry receipt/effect | 真实事件发生后才能升级为 `CANONICAL_ENTRY_EFFECT_CONFIRMED`；无此 receipt 是当前效果限制，不是 launch 前 `ENTRY_HOT_ARMED` 的 blocker |
+| 自动退出 | `QUOTED_EXIT_UNSUPPORTED`，无 canonical exit receipt | 入场可按已接受风险独立武装，但不得声称自动退出就绪 |
+
+当前总状态因此仍是 `NOT_HOT_ARMED`。解锁顺序为：全量 final gate 通过并生成 checksum artifact/profile/auth → 部署与当前进程/hash 回读 → 公共 cursor 追平 confirmed head → 在 path disabled 时创建双 marker 并完成 10/10 wrap/approve/readiness → 只 enable/start `clockin-executor.path` → 回读 valid-only `active.signal`、handoff 前零付费进程及所有当前门禁 → 生成 launch 前 `ENTRY_HOT_ARMED` receipt。真实 launch 后还必须另存 canonical receipt/delta/EffectRecord，才能声称成交。禁止 launch 前手动常驻 paid Executor/Reconciler，当前 generic Exit 不得随 quoted entry 启动或被写成已武装。

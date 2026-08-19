@@ -37,3 +37,9 @@ This is a negative execution-readiness receipt, updated after deploying semantic
 - `NO_V2_CANONICAL_ENTRY_OR_EXIT_RECEIPT` — owner: event/runtime; can be resolved only by a real authorized event and canonical economic effects.
 
 Until every pre-execution blocker is resolved, the default live entrypoint must remain fail-closed. Public Control currently returns `/health=200`, `/ready=503`, and `/dashboard=200`; the `503` truthfully represents `hotArmed=false`, Factory `UNKNOWN`, entry disabled and no verified mainnet exit route. The current deployment and arming boundary is recorded in [2026-08-18-control-hardening-and-arming-audit.md](./2026-08-18-control-hardening-and-arming-audit.md); the earlier paid-monitoring stop remains historical evidence in [2026-08-17-rpc-monitoring-pause.md](./2026-08-17-rpc-monitoring-pause.md).
+
+## Source-only follow-up — 2026-08-20
+
+Capability revision 12 introduces the [ADR 0010](../adr/0010-bounded-canary-and-staged-expansion.md) split between `CANARY_PREARMED` and full `HOT_ARMED`. Under that source design, missing sell/exit evidence no longer blocks the single maximum-5U canary after the exact Factory, launch/mechanism/native-buy ABI, non-empty launch code, fresh price, bound authorization, entry-01 readiness, Reconciler/WAL and zero-UNKNOWN gates pass. It still blocks every part of the remaining 45U.
+
+This is not a new production receipt. The host readback above remains capability revision 11, all paid services remain disabled/inactive, both markers remain absent, and the final Factory/launch/buy profile and current authorization are still missing. Therefore even the narrower `CANARY_PREARMED` state is not currently achieved.

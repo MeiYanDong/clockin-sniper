@@ -1,4 +1,5 @@
 import { hostname } from "node:os";
+import { fileURLToPath } from "node:url";
 
 import { ZeroAddress, keccak256 } from "ethers";
 
@@ -32,6 +33,7 @@ import { SqliteStore } from "./persistence/sqlite-store.js";
 import { aggregatePosition, reconcileLotBalance } from "./positions/position-book.js";
 import { HttpJsonRpcClient } from "./rpc/http-json-rpc.js";
 import { assertPaidRpcApproved } from "./runtime/paid-rpc-approval.js";
+import { assertProductionArmApproved } from "./runtime/production-arm-approval.js";
 import { hexToBigInt, quantityToHex } from "./rpc/hex.js";
 import {
   loadProductionProfileAndAuthorization,
@@ -85,6 +87,70 @@ interface ExitRuntime {
   readonly authorization: ProductionAuthorization;
   readonly signerByAddress: ReadonlyMap<string, LoadedWalletSigner>;
   readonly routeProfiles: readonly ProductionExitRoute[];
+}
+
+export type ExitPaidLifecycleAction = "RUN" | "STOP_IDLE" | "STOP_DEGRADED";
+
+export interface ExitPaidLifecycleDecision {
+  readonly action: ExitPaidLifecycleAction;
+  readonly details: readonly string[];
+}
+
+/**
+ * Authorization expiry is a hard bound on paid exit work. An expired, flat service exits
+ * normally; unresolved attempts or positions are surfaced as degraded before the process
+ * stops so an operator can renew authorization and restart without an empty paid-RPC loop.
+ */
+export function decideExitPaidLifecycle(input: {
+  readonly nowMs: number;
+  readonly authorizationExpiresAtMs: number;
+  readonly unresolvedAttemptCount: number;
+  readonly openPositionCount: number;
+}): ExitPaidLifecycleDecision {
+  for (const [label, value] of [
+    ["unresolved attempt count", input.unresolvedAttemptCount],
+    ["open position count", input.openPositionCount],
+  ] as const) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new RangeError(`${label} must be a non-negative safe integer`);
+    }
+  }
+  if (!Number.isFinite(input.nowMs) || !Number.isFinite(input.authorizationExpiresAtMs)) {
+    throw new RangeError("exit lifecycle timestamps must be finite");
+  }
+  if (input.nowMs < input.authorizationExpiresAtMs) {
+    return Object.freeze({ action: "RUN", details: Object.freeze([]) });
+  }
+  if (input.unresolvedAttemptCount === 0 && input.openPositionCount === 0) {
+    return Object.freeze({
+      action: "STOP_IDLE",
+      details: Object.freeze(["AUTHORIZATION_EXPIRED_NO_EXPOSURE"]),
+    });
+  }
+  return Object.freeze({
+    action: "STOP_DEGRADED",
+    details: Object.freeze([
+      "AUTHORIZATION_EXPIRED_RECOVERY_OR_POSITION_REMAINS",
+      `UNRESOLVED_ATTEMPTS_${input.unresolvedAttemptCount}`,
+      `OPEN_POSITIONS_${input.openPositionCount}`,
+    ]),
+  });
+}
+
+class RuntimeApprovalRevokedError extends Error {
+  constructor(cause: unknown) {
+    super("runtime paid-RPC or production-arm approval is absent or invalid", { cause });
+    this.name = "RuntimeApprovalRevokedError";
+  }
+}
+
+async function assertRuntimeApprovals(): Promise<void> {
+  try {
+    await assertPaidRpcApproved();
+    await assertProductionArmApproved();
+  } catch (error) {
+    throw new RuntimeApprovalRevokedError(error);
+  }
 }
 
 function log(kind: "INFO" | "ACTION" | "ERROR", message: string, details: object = {}): void {
@@ -233,7 +299,12 @@ async function main(): Promise<void> {
   let working = false;
   let sequence = 0;
   let lastProcessedHead = -1n;
-  await assertPaidRpcApproved();
+  let tickTimer: ReturnType<typeof setInterval> | null = null;
+  let approvalTimer: ReturnType<typeof setInterval> | null = null;
+  let approvalCheckInFlight = false;
+  let approvalFailureStarted = false;
+  let stopPromise: Promise<void> | null = null;
+  await assertRuntimeApprovals();
   const [walletBundle, rpcHttp, sequencerHttp, vaultKey] = await Promise.all([
     loadProductionWalletSigners(),
     readSystemdCredential("rpc_http"),
@@ -389,6 +460,56 @@ async function main(): Promise<void> {
     return binding;
   };
 
+  const stop = (
+    signal: string,
+    finalState: "STOPPING" | "DEGRADED" | "FAILED" = "STOPPING",
+    details: readonly string[] = [],
+  ): Promise<void> => {
+    if (stopPromise !== null) return stopPromise;
+    stopping = true;
+    if (tickTimer !== null) clearInterval(tickTimer);
+    if (approvalTimer !== null) clearInterval(approvalTimer);
+    stopPromise = (async () => {
+      while (working) await new Promise((resolve) => setTimeout(resolve, 25));
+      for (const binding of [...activeLeases.values()]) {
+        if (!store.walletHasUnresolvedNonce(binding.walletAddress)) {
+          try {
+            releaseLease(binding.walletAddress);
+          } catch (error) {
+            log("ERROR", "failed to release exit wallet lease during shutdown", {
+              walletAddress: binding.walletAddress,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }
+      try {
+        await writeStatus(finalState, details);
+        await watchdog.stopping(`exit service stopping after ${signal}`);
+      } finally {
+        store.close();
+      }
+    })();
+    return stopPromise;
+  };
+
+  const failRuntimeApprovals = (error: RuntimeApprovalRevokedError): void => {
+    if (approvalFailureStarted) return;
+    approvalFailureStarted = true;
+    process.exitCode = 1;
+    log("ERROR", "runtime approval revoked; paid exit lifecycle stopped", {
+      error: error.message,
+    });
+    void stop("RUNTIME_APPROVAL_REVOKED", "FAILED", [
+      "RUNTIME_APPROVAL_REVOKED",
+      error.message,
+    ]).catch((stopError: unknown) => {
+      log("ERROR", "failed to close exit resources after runtime approval revocation", {
+        error: stopError instanceof Error ? stopError.message : String(stopError),
+      });
+    });
+  };
+
   const submit = async (input: {
     readonly signer: LoadedWalletSigner;
     readonly launchId: string;
@@ -425,6 +546,7 @@ async function main(): Promise<void> {
         input.planId,
         now,
       );
+      await assertRuntimeApprovals();
       const raw = (await input.signer.signer.signTransaction({
         chainId: 4_663,
         type: 2,
@@ -470,6 +592,7 @@ async function main(): Promise<void> {
         payload: input.snapshot,
         observedAt: now,
       });
+      await assertRuntimeApprovals();
       slot = coordinator.transition(slot, "POSSIBLY_SUBMITTED", now);
       possiblySubmitted = true;
       const result = await broadcaster.broadcast(raw);
@@ -913,6 +1036,7 @@ async function main(): Promise<void> {
       try {
         await executeInstruction({ position, lot, instruction, boundQuote, policyStage, head });
       } catch (error) {
+        if (error instanceof RuntimeApprovalRevokedError) throw error;
         log("ERROR", "exit instruction failed closed", {
           launchId: identity.launchId,
           lotId: lot.lotId,
@@ -926,6 +1050,30 @@ async function main(): Promise<void> {
     if (working || stopping) return;
     working = true;
     try {
+      await assertRuntimeApprovals();
+      const unresolvedAttemptCount = store.unresolvedTxAttempts(STRATEGY_ID).length;
+      const openPositionCount = store.latestOpenPositionLots(STRATEGY_ID).length;
+      const lifecycle = decideExitPaidLifecycle({
+        nowMs: Date.now(),
+        authorizationExpiresAtMs: Date.parse(authorization.expiresAt),
+        unresolvedAttemptCount,
+        openPositionCount,
+      });
+      if (lifecycle.action !== "RUN") {
+        void stop(
+          lifecycle.action === "STOP_IDLE"
+            ? "AUTHORIZATION_EXPIRED_NO_EXPOSURE"
+            : "AUTHORIZATION_EXPIRED_WITH_EXPOSURE",
+          lifecycle.action === "STOP_IDLE" ? "STOPPING" : "DEGRADED",
+          lifecycle.details,
+        ).catch((error: unknown) => {
+          log("ERROR", "failed to stop expired exit lifecycle", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          process.exitCode = 1;
+        });
+        return;
+      }
       cleanupAndRenewLeases();
       const head = hexToBigInt(
         "eth_blockNumber",
@@ -938,10 +1086,6 @@ async function main(): Promise<void> {
         return;
       }
       lastProcessedHead = head;
-      if (Date.now() >= Date.parse(authorization.expiresAt)) {
-        await writeStatus("DEGRADED", ["AUTHORIZATION_EXPIRED_EXIT_REQUIRES_RENEWAL"]);
-        return;
-      }
       const lots = store.latestOpenPositionLots(STRATEGY_ID);
       for (const identity of store.latestLaunchIdentities(STRATEGY_ID)) {
         const launchLots = lots.filter((lot) => lot.launchId === identity.launchId);
@@ -949,6 +1093,10 @@ async function main(): Promise<void> {
       }
       await writeStatus(lots.length > 0 ? "ACTIVE" : "READY");
     } catch (error) {
+      if (error instanceof RuntimeApprovalRevokedError) {
+        failRuntimeApprovals(error);
+        return;
+      }
       log("ERROR", "exit policy tick failed", {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -965,33 +1113,44 @@ async function main(): Promise<void> {
   ]);
   await watchdog.ready("exit service ready");
   await tick();
-  const timer = setInterval(() => void tick(), 1_000);
-  const stop = async (signal: string): Promise<void> => {
-    if (stopping) return;
-    stopping = true;
-    clearInterval(timer);
-    while (working) await new Promise((resolve) => setTimeout(resolve, 25));
-    cleanupAndRenewLeases();
-    for (const binding of [...activeLeases.values()]) {
-      if (!store.walletHasUnresolvedNonce(binding.walletAddress))
-        releaseLease(binding.walletAddress);
-    }
-    await writeStatus("STOPPING", [signal]);
-    await watchdog.stopping(`exit service stopping after ${signal}`);
-    store.close();
-  };
+  if (!stopping) {
+    tickTimer = setInterval(() => void tick(), 1_000);
+    approvalTimer = setInterval(() => {
+      if (approvalCheckInFlight || stopping) return;
+      approvalCheckInFlight = true;
+      void assertRuntimeApprovals()
+        .catch((error: unknown) =>
+          failRuntimeApprovals(
+            error instanceof RuntimeApprovalRevokedError
+              ? error
+              : new RuntimeApprovalRevokedError(error),
+          ),
+        )
+        .finally(() => {
+          approvalCheckInFlight = false;
+        });
+    }, 250);
+    approvalTimer.unref();
+  }
   process.once("SIGTERM", () => void stop("SIGTERM"));
   process.once("SIGINT", () => void stop("SIGINT"));
 }
 
-void main().catch((error: unknown) => {
-  process.stderr.write(
-    `${JSON.stringify({
-      service: "clockin-exit",
-      state: "FAILED",
-      error: error instanceof Error ? error.message : String(error),
-      errorId: stableHash(error instanceof Error ? error.message : String(error)),
-    })}\n`,
-  );
-  process.exitCode = 1;
-});
+function isDirectExecution(): boolean {
+  const entry = process.argv[1];
+  return entry !== undefined && fileURLToPath(import.meta.url) === entry;
+}
+
+if (isDirectExecution()) {
+  void main().catch((error: unknown) => {
+    process.stderr.write(
+      `${JSON.stringify({
+        service: "clockin-exit",
+        state: "FAILED",
+        error: error instanceof Error ? error.message : String(error),
+        errorId: stableHash(error instanceof Error ? error.message : String(error)),
+      })}\n`,
+    );
+    process.exitCode = 1;
+  });
+}

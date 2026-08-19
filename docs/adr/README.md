@@ -21,5 +21,7 @@ ADRs record decisions that materially change system boundaries, money movement, 
 - [0007 — Production runtime interlock and launch-bound routes](0007-production-runtime-interlock-and-route-binding.md)
 - [0008 — Public observation and paid execution RPC boundary](0008-public-observation-and-paid-execution-rpc-boundary.md)
 - [0009 — Semantic official-site signals and priority public RPC scheduling](0009-semantic-site-signals-and-priority-public-rpc.md)
+- [0010 — Bounded 5U canary and staged capital expansion](0010-bounded-canary-and-staged-expansion.md)
+- [0011 — Public handoff and WETH-quoted production hot path](0011-public-handoff-and-weth-quoted-production-hotpath.md)
 
 ADRs are append-only historical records. Correct factual errors with a follow-up note or superseding ADR rather than silently rewriting the original decision context.

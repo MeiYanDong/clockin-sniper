@@ -115,6 +115,27 @@ describe("health, readiness and evidence-only dashboard", () => {
     assert.ok(notReady.reasons.some((reason) => reason.includes("price snapshot")));
   });
 
+  it("arms only the 5U canary when exit and the remaining nine wallets are unavailable", () => {
+    const readiness = evaluateOperationalReadiness(
+      readinessInput({
+        wallets: { expected: 10, signerReady: 1, nonceReady: 1, fundingReady: 1 },
+        identity: { level: "L2", caState: "PENDING" },
+        strategy: {
+          entryEnabled: true,
+          exitEnabled: false,
+          entryState: "CANARY_ARMED",
+          exitState: "UNAVAILABLE",
+        },
+        exposure: { unknownAttemptCount: 0, openPositionCount: 0, verifiedExitRouteCount: 0 },
+      }),
+    );
+    assert.equal(readiness.canaryArmed, true);
+    assert.equal(readiness.hotArmed, false);
+    assert.equal(readiness.canaryReasons.length, 0);
+    assert.ok(readiness.fullDeploymentReasons.some((reason) => reason.includes("exit")));
+    assert.ok(readiness.fullDeploymentReasons.some((reason) => reason.includes("funded")));
+  });
+
   it("serves liveness separately from readiness on localhost and never exposes secrets", async () => {
     const notReady = evaluateOperationalReadiness(
       readinessInput({ factory: { state: "OBSERVED" } }),

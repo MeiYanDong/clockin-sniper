@@ -53,3 +53,7 @@ The official mainnet Launcher Factory, ClockIn CA, final ABI, and verified exit 
 ## Evidence
 
 Automated tests cover exact 4000-to-0/120-second profile parsing, seven-day authorization, frozen identity/code-hash binding, native buy and launch-pool exit calldata, append-only plan/attempt/quote/exit revisions, service dependency interlocks, watchdog notifications, credential isolation, redacted status, and deterministic lease release.
+
+## Follow-up note — 2026-08-20
+
+[ADR 0010](0010-bounded-canary-and-staged-expansion.md) supersedes this record's all-lanes Exit dependency, mandatory non-empty exit-route list, pre-launch token/Pool allowlist requirement for lane 1, and systemd ordering after Exit. Those requirements remain in force for lanes 2–10. A single maximum-5U bounded canary now uses a narrower Reconciler/buy-path gate, with its policy hash included in authorization.

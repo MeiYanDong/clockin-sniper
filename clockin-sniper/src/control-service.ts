@@ -1,27 +1,30 @@
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   compareOfficialSiteObservations,
-  observeOfficialSite,
   type OfficialSiteObservation,
+  observeOfficialSite,
 } from "./control/official-site-monitor.js";
-import { createOpsServer } from "./ops/http-server.js";
+import { PublicSafeLaunchHandoffProducer } from "./control/public-safe-launch-handoff.js";
 import type { DashboardModel } from "./ops/dashboard.js";
+import { createOpsServer } from "./ops/http-server.js";
 import {
   evaluateOperationalReadiness,
   type OperationalReadiness,
   type OperationalReadinessInput,
 } from "./ops/readiness.js";
-import { verifyRobinhoodMainnet } from "./rpc/robinhood.js";
 import { hexToBigInt } from "./rpc/hex.js";
-import { PublicControlRpc } from "./runtime/public-control-rpc.js";
+import { verifyRobinhoodMainnet } from "./rpc/robinhood.js";
 import type { JsonRpcRequester } from "./rpc/types.js";
+import { PublicControlRpc } from "./runtime/public-control-rpc.js";
+import { PUBLIC_LAUNCH_HANDOFF_DEFAULT_DIRECTORY } from "./runtime/public-launch-handoff.js";
 import {
+  type ProductionServiceReadback,
   readProductionServiceStatus,
   writeProductionServiceStatus,
-  type ProductionServiceReadback,
 } from "./runtime/service-status.js";
 import { SystemdWatchdog } from "./runtime/systemd-watchdog.js";
 import { freezePriceSnapshot, type PriceObservation } from "./wallets/price-snapshot.js";
@@ -74,6 +77,8 @@ interface RuntimeState {
   serviceReadbacks: Map<"executor" | "reconciler" | "exit", ProductionServiceReadback>;
   events: ControlEvent[];
   publicRpc: PublicControlRpc;
+  publicLaunchHandoff: PublicSafeLaunchHandoffProducer;
+  lastHandoffReportedError: string | null;
   headPollMs: number;
   identityRefreshMs: number;
   walletRefreshMs: number;
@@ -157,19 +162,29 @@ function readinessInput(state: RuntimeState): OperationalReadinessInput {
   const executor = executorReadback?.state === "CURRENT" ? executorReadback.status : null;
   const reconciler = reconcilerReadback?.state === "CURRENT" ? reconcilerReadback.status : null;
   const exit = exitReadback?.state === "CURRENT" ? exitReadback.status : null;
+  const handoffSnapshot = state.publicLaunchHandoff.snapshot();
+  const handoffCaughtUp = state.httpReady && handoffSnapshot.caughtUp;
+  const handoffLag =
+    handoffSnapshot.cursorLagBlocks === null
+      ? Number.MAX_SAFE_INTEGER
+      : Number(
+          BigInt(handoffSnapshot.cursorLagBlocks) > BigInt(Number.MAX_SAFE_INTEGER)
+            ? BigInt(Number.MAX_SAFE_INTEGER)
+            : BigInt(handoffSnapshot.cursorLagBlocks),
+        );
   const chain = state.httpReady
     ? Object.freeze({
         connected: true,
         observedChainId: 4_663,
         expectedChainId: 4_663,
         latestBlock: state.latestBlock.toString(),
-        lagBlocks: 0,
+        lagBlocks: handoffLag,
       })
     : Object.freeze({
         connected: false,
         expectedChainId: 4_663,
         latestBlock: state.latestBlock.toString(),
-        lagBlocks: 0,
+        lagBlocks: handoffLag,
       });
   const snapshotId = state.priceSnapshotId;
   const expiresAtMs = state.priceExpiresAtMs;
@@ -191,6 +206,7 @@ function readinessInput(state: RuntimeState): OperationalReadinessInput {
     }),
     factory:
       executor !== null &&
+      handoffCaughtUp &&
       executor.profileId !== undefined &&
       executor.profileRevision !== undefined &&
       executor.profileRevision > 0 &&
@@ -244,12 +260,14 @@ function readinessInput(state: RuntimeState): OperationalReadinessInput {
 
 function dashboard(state: RuntimeState): DashboardModel {
   const rows = state.walletReport?.rows ?? [];
+  const handoff = state.publicLaunchHandoff.snapshot().handoff;
   const websiteCandidateCount = new Set(
     [...state.websiteObservations.values()].flatMap((observation) => [
       ...observation.candidateAddresses,
     ]),
   ).size;
   const readiness = evaluateOperationalReadiness(readinessInput(state));
+  const handoffSnapshot = state.publicLaunchHandoff.snapshot();
   const executorReadback = state.serviceReadbacks.get("executor");
   const exitReadback = state.serviceReadbacks.get("exit");
   const executor = executorReadback?.state === "CURRENT" ? executorReadback.status : null;
@@ -260,15 +278,22 @@ function dashboard(state: RuntimeState): DashboardModel {
       ? "HOT_ARMED / WAITING_FACTORY_EVENT"
       : "PUBLIC_MONITORING / NOT_HOT_ARMED",
     latestBlock: state.latestBlock.toString(),
-    lagBlocks: 0,
+    lagBlocks:
+      handoffSnapshot.cursorLagBlocks === null
+        ? Number.MAX_SAFE_INTEGER
+        : Number(
+            BigInt(handoffSnapshot.cursorLagBlocks) > BigInt(Number.MAX_SAFE_INTEGER)
+              ? BigInt(Number.MAX_SAFE_INTEGER)
+              : BigInt(handoffSnapshot.cursorLagBlocks),
+          ),
     factory: Object.freeze({
-      candidateCount: websiteCandidateCount,
+      candidateCount: websiteCandidateCount + (handoff === null ? 0 : 1),
       profileId: executor?.profileId ?? "UNPUBLISHED",
       revision: executor?.profileRevision ?? 0,
       state: readiness.snapshot.factory.state,
     }),
     identity: Object.freeze({
-      token: "UNKNOWN",
+      token: handoff?.tokenAddress ?? "UNKNOWN",
       pool: "UNKNOWN",
       creator: "UNKNOWN",
       caState: "UNKNOWN",
@@ -360,6 +385,7 @@ async function writeSnapshot(
     lastHeadPollAt: state.lastHeadPollAt,
     lastIdentityCheckAt: state.lastIdentityCheckAt,
     publicRpc: state.publicRpc.usageSnapshot(),
+    publicLaunchHandoff: state.publicLaunchHandoff.snapshot(),
     monitoringPolicy: {
       mode: "OFFICIAL_PUBLIC_HTTP_ONLY",
       headPollMs: state.headPollMs,
@@ -472,6 +498,12 @@ async function main(): Promise<void> {
     60_000,
   );
   const publicRpc = new PublicControlRpc({ timeoutMs: 8_000 });
+  const publicLaunchHandoff = new PublicSafeLaunchHandoffProducer({
+    requester: publicRpc,
+    directory:
+      process.env.CLOCKIN_PUBLIC_HANDOFF_DIR?.trim() || PUBLIC_LAUNCH_HANDOFF_DEFAULT_DIRECTORY,
+  });
+  await publicLaunchHandoff.initialize();
   const http = publicRpc;
   const backgroundHttp: JsonRpcRequester = Object.freeze({
     providerId: publicRpc.providerId,
@@ -492,6 +524,8 @@ async function main(): Promise<void> {
     serviceReadbacks: new Map(),
     events: [],
     publicRpc,
+    publicLaunchHandoff,
+    lastHandoffReportedError: null,
     headPollMs,
     identityRefreshMs,
     walletRefreshMs,
@@ -501,6 +535,46 @@ async function main(): Promise<void> {
   let walletRefreshRunning = false;
   let publishRunning = false;
   let stopping = false;
+  let startupReplayPending = true;
+
+  const scanPublicLaunchHandoff = async (head: bigint): Promise<void> => {
+    const previous = state.publicLaunchHandoff.snapshot();
+    try {
+      const result = await state.publicLaunchHandoff.scanToHead(head);
+      const current = state.publicLaunchHandoff.snapshot();
+      if (result.created > 0 && current.handoff !== null) {
+        recordEvent(
+          state,
+          "ACTION",
+          `official public chain produced CLOCKIN launch handoff id=${current.handoff.launchId} block=${current.handoff.blockNumber}`,
+        );
+      }
+      if (previous.lastError !== null && current.lastError === null) {
+        recordEvent(state, "INFO", "official public launch handoff scan recovered");
+      }
+      if (startupReplayPending && current.caughtUp) {
+        const signaled =
+          result.created === 0 ? await state.publicLaunchHandoff.signalExistingCurrent() : false;
+        startupReplayPending = false;
+        if (signaled) {
+          recordEvent(
+            state,
+            "ACTION",
+            "canonical public launch handoff replayed after durable cursor catch-up",
+          );
+        }
+      }
+      state.lastHandoffReportedError = null;
+    } catch (error) {
+      const message =
+        state.publicLaunchHandoff.snapshot().lastError ??
+        (error instanceof Error ? error.message : String(error));
+      if (state.lastHandoffReportedError !== message) {
+        recordEvent(state, "ERROR", `official public launch handoff scan failed: ${message}`);
+        state.lastHandoffReportedError = message;
+      }
+    }
+  };
 
   const verifyPublicIdentity = async (): Promise<void> => {
     if (identityCheckRunning || stopping) return;
@@ -537,6 +611,7 @@ async function main(): Promise<void> {
       state.latestBlock = current;
       state.httpReady = true;
       state.lastHeadPollAt = new Date().toISOString();
+      await scanPublicLaunchHandoff(current);
     } catch (error) {
       state.httpReady = false;
       recordEvent(
@@ -617,6 +692,7 @@ async function main(): Promise<void> {
       );
       for (const peer of peerReadbacks) state.serviceReadbacks.set(peer.service, peer.readback);
       const currentReadiness = evaluateOperationalReadiness(readinessInput(state));
+      const handoffSnapshot = state.publicLaunchHandoff.snapshot();
       await writeSnapshot(stateDirectory, currentReadiness, state);
       const executorReadback = state.serviceReadbacks.get("executor");
       const executor = executorReadback?.state === "CURRENT" ? executorReadback.status : undefined;
@@ -641,11 +717,25 @@ async function main(): Promise<void> {
         unresolvedAttemptCount: currentReadiness.snapshot.exposure.unknownAttemptCount,
         openPositionCount: currentReadiness.snapshot.exposure.openPositionCount,
         verifiedExitRouteCount: currentReadiness.snapshot.exposure.verifiedExitRouteCount,
-        details: Object.freeze(
-          currentReadiness.hotArmed
+        details: Object.freeze([
+          ...(currentReadiness.hotArmed
             ? ["KEYLESS_CONTROL_HOT_ARMED_READBACK"]
-            : ["OFFICIAL_PUBLIC_RPC_ONLY", "PAID_RPC_CAPABILITY_NONE", ...currentReadiness.reasons],
-        ),
+            : [
+                "OFFICIAL_PUBLIC_RPC_ONLY",
+                "PAID_RPC_CAPABILITY_NONE",
+                ...currentReadiness.reasons,
+              ]),
+          `PUBLIC_HANDOFF_CURSOR=${handoffSnapshot.cursor}`,
+          `PUBLIC_HANDOFF_CONFIRMED_HEAD=${handoffSnapshot.confirmedHead ?? "UNKNOWN"}`,
+          `PUBLIC_HANDOFF_LAG_BLOCKS=${handoffSnapshot.cursorLagBlocks ?? "UNKNOWN"}`,
+          `PUBLIC_HANDOFF_CAUGHT_UP=${handoffSnapshot.caughtUp ? "YES" : "NO"}`,
+          handoffSnapshot.handoff === null
+            ? "PUBLIC_HANDOFF_CURRENT=NONE"
+            : `PUBLIC_HANDOFF_CURRENT=launch-${handoffSnapshot.handoff.launchId}-block-${handoffSnapshot.handoff.blockNumber}`,
+          ...(handoffSnapshot.lastError === null
+            ? []
+            : [`PUBLIC_HANDOFF_ERROR=${handoffSnapshot.lastError}`]),
+        ]),
       });
       await watchdog.status(
         currentReadiness.hotArmed
@@ -675,6 +765,10 @@ async function main(): Promise<void> {
   await monitorWebsite(state);
   await publishStatus();
   await watchdog.ready("control sentinel ready");
+  // A first boot may need a deployment-block replay. Start it only after the
+  // keyless service has published readiness so foreground getLogs work cannot
+  // starve startup-only background wallet checks or trip Type=notify timeout.
+  void scanPublicLaunchHandoff(state.latestBlock);
   const headTimer = setInterval(() => void pollPublicHead(), headPollMs);
   const identityTimer = setInterval(() => void verifyPublicIdentity(), identityRefreshMs);
   const walletTimer = setInterval(() => void refreshWalletReadiness(), walletRefreshMs);
@@ -707,13 +801,20 @@ async function main(): Promise<void> {
   process.once("SIGINT", () => void shutdown("SIGINT"));
 }
 
-void main().catch((error: unknown) => {
-  process.stderr.write(
-    `${JSON.stringify({
-      service: "clockin-control",
-      state: "FAILED",
-      error: error instanceof Error ? error.message : String(error),
-    })}\n`,
-  );
-  process.exitCode = 1;
-});
+function isDirectExecution(): boolean {
+  const entry = process.argv[1];
+  return entry !== undefined && fileURLToPath(import.meta.url) === entry;
+}
+
+if (isDirectExecution()) {
+  void main().catch((error: unknown) => {
+    process.stderr.write(
+      `${JSON.stringify({
+        service: "clockin-control",
+        state: "FAILED",
+        error: error instanceof Error ? error.message : String(error),
+      })}\n`,
+    );
+    process.exitCode = 1;
+  });
+}

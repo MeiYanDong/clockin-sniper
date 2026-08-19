@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -7,7 +16,10 @@ import { describe, it } from "node:test";
 import { Interface, Wallet, ZeroAddress, keccak256 } from "ethers";
 
 import { ConfiguredExitRouteRuntime } from "../src/adapters/configured-exit.js";
-import { ConfiguredLauncherPoolRuntime } from "../src/adapters/configured-launcher.js";
+import {
+  ConfiguredLauncherPoolRuntime,
+  verifyConfiguredCodeIdentity,
+} from "../src/adapters/configured-launcher.js";
 import { CLOCKIN_POLICY_V2 } from "../src/config/strategy-config.js";
 import type { LaunchIdentity, PositionLot } from "../src/core/canonical.js";
 import {
@@ -210,7 +222,12 @@ describe("production profile and seven-day authorization", () => {
       () => parseProductionProfile({ ...profile, entry: { ...profile.entry, gasLimit: "500000" } }),
       /hash mismatch/,
     );
-    assert.throws(() => parseProductionProfile({ ...profile, exit: { routes: [] } }), /exit route/);
+    const { profileHash: _profileHash, ...draft } = profile;
+    const canaryOnly = freezeProductionProfile({
+      ...draft,
+      exit: Object.freeze({ routes: Object.freeze([]) }),
+    });
+    assert.deepEqual(parseProductionProfile(JSON.parse(JSON.stringify(canaryOnly))), canaryOnly);
   });
 
   it("requires the exact owner-approved 4000-to-0 bps profile over 120 seconds", () => {
@@ -477,6 +494,60 @@ describe("configured exact-block production launcher", () => {
       /not allowlisted/,
     );
   });
+
+  it("permits a factory-proven non-empty code canary but keeps full deployment allowlisted", async () => {
+    const profile = fixtureProfile();
+    const { profileHash: _profileHash, ...profileDraft } = profile;
+    const canaryProfile = freezeProductionProfile({
+      ...profileDraft,
+      factory: Object.freeze({ ...profile.factory, runtimeCodeHash: ROUTE_CODE_HASH }),
+    });
+    const tokenCode = "0x6001";
+    const poolCode = "0x6002";
+    const observed = await verifyConfiguredCodeIdentity({
+      profile: canaryProfile,
+      identity: fixtureIdentity(),
+      blockNumber: 100n,
+      requiredCodeIdentityTier: "NON_EMPTY_OBSERVED",
+      requester: {
+        providerId: "canary-code-rpc",
+        async request<T>(method: string, params: readonly unknown[]): Promise<T> {
+          assert.equal(method, "eth_getCode");
+          const address = String(params[0]).toLowerCase();
+          if (address === FACTORY.toLowerCase()) return ROUTE_CODE as T;
+          if (address === TOKEN.toLowerCase()) return tokenCode as T;
+          if (address === ROUTER.toLowerCase()) return poolCode as T;
+          throw new Error(`unexpected code target ${address}`);
+        },
+      },
+    });
+    assert.equal(observed.codeIdentityTier, "NON_EMPTY_OBSERVED");
+    assert.equal(observed.tokenCodeHash, keccak256(tokenCode));
+    assert.equal(observed.poolCodeHash, keccak256(poolCode));
+
+    await assert.rejects(
+      verifyConfiguredCodeIdentity({
+        profile: canaryProfile,
+        identity: fixtureIdentity(),
+        blockNumber: 100n,
+        requiredCodeIdentityTier: "PROFILE_ALLOWLISTED",
+        requester: {
+          providerId: "full-code-rpc",
+          async request<T>(_method: string, params: readonly unknown[]): Promise<T> {
+            const address = String(params[0]).toLowerCase();
+            return (
+              address === FACTORY.toLowerCase()
+                ? ROUTE_CODE
+                : address === TOKEN.toLowerCase()
+                  ? tokenCode
+                  : poolCode
+            ) as T;
+          },
+        },
+      }),
+      /not allowlisted/,
+    );
+  });
 });
 
 describe("production pre-broadcast snapshot schema", () => {
@@ -608,8 +679,59 @@ describe("systemd credential and redacted service status boundary", () => {
       "STALE",
     );
     assert.equal((await readProductionServiceStatus(directory, "exit", 10_000)).state, "MISSING");
-    const raw = await readFile(join(directory, "executor-status.json"), "utf8");
+    const raw = await readFile(join(directory, "paid/executor-status.json"), "utf8");
     assert.doesNotMatch(raw, /private|credential|rawTransaction|0x0{63}1/i);
+  });
+
+  it("routes observer and paid status into private tiers and rejects unsafe paths", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "clockin-status-boundary-"));
+    const control = emptyProductionServiceStatus({
+      service: "control",
+      state: "WATCHING",
+      ownerId: "control-a",
+      sequence: 1,
+    });
+    const executor = emptyProductionServiceStatus({
+      service: "executor",
+      state: "WATCHING",
+      ownerId: "executor-a",
+      sequence: 1,
+    });
+    await writeProductionServiceStatus(directory, control);
+    await writeProductionServiceStatus(directory, executor);
+    assert.equal((await stat(join(directory, "control"))).mode & 0o777, 0o750);
+    assert.equal((await stat(join(directory, "paid"))).mode & 0o777, 0o750);
+    assert.equal((await stat(join(directory, "control/control-status.json"))).mode & 0o777, 0o640);
+    assert.equal((await stat(join(directory, "paid/executor-status.json"))).mode & 0o777, 0o640);
+    assert.deepEqual(
+      (await readdir(join(directory, "paid"))).filter((entry) => entry.endsWith(".tmp")),
+      [],
+    );
+
+    await chmod(join(directory, "paid/executor-status.json"), 0o660);
+    assert.equal(
+      (await readProductionServiceStatus(directory, "executor", 10_000)).state,
+      "INVALID",
+    );
+    await assert.rejects(
+      writeProductionServiceStatus(directory, { ...executor, sequence: 2 }),
+      /group- or world-writable/u,
+    );
+
+    const symlinkDirectory = await mkdtemp(join(tmpdir(), "clockin-status-symlink-"));
+    await mkdir(join(symlinkDirectory, "paid"), { mode: 0o750 });
+    const outside = join(symlinkDirectory, "outside.json");
+    await writeFile(outside, "{}\n", { mode: 0o600 });
+    await symlink(outside, join(symlinkDirectory, "paid/executor-status.json"));
+    assert.equal(
+      (await readProductionServiceStatus(symlinkDirectory, "executor", 10_000)).state,
+      "INVALID",
+    );
+    await assert.rejects(
+      writeProductionServiceStatus(symlinkDirectory, executor),
+      /not a regular file/u,
+    );
+    assert.equal(await readFile(outside, "utf8"), "{}\n");
   });
 
   it("blocks executor dispatch unless reconciler and matching exit service are current", async () => {
@@ -640,6 +762,7 @@ describe("systemd credential and redacted service status boundary", () => {
       signerReady: 10,
       database: Object.freeze({ schemaVersion: 5, walEnabled: true, leaseOwned: true }),
       exitEnabled: true,
+      verifiedExitRouteCount: 1,
     });
     await writeProductionServiceStatus(directory, reconciler);
     await writeProductionServiceStatus(directory, exit);
@@ -664,6 +787,50 @@ describe("systemd credential and redacted service status boundary", () => {
         nowMs: Date.parse(now),
       }),
       /exit service is not ready/,
+    );
+
+    await assertExecutorDependenciesReady({
+      directory,
+      profileHash: profile.profileHash,
+      authorizationId: "authorization-a",
+      expectedSignerCount: 10,
+      tier: "BOUNDED_CANARY",
+      nowMs: Date.parse(now),
+    });
+  });
+
+  it("allows only the bounded canary tier when exit status is missing", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "clockin-canary-dependencies-"));
+    const now = "2026-08-17T00:00:00.000Z";
+    await writeProductionServiceStatus(directory, {
+      ...emptyProductionServiceStatus({
+        service: "reconciler",
+        state: "READY",
+        ownerId: "reconciler-a",
+        sequence: 1,
+        now,
+      }),
+      database: Object.freeze({ schemaVersion: 5, walEnabled: true, leaseOwned: true }),
+      exitEnabled: true,
+    });
+    await assertExecutorDependenciesReady({
+      directory,
+      profileHash: "profile-a",
+      authorizationId: "authorization-a",
+      expectedSignerCount: 10,
+      tier: "BOUNDED_CANARY",
+      nowMs: Date.parse(now),
+    });
+    await assert.rejects(
+      assertExecutorDependenciesReady({
+        directory,
+        profileHash: "profile-a",
+        authorizationId: "authorization-a",
+        expectedSignerCount: 10,
+        tier: "FULL_DEPLOYMENT",
+        nowMs: Date.parse(now),
+      }),
+      /exit status is missing/,
     );
   });
 

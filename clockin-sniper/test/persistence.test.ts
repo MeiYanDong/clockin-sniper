@@ -231,11 +231,11 @@ function exitPlan(revision: number, state: ExitPlan["state"]): ExitPlan {
 describe("SQLite canonical store", () => {
   it("applies, rolls back and reapplies migrations", () => {
     const store = new SqliteStore(":memory:");
-    assert.equal(store.schemaVersion(), 5);
+    assert.equal(store.schemaVersion(), 7);
     store.rollbackTo(1);
     assert.equal(store.schemaVersion(), 1);
     store.migrateToLatest();
-    assert.equal(store.schemaVersion(), 5);
+    assert.equal(store.schemaVersion(), 7);
     store.close();
   });
 
@@ -390,10 +390,284 @@ describe("SQLite canonical store", () => {
         second.reserveCapital(
           Object.freeze({ ...target, reservationId: "competing", intentId: "competing-intent" }),
         ),
-      /UNIQUE constraint failed/,
+      /active capital reservation/,
     );
     first.close();
     second.close();
+  });
+
+  it("reopens a released lane reservation and nonce for a new observation attempt", () => {
+    const store = new SqliteStore(":memory:");
+    const laneSet = lanes();
+    store.initializeBudget(budget(), laneSet);
+    const lane = laneSet[0] as WalletLane;
+    const epoch = store.acquireServiceLease(
+      `wallet:${lane.address.toLowerCase()}`,
+      "executor-a",
+      "2026-08-16T00:10:00.000Z",
+      NOW,
+    );
+    const first = Object.freeze({
+      ...reservation(lane, 1),
+      reservationId: "reservation-attempt-1",
+      intentId: "stable-business-intent",
+    });
+    const firstSlot = Object.freeze({
+      walletAddress: lane.address,
+      nonce: 0n,
+      ownerId: "executor-a",
+      fencingEpoch: epoch,
+      purpose: "ENTRY" as const,
+      state: "RESERVED" as const,
+      planId: "plan-attempt-1",
+    });
+    store.reserveCapitalAndNonceSlot(first, firstSlot, NOW);
+    store.updateReservationState(first.reservationId, "RELEASED", NOW);
+    store.updateWalletNonceSlot(firstSlot, "RELEASED", NOW);
+
+    const second = Object.freeze({
+      ...first,
+      reservationId: "reservation-attempt-2",
+      createdAt: "2026-08-16T00:00:01.000Z",
+      updatedAt: "2026-08-16T00:00:01.000Z",
+    });
+    assert.deepEqual(
+      store.reserveCapitalAndNonceSlot(
+        second,
+        { ...firstSlot, planId: "plan-attempt-2" },
+        "2026-08-16T00:00:01.000Z",
+      ),
+      { reservationCreated: true, nonceCreated: true },
+    );
+    assert.equal(store.reservationState(first.reservationId), "RELEASED");
+    assert.equal(store.reservationState(second.reservationId), "RESERVED");
+    assert.equal(store.budgetUsage(first.budgetId), 5_000_000n);
+    assert.equal(store.walletNonceSlot(lane.address, 0n)?.planId, "plan-attempt-2");
+    store.close();
+  });
+
+  it("recovers a SIGKILL pre-plan orphan across restart and reopens nonce at epoch + 1", async () => {
+    const filename = await tempPath("pre-plan-orphan.sqlite");
+    const lane = lanes()[0] as WalletLane;
+    const ownerId = "executor-a";
+    const first = new SqliteStore(filename);
+    first.initializeBudget(budget(), lanes());
+    const firstEpoch = first.acquireServiceLease(
+      `wallet:${lane.address.toLowerCase()}`,
+      ownerId,
+      "2026-08-16T00:10:00.000Z",
+      NOW,
+    );
+    const orphan = Object.freeze({
+      ...reservation(lane, 1),
+      reservationId: "entry-reservation:sigkill-fixture",
+    });
+    first.claimWalletEntryIntent({
+      strategyId: orphan.strategyId,
+      launchId: orphan.launchId,
+      walletAddress: lane.address,
+      intentId: orphan.intentId,
+      createdAt: NOW,
+    });
+    first.reserveCapitalAndNonceSlot(
+      orphan,
+      {
+        walletAddress: lane.address,
+        nonce: 0n,
+        ownerId,
+        fencingEpoch: firstEpoch,
+        purpose: "ENTRY",
+        state: "RESERVED",
+        planId: "entry-plan:sigkill-fixture",
+      },
+      NOW,
+    );
+    first.close();
+
+    const restarted = new SqliteStore(filename);
+    const recoveredAt = "2026-08-16T00:00:01.000Z";
+    const released = restarted.releaseOrphanedPrePlanEntryReservations(
+      orphan.strategyId,
+      orphan.launchId,
+      ownerId,
+      recoveredAt,
+    );
+    assert.deepEqual(released, [
+      {
+        reservationId: orphan.reservationId,
+        laneId: lane.laneId,
+        intentId: orphan.intentId,
+        walletAddress: lane.address.toLowerCase(),
+        nonce: 0n,
+        planId: "entry-plan:sigkill-fixture",
+        previousFencingEpoch: firstEpoch,
+      },
+    ]);
+    assert.equal(restarted.reservationState(orphan.reservationId), "RELEASED");
+    assert.equal(restarted.walletNonceSlot(lane.address, 0n)?.state, "RELEASED");
+    assert.equal(restarted.walletHasUnresolvedNonce(lane.address), false);
+    assert.equal(restarted.budgetUsage(orphan.budgetId), 0n);
+    assert.deepEqual(
+      restarted
+        .auditEvents(orphan.strategyId, orphan.launchId)
+        .map((event) => [event.eventKind, event.reasonCode, event.objectId]),
+      [["ENTRY_PRE_PLAN_ORPHAN_RELEASED", "SIGKILL_BEFORE_EXECUTION_PLAN", orphan.reservationId]],
+    );
+    assert.deepEqual(
+      restarted.releaseOrphanedPrePlanEntryReservations(
+        orphan.strategyId,
+        orphan.launchId,
+        ownerId,
+        "2026-08-16T00:00:02.000Z",
+      ),
+      [],
+    );
+    assert.equal(
+      restarted.claimWalletEntryIntent({
+        strategyId: orphan.strategyId,
+        launchId: orphan.launchId,
+        walletAddress: lane.address,
+        intentId: "fresh-restart-intent",
+        createdAt: recoveredAt,
+      }),
+      true,
+    );
+
+    const secondEpoch = restarted.acquireServiceLease(
+      `wallet:${lane.address.toLowerCase()}`,
+      ownerId,
+      "2026-08-16T00:10:01.000Z",
+      recoveredAt,
+    );
+    assert.equal(secondEpoch, firstEpoch + 1);
+    const retry = Object.freeze({
+      ...orphan,
+      reservationId: "reservation-restart-retry",
+      intentId: "fresh-restart-intent",
+      createdAt: recoveredAt,
+      updatedAt: recoveredAt,
+    });
+    assert.deepEqual(
+      restarted.reserveCapitalAndNonceSlot(
+        retry,
+        {
+          walletAddress: lane.address,
+          nonce: 0n,
+          ownerId,
+          fencingEpoch: secondEpoch,
+          purpose: "ENTRY",
+          state: "RESERVED",
+          planId: "plan-restart-retry",
+        },
+        recoveredAt,
+      ),
+      { reservationCreated: true, nonceCreated: true },
+    );
+    assert.equal(restarted.walletNonceSlot(lane.address, 0n)?.fencingEpoch, secondEpoch);
+    assert.equal(restarted.walletNonceSlot(lane.address, 0n)?.planId, "plan-restart-retry");
+    restarted.close();
+  });
+
+  it("does not reopen active or foreign-owner nonce slots across a fencing epoch", () => {
+    const laneSet = lanes();
+    const lane = laneSet[0] as WalletLane;
+    const activeStore = new SqliteStore(":memory:");
+    activeStore.initializeBudget(budget(), laneSet);
+    const firstEpoch = activeStore.acquireServiceLease(
+      `wallet:${lane.address.toLowerCase()}`,
+      "executor-a",
+      "2026-08-16T00:10:00.000Z",
+      NOW,
+    );
+    const active = reservation(lane, 1);
+    activeStore.reserveCapitalAndNonceSlot(
+      active,
+      {
+        walletAddress: lane.address,
+        nonce: 0n,
+        ownerId: "executor-a",
+        fencingEpoch: firstEpoch,
+        purpose: "ENTRY",
+        state: "RESERVED",
+        planId: "active-plan",
+      },
+      NOW,
+    );
+    // Isolate the nonce fence: capital is no longer active, but the nonce slot still is.
+    activeStore.updateReservationState(active.reservationId, "RELEASED", NOW);
+    const nextEpoch = activeStore.acquireServiceLease(
+      `wallet:${lane.address.toLowerCase()}`,
+      "executor-a",
+      "2026-08-16T00:10:01.000Z",
+      "2026-08-16T00:00:01.000Z",
+    );
+    assert.throws(
+      () =>
+        activeStore.reserveCapitalAndNonceSlot(
+          { ...reservation(lane, 2), reservationId: "active-conflict" },
+          {
+            walletAddress: lane.address,
+            nonce: 0n,
+            ownerId: "executor-a",
+            fencingEpoch: nextEpoch,
+            purpose: "ENTRY",
+            state: "RESERVED",
+            planId: "active-plan-2",
+          },
+          "2026-08-16T00:00:01.000Z",
+        ),
+      (error: unknown) =>
+        error instanceof CanonicalInvariantError && error.reasonCode === "NONCE_CONFLICT",
+    );
+    assert.equal(activeStore.reservationState("active-conflict"), undefined);
+    activeStore.close();
+
+    const foreignStore = new SqliteStore(":memory:");
+    foreignStore.initializeBudget(budget(), laneSet);
+    const ownedEpoch = foreignStore.acquireServiceLease(
+      `wallet:${lane.address.toLowerCase()}`,
+      "executor-a",
+      "2026-08-16T00:00:01.000Z",
+      NOW,
+    );
+    const released = reservation(lane, 1);
+    const ownedSlot = Object.freeze({
+      walletAddress: lane.address,
+      nonce: 0n,
+      ownerId: "executor-a",
+      fencingEpoch: ownedEpoch,
+      purpose: "ENTRY" as const,
+      state: "RESERVED" as const,
+      planId: "released-owner-a-plan",
+    });
+    foreignStore.reserveCapitalAndNonceSlot(released, ownedSlot, NOW);
+    foreignStore.updateReservationState(released.reservationId, "RELEASED", NOW);
+    foreignStore.updateWalletNonceSlot(ownedSlot, "RELEASED", NOW);
+    const foreignEpoch = foreignStore.acquireServiceLease(
+      `wallet:${lane.address.toLowerCase()}`,
+      "executor-b",
+      "2026-08-16T00:10:02.000Z",
+      "2026-08-16T00:00:02.000Z",
+    );
+    assert.equal(foreignEpoch, ownedEpoch + 1);
+    assert.throws(
+      () =>
+        foreignStore.reserveCapitalAndNonceSlot(
+          { ...reservation(lane, 2), reservationId: "foreign-conflict" },
+          {
+            ...ownedSlot,
+            ownerId: "executor-b",
+            fencingEpoch: foreignEpoch,
+            planId: "foreign-plan",
+          },
+          "2026-08-16T00:00:02.000Z",
+        ),
+      (error: unknown) =>
+        error instanceof CanonicalInvariantError && error.reasonCode === "NONCE_CONFLICT",
+    );
+    assert.equal(foreignStore.reservationState("foreign-conflict"), undefined);
+    assert.equal(foreignStore.walletNonceSlot(lane.address, 0n)?.ownerId, "executor-a");
+    foreignStore.close();
   });
 
   it("freezes one launch identity and reports a conflicting CA explicitly", () => {
@@ -479,6 +753,143 @@ describe("SQLite canonical store", () => {
         .map((plan) => [plan.revision, plan.state]),
       [[2, "DUE"]],
     );
+    store.close();
+  });
+
+  it("migrates v6 history and allows a fresh revision-one plan after invalidation", async () => {
+    const filename = await tempPath("execution-plan-retry.sqlite");
+    const beforeMigration = new SqliteStore(filename);
+    beforeMigration.rollbackTo(6);
+    assert.equal(beforeMigration.schemaVersion(), 6);
+    beforeMigration.initializeBudget(budget(), lanes());
+    const first = Object.freeze({
+      ...executionPlan(1, "INVALIDATED"),
+      planId: "plan-attempt-a",
+      planHash: "sha256:plan-attempt-a",
+    });
+    beforeMigration.saveExecutionPlan(first);
+    beforeMigration.close();
+
+    const store = new SqliteStore(filename);
+    assert.equal(store.schemaVersion(), 7);
+    const retry = Object.freeze({
+      ...executionPlan(1, "FROZEN"),
+      planId: "plan-attempt-b",
+      planHash: "sha256:plan-attempt-b",
+      intentId: "intent-2",
+      quoteBlock: "101",
+      createdAt: "2026-08-16T00:00:01.000Z",
+      frozenAt: "2026-08-16T00:00:01.000Z",
+    });
+
+    store.saveExecutionPlan(retry);
+
+    assert.deepEqual(
+      store
+        .latestExecutionPlans("clockin-mainnet-v1", "launch-1")
+        .map((plan) => [plan.planId, plan.revision, plan.state, plan.nonce]),
+      [
+        ["plan-attempt-a", 1, "INVALIDATED", "0"],
+        ["plan-attempt-b", 1, "FROZEN", "0"],
+      ],
+    );
+    assert.throws(
+      () =>
+        store.saveExecutionPlan(
+          Object.freeze({
+            ...retry,
+            planHash: "sha256:forbidden-overwrite",
+            state: "INVALIDATED",
+          }),
+        ),
+      /UNIQUE constraint failed/,
+    );
+    assert.equal(
+      store
+        .latestExecutionPlans("clockin-mainnet-v1", "launch-1")
+        .find((plan) => plan.planId === retry.planId)?.state,
+      "FROZEN",
+    );
+    store.close();
+  });
+
+  it("keeps an active nonce slot fenced while same-nonce plan history can coexist", () => {
+    const store = new SqliteStore(":memory:");
+    const lane = lanes()[0] as WalletLane;
+    store.initializeBudget(budget(), lanes());
+    const epoch = store.acquireServiceLease(
+      `wallet:${lane.address.toLowerCase()}`,
+      "executor-a",
+      "2026-08-16T00:10:00.000Z",
+      NOW,
+    );
+    const activeSlot = Object.freeze({
+      walletAddress: lane.address,
+      nonce: 0n,
+      ownerId: "executor-a",
+      fencingEpoch: epoch,
+      purpose: "ENTRY" as const,
+      state: "RESERVED" as const,
+      planId: "plan-attempt-a",
+    });
+    assert.equal(store.reserveWalletNonceSlot(activeSlot, NOW), true);
+
+    assert.throws(
+      () =>
+        store.reserveWalletNonceSlot(
+          { ...activeSlot, planId: "plan-attempt-b" },
+          "2026-08-16T00:00:01.000Z",
+        ),
+      (error: unknown) =>
+        error instanceof CanonicalInvariantError && error.reasonCode === "NONCE_CONFLICT",
+    );
+    assert.equal(store.walletNonceSlot(lane.address, 0n)?.planId, "plan-attempt-a");
+    store.close();
+  });
+
+  it("reopens a directly reserved RELEASED nonce for the same owner at epoch + 1", () => {
+    const store = new SqliteStore(":memory:");
+    const lane = lanes()[0] as WalletLane;
+    store.initializeBudget(budget(), lanes());
+    const firstEpoch = store.acquireServiceLease(
+      `wallet:${lane.address.toLowerCase()}`,
+      "executor-a",
+      "2026-08-16T00:10:00.000Z",
+      NOW,
+    );
+    const firstSlot = Object.freeze({
+      walletAddress: lane.address,
+      nonce: 0n,
+      ownerId: "executor-a",
+      fencingEpoch: firstEpoch,
+      purpose: "ENTRY" as const,
+      state: "RESERVED" as const,
+      planId: "direct-plan-1",
+    });
+    store.reserveWalletNonceSlot(firstSlot, NOW);
+    store.updateWalletNonceSlot(firstSlot, "RELEASED", NOW);
+    const secondEpoch = store.acquireServiceLease(
+      `wallet:${lane.address.toLowerCase()}`,
+      "executor-a",
+      "2026-08-16T00:10:01.000Z",
+      "2026-08-16T00:00:01.000Z",
+    );
+    assert.equal(
+      store.reserveWalletNonceSlot(
+        {
+          ...firstSlot,
+          fencingEpoch: secondEpoch,
+          planId: "direct-plan-2",
+        },
+        "2026-08-16T00:00:01.000Z",
+      ),
+      true,
+    );
+    assert.deepEqual(store.walletNonceSlot(lane.address, 0n), {
+      ...firstSlot,
+      fencingEpoch: secondEpoch,
+      planId: "direct-plan-2",
+    });
     store.close();
   });
 

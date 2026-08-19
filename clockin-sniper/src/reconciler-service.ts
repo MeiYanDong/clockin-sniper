@@ -1,30 +1,32 @@
 import { hostname } from "node:os";
+import { fileURLToPath } from "node:url";
 
 import { ZeroAddress } from "ethers";
 
 import { SameRawBroadcaster, type SameRawProvider } from "./broadcast/same-raw-broadcaster.js";
 import { UnknownRecoveryManager } from "./broadcast/unknown-recovery.js";
 import {
-  stableHash,
   type EffectRecord,
   type ExecutionPlan,
   type ExitEffectRecord,
   type ExitPlan,
   type LaunchIdentity,
   type PositionLot,
+  stableHash,
   type TxAttempt,
 } from "./core/canonical.js";
 import { buildEntryEffect } from "./effects/entry-effect-builder.js";
 import { buildExitEffect } from "./effects/exit-effect-builder.js";
 import { SqliteStore } from "./persistence/sqlite-store.js";
-import { HttpJsonRpcClient } from "./rpc/http-json-rpc.js";
-import { assertPaidRpcApproved } from "./runtime/paid-rpc-approval.js";
 import { hexToBigInt, quantityToHex } from "./rpc/hex.js";
+import { HttpJsonRpcClient } from "./rpc/http-json-rpc.js";
 import {
   loadProductionWalletManifest,
   loadVaultKey,
   readSystemdCredential,
 } from "./runtime/credentials.js";
+import { assertPaidRpcApproved } from "./runtime/paid-rpc-approval.js";
+import { assertProductionArmApproved } from "./runtime/production-arm-approval.js";
 import {
   ProductionSameRawProvider,
   ProductionUnknownRecoveryProbe,
@@ -34,16 +36,20 @@ import {
   readTokenBalance,
   sumTokenTransfersTo,
 } from "./runtime/production-rpc.js";
-import { writeProductionServiceStatus } from "./runtime/service-status.js";
 import {
-  parseProductionBroadcastSnapshot,
-  snapshotEventKind,
+  type ProductionServiceReadback,
+  readProductionServiceStatus,
+  writeProductionServiceStatus,
+} from "./runtime/service-status.js";
+import { SystemdWatchdog } from "./runtime/systemd-watchdog.js";
+import {
   type EntryBroadcastSnapshot,
   type ExitApprovalBroadcastSnapshot,
   type ExitSellBroadcastSnapshot,
   type ProductionBroadcastSnapshot,
+  parseProductionBroadcastSnapshot,
+  snapshotEventKind,
 } from "./runtime/transaction-snapshots.js";
-import { SystemdWatchdog } from "./runtime/systemd-watchdog.js";
 import { SignedTxVault } from "./wallets/signed-tx-vault.js";
 
 const STRATEGY_ID = "clockin-mainnet-v1";
@@ -52,6 +58,67 @@ const STATE_DIRECTORY = process.env.CLOCKIN_STATE_DIR?.trim() || "/var/lib/clock
 const FINALITY_BLOCKS = 2n;
 const UNKNOWN_REBROADCAST_BACKOFF_MS = 5_000;
 const EXPIRED_RECHECK_BACKOFF_MS = 30_000;
+// Paid startup performs credential, provider-identity, SQLite and same-raw
+// recovery checks before it can publish a current executor status. Keep the
+// reconciler alive across that bounded cold-start interval.
+export const RECONCILER_EXECUTOR_STARTUP_GRACE_MS = 120_000;
+const EXECUTOR_STATUS_MAXIMUM_AGE_MS = 15_000;
+
+export interface ReconcilerRetentionDecision {
+  readonly keepRunning: boolean;
+  readonly reason:
+    | "RECOVERABLE_ATTEMPTS_PENDING"
+    | "EXECUTOR_STARTUP_GRACE"
+    | "EXECUTOR_RUNNING"
+    | "EXECUTOR_TERMINATED_EMPTY"
+    | "EXECUTOR_ABSENT_AFTER_GRACE";
+}
+
+/** Keep paid reconciliation alive for every unresolved attempt, but not indefinitely when idle. */
+export function evaluateReconcilerRetention(input: {
+  readonly recoverableAttemptCount: number;
+  readonly executor: ProductionServiceReadback;
+  readonly startedAtMs: number;
+  readonly nowMs: number;
+  readonly startupGraceMs?: number;
+}): ReconcilerRetentionDecision {
+  if (!Number.isSafeInteger(input.recoverableAttemptCount) || input.recoverableAttemptCount < 0) {
+    throw new RangeError("recoverableAttemptCount must be a non-negative safe integer");
+  }
+  const startupGraceMs = input.startupGraceMs ?? RECONCILER_EXECUTOR_STARTUP_GRACE_MS;
+  if (!Number.isSafeInteger(startupGraceMs) || startupGraceMs <= 0) {
+    throw new RangeError("startupGraceMs must be a positive safe integer");
+  }
+  if (input.recoverableAttemptCount > 0) {
+    return Object.freeze({ keepRunning: true, reason: "RECOVERABLE_ATTEMPTS_PENDING" });
+  }
+  if (Math.max(0, input.nowMs - input.startedAtMs) < startupGraceMs) {
+    return Object.freeze({ keepRunning: true, reason: "EXECUTOR_STARTUP_GRACE" });
+  }
+  if (input.executor.state === "CURRENT") {
+    if (["STOPPING", "FAILED"].includes(input.executor.status.state)) {
+      return Object.freeze({ keepRunning: false, reason: "EXECUTOR_TERMINATED_EMPTY" });
+    }
+    return Object.freeze({ keepRunning: true, reason: "EXECUTOR_RUNNING" });
+  }
+  return Object.freeze({ keepRunning: false, reason: "EXECUTOR_ABSENT_AFTER_GRACE" });
+}
+
+class RuntimeApprovalRevokedError extends Error {
+  constructor(cause: unknown) {
+    super("runtime paid-RPC or production-arm approval is absent or invalid", { cause });
+    this.name = "RuntimeApprovalRevokedError";
+  }
+}
+
+async function assertRuntimeApprovals(): Promise<void> {
+  try {
+    await assertPaidRpcApproved();
+    await assertProductionArmApproved();
+  } catch (error) {
+    throw new RuntimeApprovalRevokedError(error);
+  }
+}
 
 function log(kind: "INFO" | "ACTION" | "ERROR", message: string, details: object = {}): void {
   process.stdout.write(
@@ -85,6 +152,7 @@ async function main(): Promise<void> {
   const ownerId = process.env.CLOCKIN_RECONCILER_ID?.trim() || `clockin-reconciler:${hostname()}`;
   const watchdog = new SystemdWatchdog();
   await assertPaidRpcApproved();
+  await assertProductionArmApproved();
   const [manifest, rpcHttp, sequencerHttp, vaultKey] = await Promise.all([
     loadProductionWalletManifest(),
     readSystemdCredential("rpc_http"),
@@ -138,10 +206,18 @@ async function main(): Promise<void> {
   });
   await broadcaster.preflight();
   const recoveryProbe = new ProductionUnknownRecoveryProbe(canonical);
-  const recovery = new UnknownRecoveryManager({ probe: recoveryProbe, vault, broadcaster });
+  const recovery = new UnknownRecoveryManager({
+    probe: recoveryProbe,
+    vault,
+    broadcaster,
+    beforeBroadcast: assertRuntimeApprovals,
+  });
+  const startedAtMs = Date.now();
   let sequence = 0;
   let stopping = false;
   let working = false;
+  let approvalFailureStarted = false;
+  let timer: ReturnType<typeof setInterval> | null = null;
 
   const writeStatus = async (
     state: "BOOTING" | "WATCHING" | "READY" | "ACTIVE" | "DEGRADED" | "STOPPING" | "FAILED",
@@ -161,7 +237,7 @@ async function main(): Promise<void> {
       database: Object.freeze({
         schemaVersion: store.schemaVersion(),
         walEnabled: store.walEnabled(),
-        leaseOwned: true,
+        leaseOwned: false,
       }),
       entryEnabled: false,
       exitEnabled: true,
@@ -170,6 +246,38 @@ async function main(): Promise<void> {
       verifiedExitRouteCount: 0,
       details: Object.freeze([...details]),
     });
+  };
+
+  const failRuntimeApprovals = async (error: RuntimeApprovalRevokedError): Promise<void> => {
+    if (approvalFailureStarted) return;
+    approvalFailureStarted = true;
+    stopping = true;
+    if (timer !== null) clearInterval(timer);
+    const reason = error.message;
+    log("ERROR", "runtime approval revoked; paid reconciliation stopped", { error: reason });
+    try {
+      await writeStatus("FAILED", ["RUNTIME_APPROVAL_REVOKED", reason]);
+    } catch (statusError) {
+      log("ERROR", "failed to publish revoked reconciler status", {
+        error: statusError instanceof Error ? statusError.message : String(statusError),
+      });
+    }
+    try {
+      await watchdog.stopping("reconciler stopping after runtime approval revocation");
+    } catch (watchdogError) {
+      watchdog.stop();
+      log("ERROR", "failed to notify systemd after runtime approval revocation", {
+        error: watchdogError instanceof Error ? watchdogError.message : String(watchdogError),
+      });
+    }
+    try {
+      store.close();
+    } catch (storeError) {
+      log("ERROR", "failed to close canonical store after runtime approval revocation", {
+        error: storeError instanceof Error ? storeError.message : String(storeError),
+      });
+    }
+    process.exitCode = 1;
   };
 
   const locateEntryPlan = (attempt: TxAttempt): ExecutionPlan => {
@@ -276,7 +384,14 @@ async function main(): Promise<void> {
     const plan = locateEntryPlan(attempt);
     const identity = locateIdentity(attempt);
     const [principalAfter, tokenAfter] = await Promise.all([
-      readNativeBalance(canonical, attempt.walletAddress, receipt.blockNumber),
+      snapshot.principalAssetKind === "NATIVE"
+        ? readNativeBalance(canonical, attempt.walletAddress, receipt.blockNumber)
+        : readTokenBalance(
+            canonical,
+            snapshot.principalAsset,
+            attempt.walletAddress,
+            receipt.blockNumber,
+          ),
       readTokenBalance(
         canonical,
         identity.tokenAddress,
@@ -292,8 +407,8 @@ async function main(): Promise<void> {
       laneId: attempt.laneId,
       walletAddress: attempt.walletAddress,
       tokenAddress: identity.tokenAddress,
-      principalAsset: ZeroAddress as `0x${string}`,
-      principalAssetKind: "NATIVE",
+      principalAsset: snapshot.principalAsset,
+      principalAssetKind: snapshot.principalAssetKind,
       entryRouteId: plan.adapterId,
       entryNonce: BigInt(attempt.nonce),
       expectedSignedTxHash: attempt.signedTxHash,
@@ -571,16 +686,41 @@ async function main(): Promise<void> {
     });
   };
 
-  const tick = async (): Promise<void> => {
-    if (working || stopping) return;
+  const stop = async (signal: string): Promise<void> => {
+    if (stopping) return;
+    stopping = true;
+    if (timer !== null) clearInterval(timer);
+    while (working) await new Promise((resolve) => setTimeout(resolve, 25));
+    await writeStatus("STOPPING", [signal]);
+    await watchdog.stopping(`reconciler stopping after ${signal}`);
+    store.close();
+  };
+
+  const tick = async (): Promise<string | null> => {
+    if (working || stopping) return null;
     working = true;
     const failures: string[] = [];
     try {
+      try {
+        await assertRuntimeApprovals();
+      } catch (error) {
+        await failRuntimeApprovals(
+          error instanceof RuntimeApprovalRevokedError
+            ? error
+            : new RuntimeApprovalRevokedError(error),
+        );
+        return null;
+      }
       const attempts = store.latestTxAttempts(STRATEGY_ID).filter(recoverable);
       for (const attempt of attempts) {
         try {
+          await assertRuntimeApprovals();
           if (!(await finalizeReceipt(attempt))) await recoverUnknown(attempt);
         } catch (error) {
+          if (error instanceof RuntimeApprovalRevokedError) {
+            await failRuntimeApprovals(error);
+            return null;
+          }
           const message = error instanceof Error ? error.message : String(error);
           failures.push(`${attempt.attemptId}:${message}`);
           log("ERROR", "transaction reconciliation failed closed", {
@@ -589,40 +729,67 @@ async function main(): Promise<void> {
           });
         }
       }
-      await writeStatus(
-        failures.length === 0 ? (attempts.length === 0 ? "READY" : "ACTIVE") : "DEGRADED",
-        failures,
+      const nowMs = Date.now();
+      const remainingAttempts = store.latestTxAttempts(STRATEGY_ID).filter(recoverable);
+      const executor = await readProductionServiceStatus(
+        STATUS_DIRECTORY,
+        "executor",
+        EXECUTOR_STATUS_MAXIMUM_AGE_MS,
+        nowMs,
       );
+      const retention = evaluateReconcilerRetention({
+        recoverableAttemptCount: remainingAttempts.length,
+        executor,
+        startedAtMs,
+        nowMs,
+      });
+      if (!retention.keepRunning) return retention.reason;
+      await writeStatus(
+        failures.length === 0 ? (remainingAttempts.length === 0 ? "READY" : "ACTIVE") : "DEGRADED",
+        Object.freeze([...failures, retention.reason]),
+      );
+      return null;
     } finally {
       working = false;
     }
   };
 
+  const runTick = async (): Promise<void> => {
+    try {
+      const stopReason = await tick();
+      if (stopReason !== null) await stop(stopReason);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log("ERROR", "reconciler tick failed closed", { error: message });
+      process.exitCode = 1;
+      await stop("TICK_FAILED");
+    }
+  };
+
   await writeStatus("READY", [`WALLETS_${manifest.entries.length}`, "SAME_RAW_RECOVERY_READY"]);
   await watchdog.ready("reconciler ready");
-  await tick();
-  const timer = setInterval(() => void tick(), 1_000);
-  const stop = async (signal: string): Promise<void> => {
-    if (stopping) return;
-    stopping = true;
-    clearInterval(timer);
-    while (working) await new Promise((resolve) => setTimeout(resolve, 25));
-    await writeStatus("STOPPING", [signal]);
-    await watchdog.stopping(`reconciler stopping after ${signal}`);
-    store.close();
-  };
   process.once("SIGTERM", () => void stop("SIGTERM"));
   process.once("SIGINT", () => void stop("SIGINT"));
+  await runTick();
+  if (stopping) return;
+  timer = setInterval(() => void runTick(), 1_000);
 }
 
-void main().catch((error: unknown) => {
-  process.stderr.write(
-    `${JSON.stringify({
-      service: "clockin-reconciler",
-      state: "FAILED",
-      error: error instanceof Error ? error.message : String(error),
-      errorId: stableHash(error instanceof Error ? error.message : String(error)),
-    })}\n`,
-  );
-  process.exitCode = 1;
-});
+function isDirectExecution(): boolean {
+  const entry = process.argv[1];
+  return entry !== undefined && fileURLToPath(import.meta.url) === entry;
+}
+
+if (isDirectExecution()) {
+  void main().catch((error: unknown) => {
+    process.stderr.write(
+      `${JSON.stringify({
+        service: "clockin-reconciler",
+        state: "FAILED",
+        error: error instanceof Error ? error.message : String(error),
+        errorId: stableHash(error instanceof Error ? error.message : String(error)),
+      })}\n`,
+    );
+    process.exitCode = 1;
+  });
+}

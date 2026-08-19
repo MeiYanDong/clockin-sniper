@@ -8,7 +8,11 @@ const UNIT_BINDINGS = Object.freeze({
   }),
   "clockin-executor.service.in": Object.freeze({
     placeholder: "@EXECUTOR_EXECUTABLE@",
-    entrypoint: "executor-service.js",
+    entrypoint: "stonk-safe-launch-executor-service.js",
+  }),
+  "clockin-wallet-preparer.service.in": Object.freeze({
+    placeholder: "@WALLET_PREPARER_EXECUTABLE@",
+    entrypoint: "prepare-stonk-safe-launch-wallets.js",
   }),
   "clockin-reconciler.service.in": Object.freeze({
     placeholder: "@RECONCILER_EXECUTABLE@",
@@ -18,6 +22,7 @@ const UNIT_BINDINGS = Object.freeze({
     placeholder: "@EXIT_EXECUTABLE@",
     entrypoint: "exit-service.js",
   }),
+  "clockin-executor.path.in": null,
 });
 
 function option(name) {
@@ -45,12 +50,13 @@ await access(nodeExecutable);
 await mkdir(outputDir, { recursive: true, mode: 0o755 });
 
 for (const [templateName, binding] of Object.entries(UNIT_BINDINGS)) {
-  const entrypoint = join(packageDir, "dist", binding.entrypoint);
-  await access(entrypoint);
   const template = await readFile(join(templateDir, templateName), "utf8");
-  const rendered = template
-    .replaceAll("@ARTIFACT_DIR@", artifactDir)
-    .replaceAll(binding.placeholder, `${nodeExecutable} ${entrypoint}`);
+  let rendered = template.replaceAll("@ARTIFACT_DIR@", artifactDir);
+  if (binding !== null) {
+    const entrypoint = join(packageDir, "dist", binding.entrypoint);
+    await access(entrypoint);
+    rendered = rendered.replaceAll(binding.placeholder, `${nodeExecutable} ${entrypoint}`);
+  }
   const unresolved = rendered.match(/@[A-Z][A-Z_]+@/gu);
   if (unresolved !== null) {
     throw new Error(`${templateName} contains unresolved placeholders: ${unresolved.join(",")}`);
