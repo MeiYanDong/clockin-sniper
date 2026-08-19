@@ -55,7 +55,7 @@ at `deadline`, while the trade gate rejects `block.timestamp >= deadline`; zero 
   exact finite amount. Preparation uses durable encrypted same-raw recovery.
 - After 10/10 readiness is proven, only the path is enabled. The handoff starts Executor, whose
   systemd dependency starts Reconciler. Neither service is manually prewarmed.
-- Executor, Reconciler and Exit validate both root-owned approval markers at startup and during paid
+- Executor, Reconciler and Exit validate both `root:clockin 0440` approval markers at startup and during paid
   work. Signing/rebroadcast paths recheck them immediately before the operation.
 
 ### Execution schedule and restart

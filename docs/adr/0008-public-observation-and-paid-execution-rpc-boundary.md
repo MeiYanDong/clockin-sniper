@@ -37,7 +37,7 @@ This preserves continuous low-cost discovery and makes paid capability a deliber
 ### Paid RPC window
 
 - `clockin-executor`, `clockin-reconciler`, and `clockin-exit` retain authenticated RPC credentials, but systemd refuses to start them unless `/etc/clockin-sniper/PAID_RPC_APPROVED` exists.
-- Each process validates that the marker is a regular root-owned, non-group/world-writable file containing exactly `CLOCKIN_PAID_RPC_APPROVED_V1` before reading a paid RPC credential.
+- Each paid process validates that the marker is an exact `root:clockin 0440` regular file containing `CLOCKIN_PAID_RPC_APPROVED_V1` before reading a paid RPC credential. Root remains the sole writer/revoker; group read exists because paid units run as `clockin`, while the keyless `clockin-observer` identity is deliberately outside that group.
 - The marker authorizes paid transport cost only. Executor additionally requires `/etc/clockin-sniper/PRODUCTION_ARM_APPROVED`, a current immutable profile and authorization, ten-wallet readiness, Reconciler/Exit readiness, and all application-level interlocks before it may sign or broadcast.
 - Neither marker is created automatically. Opening the paid window requires an explicit owner decision to prepare for a real snipe. A soft signal may alert the owner but cannot cross the boundary.
 - While any transaction outcome is `UNKNOWN` or any position remains open, Reconciler/Exit and the paid marker must remain available. After all attempts are terminal and exposure is zero, stop the three paid services first and then remove the paid marker.

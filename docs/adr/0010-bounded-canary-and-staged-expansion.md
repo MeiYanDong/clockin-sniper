@@ -33,7 +33,7 @@ The Executor distinguishes `BOUNDED_CANARY` from `FULL_DEPLOYMENT`.
 
 The current ten-lane deployment still binds and loads all ten pre-created signer credentials against the authorized manifest at Executor startup. "One ready signer/wallet/nonce" narrows the live funding and nonce-readiness gate to `entry-01`; it does not claim that the configured ten-key manifest or the remaining credential files may be absent. This preserves the existing authorization identity while avoiding a 50U funding/exit-readiness prerequisite for the 5U canary.
 
-Executor validates the exact root-owned, non-group/world-writable production-arm marker before it reads any signer credential; relying only on systemd `ConditionPathExists` is insufficient.
+Executor validates the exact `root:clockin 0440`, non-group/world-writable production-arm marker before it reads any signer credential; root alone writes or revokes it, and the paid service's group has read-only access. Relying only on systemd `ConditionPathExists` is insufficient.
 
 The bypass is limited to prior token/Pool code-hash allowlisting and pre-existing exit readiness. It does not bypass Factory identity, buy calldata semantics, chain identity, budget, nonce ownership, signing authority or receipt reconciliation.
 

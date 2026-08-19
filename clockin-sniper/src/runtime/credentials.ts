@@ -131,10 +131,23 @@ export async function loadStonkSafeLaunchProfileAndAuthorization(
   return Object.freeze({ profile, authorization });
 }
 
-export async function loadVaultKey(env: NodeJS.ProcessEnv = process.env): Promise<Uint8Array> {
-  const raw = await readSystemdCredential("vault_key", env);
+export function parseVaultKey(raw: string): Uint8Array {
+  if (/^[0-9a-fA-F]{64}$/u.test(raw)) {
+    return new Uint8Array(Buffer.from(raw, "hex"));
+  }
   if (isHexString(raw, 32)) return getBytes(raw);
-  const decoded = Buffer.from(raw, "base64");
-  if (decoded.length !== 32) throw new RangeError("vault_key must be 32-byte hex or base64");
-  return new Uint8Array(decoded);
+  if (/^[A-Za-z0-9+/]{43}=?$/u.test(raw)) {
+    const decoded = Buffer.from(raw, "base64");
+    const canonical = decoded.toString("base64");
+    if (decoded.length === 32 && (raw === canonical || raw === canonical.replace(/=+$/u, ""))) {
+      return new Uint8Array(decoded);
+    }
+  }
+  throw new RangeError(
+    "vault_key must be exactly 64 hex characters, 0x-prefixed 32-byte hex, or canonical 32-byte base64",
+  );
+}
+
+export async function loadVaultKey(env: NodeJS.ProcessEnv = process.env): Promise<Uint8Array> {
+  return parseVaultKey(await readSystemdCredential("vault_key", env));
 }

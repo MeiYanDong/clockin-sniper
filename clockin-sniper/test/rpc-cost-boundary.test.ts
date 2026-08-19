@@ -233,12 +233,14 @@ describe("public Control RPC cost boundary", () => {
 });
 
 describe("paid RPC approval marker", () => {
-  it("accepts only an exact root-owned non-writable marker", () => {
+  it("accepts only an exact root:paid-service 0440 marker", () => {
     assert.doesNotThrow(() =>
       validatePaidRpcApproval(`${PAID_RPC_APPROVAL_VALUE}\n`, {
         isFile: true,
         uid: 0,
-        mode: 0o100640,
+        gid: 991,
+        expectedPaidServiceGid: 991,
+        mode: 0o100440,
       }),
     );
     assert.throws(
@@ -246,7 +248,9 @@ describe("paid RPC approval marker", () => {
         validatePaidRpcApproval(PAID_RPC_APPROVAL_VALUE, {
           isFile: true,
           uid: 501,
-          mode: 0o100640,
+          gid: 991,
+          expectedPaidServiceGid: 991,
+          mode: 0o100440,
         }),
       /owned by root/,
     );
@@ -255,24 +259,57 @@ describe("paid RPC approval marker", () => {
         validatePaidRpcApproval(PAID_RPC_APPROVAL_VALUE, {
           isFile: true,
           uid: 0,
+          gid: 992,
+          expectedPaidServiceGid: 991,
+          mode: 0o100440,
+        }),
+      /grouped to the paid service/,
+    );
+    assert.throws(
+      () =>
+        validatePaidRpcApproval(PAID_RPC_APPROVAL_VALUE, {
+          isFile: true,
+          uid: 0,
+          gid: 991,
+          expectedPaidServiceGid: 991,
+          mode: 0o100400,
+        }),
+      /exact mode 0440/,
+    );
+    assert.throws(
+      () =>
+        validatePaidRpcApproval(PAID_RPC_APPROVAL_VALUE, {
+          isFile: true,
+          uid: 0,
+          gid: 991,
+          expectedPaidServiceGid: 991,
           mode: 0o100660,
         }),
       /group\/world writable/,
     );
     assert.throws(
-      () => validatePaidRpcApproval("wrong", { isFile: true, uid: 0, mode: 0o100640 }),
+      () =>
+        validatePaidRpcApproval("wrong", {
+          isFile: true,
+          uid: 0,
+          gid: 991,
+          expectedPaidServiceGid: 991,
+          mode: 0o100440,
+        }),
       /invalid value/,
     );
   });
 });
 
 describe("production arm approval marker", () => {
-  it("accepts only an exact root-owned non-writable marker", () => {
+  it("accepts only an exact root:paid-service 0440 marker", () => {
     assert.doesNotThrow(() =>
       validateProductionArmApproval(`${PRODUCTION_ARM_APPROVAL_VALUE}\n`, {
         isFile: true,
         uid: 0,
-        mode: 0o100640,
+        gid: 991,
+        expectedPaidServiceGid: 991,
+        mode: 0o100440,
       }),
     );
     assert.throws(
@@ -280,7 +317,9 @@ describe("production arm approval marker", () => {
         validateProductionArmApproval(PRODUCTION_ARM_APPROVAL_VALUE, {
           isFile: true,
           uid: 501,
-          mode: 0o100640,
+          gid: 991,
+          expectedPaidServiceGid: 991,
+          mode: 0o100440,
         }),
       /owned by root/,
     );
@@ -289,6 +328,30 @@ describe("production arm approval marker", () => {
         validateProductionArmApproval(PRODUCTION_ARM_APPROVAL_VALUE, {
           isFile: true,
           uid: 0,
+          gid: 992,
+          expectedPaidServiceGid: 991,
+          mode: 0o100440,
+        }),
+      /grouped to the paid service/,
+    );
+    assert.throws(
+      () =>
+        validateProductionArmApproval(PRODUCTION_ARM_APPROVAL_VALUE, {
+          isFile: true,
+          uid: 0,
+          gid: 991,
+          expectedPaidServiceGid: 991,
+          mode: 0o100400,
+        }),
+      /exact mode 0440/,
+    );
+    assert.throws(
+      () =>
+        validateProductionArmApproval(PRODUCTION_ARM_APPROVAL_VALUE, {
+          isFile: true,
+          uid: 0,
+          gid: 991,
+          expectedPaidServiceGid: 991,
           mode: 0o100660,
         }),
       /group\/world writable/,
@@ -298,7 +361,9 @@ describe("production arm approval marker", () => {
         validateProductionArmApproval("wrong", {
           isFile: true,
           uid: 0,
-          mode: 0o100640,
+          gid: 991,
+          expectedPaidServiceGid: 991,
+          mode: 0o100440,
         }),
       /invalid value/,
     );

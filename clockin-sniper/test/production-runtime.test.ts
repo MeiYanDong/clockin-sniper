@@ -5,6 +5,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rm,
   stat,
   symlink,
   writeFile,
@@ -23,8 +24,10 @@ import {
 import { CLOCKIN_POLICY_V2 } from "../src/config/strategy-config.js";
 import type { LaunchIdentity, PositionLot } from "../src/core/canonical.js";
 import {
+  loadVaultKey,
   loadProductionProfileAndAuthorization,
   loadProductionWalletSigners,
+  parseVaultKey,
 } from "../src/runtime/credentials.js";
 import {
   createProductionAuthorization,
@@ -602,6 +605,33 @@ describe("production pre-broadcast snapshot schema", () => {
 });
 
 describe("systemd credential and redacted service status boundary", () => {
+  it("loads the same 32-byte vault key from bare hex, 0x hex, or canonical base64", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "clockin-vault-credential-"));
+    try {
+      const expected = Uint8Array.from(Array.from({ length: 32 }, (_, index) => index));
+      const bareHex = Buffer.from(expected).toString("hex");
+      const base64 = Buffer.from(expected).toString("base64");
+      const formats = [bareHex, `0x${bareHex}`, base64, base64.replace(/=+$/u, "")];
+      for (const format of formats) {
+        await writeFile(join(directory, "vault_key"), `${format}\n`, { mode: 0o600 });
+        assert.deepEqual(await loadVaultKey({ CREDENTIALS_DIRECTORY: directory }), expected);
+      }
+
+      assert.deepEqual(parseVaultKey(bareHex), expected);
+      for (const invalid of [
+        bareHex.slice(1),
+        `${bareHex}0`,
+        `0X${bareHex}`,
+        "not-a-vault-key",
+        `${base64.slice(0, -2)}==`,
+      ]) {
+        assert.throws(() => parseVaultKey(invalid), /vault_key must be exactly/u);
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("loads ten signers by credential index and verifies profile authorization without logging keys", async () => {
     const directory = await mkdtemp(join(tmpdir(), "clockin-credentials-"));
     const { manifest, keys } = fixtureWallets();
