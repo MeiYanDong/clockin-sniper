@@ -4,16 +4,18 @@ ClockIn Sniper v2 是 Robinhood Chain (`chainId=4663`) 的事件驱动、10 EOA 
 
 ## 当前状态
 
-`capability-manifest.json` 当前仍声明 `NOT_HOT_ARMED`；新 hot-path 已通过本地 clean-tree 全量门禁，生产部署与钱包准备尚未执行。2026-08-20 已冻结当前 ClockIn WETH quoted 主路的 pad、approved creator、`LaunchCreated`、`LaunchArmed`、`getLaunch/currentTaxBps/quoteBuy` 和 `buy` 绑定；旧的“最终 Factory/ABI 未发布”已被这一新证据取代。常驻 Control 的唯一链 transport 仍是 Robinhood 官方公共 HTTP RPC；X/官网只异步确认或报告 CA 冲突，不会占用事件→签名热路。
+`capability-manifest.json` 当前声明 `ENTRY_HOT_ARMED`，同时明确 `NO_LIVE_EFFECT` 与 `QUOTED_GENERIC_EXIT_UNSUPPORTED`。2026-08-20 已冻结当前 ClockIn WETH quoted 主路的 pad、approved creator、`LaunchCreated`、`LaunchArmed`、`getLaunch/currentTaxBps/quoteBuy` 和 `buy` 绑定；旧的“最终 Factory/ABI 未发布”已被这一新证据取代。常驻 Control 的链 transport 仍是 Robinhood 官方公共 HTTP RPC 的 keyless failover pool；X/官网只异步确认或报告 CA 冲突，不会占用事件→签名热路。
 
-本地已完成 quoted adapter/discovery、exact-metadata public handoff、reorg replacement、dynamic quote/tax、WETH readiness/preparation recovery、真实 executor restart/lifecycle 的代码与测试。这些仍只是本地产物，不是生产部署回执。`47.251.28.201` 上仍只有 revision 11 公共 Control `enabled/active`，三个资金服务 `disabled/inactive`，`PAID_RPC_APPROVED`/`PRODUCTION_ARM_APPROVED` absent，因此线上当前不会买。10 个钱包均为 `0 WETH / 0 allowance`，尚未 wrap/approve；每个 `0.0032 ETH` 只是 native 余额证据。
+commit `9014c45df1370112803110b64e683caab65d9ac4`、capability revision `17` 的 immutable quoted release 已部署到 `47.251.28.201` 并完成 hash readback。Control 当前 active（PID `439288`），状态为 `KEYLESS_PUBLIC_HTTP_FAILOVER`，active route 为 `BLOCKREQ_FALLBACK`；cursor/head 均为 `40914339`，lag `0`、`caughtUp=true`。`clockin-executor.path` 已 enabled/active waiting，两个 marker 均为 `root:clockin 0440`。CA 尚未出现、handoff 为 none，因此 Wallet Preparer/Executor/Reconciler/generic Exit 均为 static inactive、PID `0`，没有 paid process 或 buy receipt。
+
+一次性 Wallet Preparer 已形成 20 个 canonical preparation receipts：10 次 WETH deposit 和 10 次对精确 quoted pad 的 amount-bounded approve。在 block `40908857`，10/10 钱包 nonce 为 `2`，每个 WETH balance 与 allowance 均为 `2407976970983877` raw，并保有正数 native Gas。完整生产边界见 [entry hot-armed receipt](../docs/receipts/2026-08-20-clockin-entry-hot-armed.md)。
 
 - 默认生产命令是 quoted `npm run executor`；它只由 public handoff path 启动，不能手动常驻；
 - Control 不读取 signer/paid credential，handoff 前不会启动 Executor/Reconciler；
 - legacy live、legacy executor 和钱包生成入口不进入 release build；
 - release archive audit 明确要求 Control、quoted Executor、Wallet Preparer、Reconciler、Exit 和 path unit，并拒绝旧 live/legacy executor/wallet generation、源码、测试和 secret-shaped 内容。
 
-生产解锁需要把通过最终全量门禁的 artifact/profile/authorization 部署到云机，对 10 个钱包执行精确金额 WETH wrap/approve，并完成付费 RPC、marker、Reconciler 与 current readiness 回读。launch 前回执名为 `ENTRY_HOT_ARMED`，它不代表已成交；真实买入只能在 launch 后由 canonical receipt/delta/`EffectRecord` 证明。
+生产 entry 解锁已经完成并由 `ENTRY_HOT_ARMED` 回执证明。它不代表已成交；真实买入只能在 launch 后由 canonical receipt/delta/`EffectRecord` 证明。generic quoted Exit 仍是 `UNSUPPORTED`，不能把 entry 武装写成自动退出已武装。
 
 ## 已实现模块
 
@@ -68,17 +70,15 @@ npm run wallets:create -- --output /absolute/external/secret/directory
 
 `vault_key` 必须表示精确 32 bytes，可使用裸 64 位 hex、小写 `0x` + 64 位 hex，或标准 base64（可带/不带 padding）。两种 hex 形式解码为相同字节；只改文本前缀时不得重新生成 key。部署预检只输出解码长度，不输出 key 内容。
 
-生产部署按 `../docs/runbooks/production-deployment.md` 执行。Control Sentinel 使用独立无私钥账户、官方公共 RPC 和非敏感 `control.env`；它没有任何 systemd credential。Executor/Reconciler 受两个精确 `root:clockin 0440` marker 和运行时复检约束；只有付费服务组可读，root 仍是唯一写入/撤销者，signer 只通过 systemd `LoadCredential` 注入。生产钱包当前各有 `0.0032 ETH`，但 WETH 余额与 pad allowance 均为 0；必须在 path disabled 时完成有回执、可恢复的 wrap/approve，公共 cursor caught-up 后才只启用 `clockin-executor.path`。模板、inactive unit 或本地 artifact/profile/auth 存在都不等于 `ENTRY_HOT_ARMED`。
+生产部署按 `../docs/runbooks/production-deployment.md` 执行。Control Sentinel 使用独立无私钥账户、官方公共 RPC 和非敏感 `control.env`；它没有任何 systemd credential。Executor/Reconciler 受两个精确 `root:clockin 0440` marker 和运行时复检约束；只有付费服务组可读，root 仍是唯一写入/撤销者，signer 只通过 systemd `LoadCredential` 注入。生产钱包已在 path disabled 时完成有回执、可恢复的 WETH deposit/approve。当前 10/10 钱包各有 `2407976970983877` raw WETH 与等额 exact-pad allowance、nonce `2` 和正数 native Gas；公共 cursor 已 caught up，且只启用 `clockin-executor.path`。无 handoff 时资金服务保持 inactive 是预期状态。
 
-## 解锁实盘所需输入
+## 当前等待的真实事件
 
-1. 将已验证的 quoted artifact、immutable profile 和 <=7 天 AuthorizationRecord 部署到云机，并回读 hash/scope/expiry；
-2. 逐钱包 wrap 准确 WETH principal 准备金并向精确 quoted pad approve 有界金额，回读 `10/10 WETH + allowance + clean nonce + native Gas` readiness；
-3. 为真实狙击窗口创建并校验双 marker，在 path disabled 时运行一次性 Wallet Preparer；
-4. 10/10 readiness、recovery journal terminal 且 public cursor caught-up 后，只 enable/start `clockin-executor.path`，Executor/Reconciler 保持 inactive 等待 valid-only `active.signal`；
-5. Public Control 只为 exact pad + approved creator + exact metadata + canonical block hash 生成 handoff，tombstone 不触发 path；15 分钟未 Armed 后公共侧仍可在晚到 Armed 时重新唤醒；
-6. `9999 bps` buffer 期间不买；每 lane 用 Armed `quoteUsd8` 向下取整得到最多 5U raw，并以 `deadline-1` 实际可成交税率为准；
-7. canary 必须得到 canonical receipt/effect，Reconciler 必须新鲜；lanes 2–10 不要求 Exit 就绪，只要求剩余钱包保持完整 readiness；
-8. launch 前回读必须生成 `ENTRY_HOT_ARMED`，证明 handoff 前 Executor/Reconciler inactive、handoff 后可自动 active；真实成交还需另外的 canonical effect receipt，generic Exit 仍 `UNSUPPORTED`。
+1. Public Control 只为 exact pad + approved creator + exact metadata + canonical block hash 生成 handoff，tombstone 不触发 path；15 分钟未 Armed 后公共侧仍可在晚到 Armed 时重新唤醒。
+2. valid-only `active.signal` 出现后，已启用的 path 才启动 Executor/Reconciler；当前 handoff none，所以两者保持 inactive、零付费进程。
+3. `9999 bps` buffer 期间不买；每 lane 用 Armed `quoteUsd8` 向下取整得到最多 5U raw，并以 `deadline-1` 实际可成交税率为准。
+4. canary 必须得到 canonical receipt/effect，Reconciler 必须新鲜；lanes 2–10 不要求 Exit 就绪，但要求剩余钱包保持完整 readiness。
+5. CA、tx hash、RPC accepted 或服务 active 都不能证明成交；真实成交还需 canonical buy receipt、WETH/token delta、Gas 归因和 `EffectRecord`。
+6. generic quoted Exit 仍 `UNSUPPORTED`，没有自动退出已武装的声明。
 
 详细实现边界见 `../docs/plan.md`、`../docs/todo.md` 和 `capability-manifest.json`。
