@@ -9,47 +9,55 @@ import {
 import { SameRawBroadcaster } from "./broadcast/same-raw-broadcaster.js";
 import { CLOCKIN_POLICY_V2 } from "./config/strategy-config.js";
 import {
-  stableHash,
   type CapitalReservation,
   type ExecutionPlan,
   type LaunchIdentity,
+  stableHash,
   type TxAttempt,
   type WalletLane,
 } from "./core/canonical.js";
+import {
+  assertBoundedCanaryPrincipal,
+  evaluateEntryExpansion,
+  type LaunchCodeIdentityTier,
+} from "./entry/bounded-canary-policy.js";
 import { freezeQuoteBoundedEntryPlan } from "./entry/execution-plan-builder.js";
-import { planTenFeeBands, type FeeBandPlan } from "./entry/fee-band-planner.js";
-import { TenLaneOrchestrator, type LaneDispatchDecision } from "./entry/lane-orchestrator.js";
+import { type FeeBandPlan, planTenFeeBands } from "./entry/fee-band-planner.js";
+import { type LaneDispatchDecision, TenLaneOrchestrator } from "./entry/lane-orchestrator.js";
 import { createQuoteSnapshot, quoteBoundedMinOut } from "./entry/quote-policy.js";
-import { freezeLaunchIdentity, type ClockInIdentityPolicy } from "./identity/identity-binder.js";
+import { type ClockInIdentityPolicy, freezeLaunchIdentity } from "./identity/identity-binder.js";
 import { OfficialCaMonitor } from "./official-ca-monitor.js";
 import { SqliteStore } from "./persistence/sqlite-store.js";
 import { HttpJsonRpcClient } from "./rpc/http-json-rpc.js";
-import { WebSocketNewHeadsClient, type NewHeadsSubscription } from "./rpc/websocket-new-heads.js";
 import type { Hex } from "./rpc/types.js";
+import { type NewHeadsSubscription, WebSocketNewHeadsClient } from "./rpc/websocket-new-heads.js";
 import { discoverConfiguredClockInLaunch } from "./runtime/configured-discovery.js";
-import { assertPaidRpcApproved } from "./runtime/paid-rpc-approval.js";
 import {
   loadProductionProfileAndAuthorization,
   loadProductionWalletSigners,
   loadVaultKey,
   readSystemdCredential,
 } from "./runtime/credentials.js";
+import { evaluateRuntimeIdentityGate } from "./runtime/identity-gate.js";
+import { assertPaidRpcApproved } from "./runtime/paid-rpc-approval.js";
+import { assertProductionArmApproved } from "./runtime/production-arm-approval.js";
 import { ProductionPriceCache } from "./runtime/production-price.js";
+import type { ProductionProtocolProfile } from "./runtime/production-profile.js";
 import {
   ProductionSameRawProvider,
   readGenesisHash,
   readNativeBalance,
   readTokenBalance,
 } from "./runtime/production-rpc.js";
-import type { ProductionProtocolProfile } from "./runtime/production-profile.js";
 import {
   assertExecutorDependenciesReady,
+  inspectExecutorDependencies,
   writeProductionServiceStatus,
 } from "./runtime/service-status.js";
 import { SystemdWatchdog } from "./runtime/systemd-watchdog.js";
-import { SignedTxVault } from "./wallets/signed-tx-vault.js";
-import { WalletTransactionCoordinator, type NonceSlot } from "./wallets/transaction-coordinator.js";
 import { inspectWalletReadiness, type WalletReadinessReport } from "./wallets/readiness.js";
+import { SignedTxVault } from "./wallets/signed-tx-vault.js";
+import { type NonceSlot, WalletTransactionCoordinator } from "./wallets/transaction-coordinator.js";
 
 const STRATEGY_ID = "clockin-mainnet-v1";
 const STATUS_DIRECTORY = process.env.CLOCKIN_STATUS_DIR?.trim() || "/run/clockin-status";
@@ -72,13 +80,24 @@ interface LaunchRuntime {
   readonly canaryQuoteId: string;
   readonly officialCa: OfficialCaMonitor;
   readonly expiresAtMs: number;
+  readonly laterWalletsReady: boolean;
+  codeIdentityTier: LaunchCodeIdentityTier;
   canaryApplied: boolean;
+  canaryEffectConfirmed: boolean;
+  lastExpansionGateSummary: string;
 }
 
 class ProvenPreBroadcastFailure extends Error {
   constructor(message: string, cause: unknown) {
     super(message, { cause });
     this.name = "ProvenPreBroadcastFailure";
+  }
+}
+
+class LaneReadinessDeferred extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
+    this.name = "LaneReadinessDeferred";
   }
 }
 
@@ -133,12 +152,15 @@ async function main(): Promise<void> {
   let stopping = false;
   let sequence = 0;
   let currentLaunch: LaunchRuntime | null = null;
+  let fullDeploymentDependencyReady = false;
+  let fullDeploymentDependencyReason = "full deployment dependencies have not been evaluated";
   let headsSubscription: NewHeadsSubscription | null = null;
   let leaseTimer: NodeJS.Timeout | null = null;
   let statusTimer: NodeJS.Timeout | null = null;
   let priceTimer: NodeJS.Timeout | null = null;
 
   await assertPaidRpcApproved();
+  await assertProductionArmApproved();
   const [walletBundle, rpcHttp, rpcWss, sequencerHttp, vaultKey] = await Promise.all([
     loadProductionWalletSigners(),
     readSystemdCredential("rpc_http"),
@@ -205,11 +227,18 @@ async function main(): Promise<void> {
         Date.now() < Date.parse(authorization.expiresAt) &&
         (currentLaunch === null || Date.now() <= currentLaunch.expiresAtMs) &&
         activeLeases.length > 0,
-      exitEnabled: true,
+      exitEnabled: fullDeploymentDependencyReady,
       unresolvedAttemptCount: store.unresolvedTxAttempts(STRATEGY_ID).length,
       openPositionCount: store.latestOpenPositionLots(STRATEGY_ID).length,
       verifiedExitRouteCount: profile.exit.routes.length,
-      details: Object.freeze([...details, `ACTIVE_WALLET_LEASES_${activeLeases.length}`]),
+      details: Object.freeze([
+        ...details,
+        `ACTIVE_WALLET_LEASES_${activeLeases.length}`,
+        "BOUNDED_CANARY_MAXIMUM_5U",
+        fullDeploymentDependencyReady
+          ? "FULL_DEPLOYMENT_READY"
+          : `FULL_DEPLOYMENT_BLOCKED_${fullDeploymentDependencyReason}`,
+      ]),
     });
   };
 
@@ -235,14 +264,18 @@ async function main(): Promise<void> {
     expectedGenesisHash: genesisHash,
   });
   await broadcaster.preflight();
-  const assertDependencies = (): Promise<void> =>
+  const dependencyInput = Object.freeze({
+    directory: STATUS_DIRECTORY,
+    profileHash: profile.profileHash,
+    authorizationId: authorization.authorizationId,
+    expectedSignerCount: walletBundle.signers.length,
+  });
+  const assertDependencies = (tier: "BOUNDED_CANARY" | "FULL_DEPLOYMENT"): Promise<void> =>
     assertExecutorDependenciesReady({
-      directory: STATUS_DIRECTORY,
-      profileHash: profile.profileHash,
-      authorizationId: authorization.authorizationId,
-      expectedSignerCount: walletBundle.signers.length,
+      ...dependencyInput,
+      tier,
     });
-  await assertDependencies();
+  await assertDependencies("BOUNDED_CANARY");
 
   const maximumExitGas = profile.exit.routes.reduce(
     (maximum, route) => {
@@ -276,8 +309,9 @@ async function main(): Promise<void> {
       automaticTopUpAllowed: false,
     },
   );
-  if (!readiness.hotArmed)
-    throw new Error("ten-wallet funding or nonce readiness is not HOT_ARMED");
+  if (!readiness.canaryArmed) {
+    throw new Error("bounded canary wallet, funding or nonce readiness is not armed");
+  }
   if (store.unresolvedTxAttempts(STRATEGY_ID).length > 0) {
     throw new Error("unresolved transaction attempts block new entry on executor startup");
   }
@@ -384,11 +418,26 @@ async function main(): Promise<void> {
     let possiblySubmitted = false;
     let signerAddress: `0x${string}` | null = null;
     try {
-      await assertDependencies();
+      try {
+        await assertDependencies(
+          decision.trancheNumber === 1 ? "BOUNDED_CANARY" : "FULL_DEPLOYMENT",
+        );
+      } catch (error) {
+        if (decision.trancheNumber > 1) {
+          throw new LaneReadinessDeferred("later lane dependencies changed before signing", error);
+        }
+        throw error;
+      }
       const signerBinding = signerByWalletId.get(decision.walletId);
       const walletReadiness = readinessByWalletId.get(decision.walletId);
       if (signerBinding === undefined || walletReadiness === undefined) {
         throw new Error(`lane ${decision.laneId} has no signer/readiness binding`);
+      }
+      if (decision.trancheNumber === 1 && !walletReadiness.canaryReady) {
+        throw new Error("bounded canary wallet is no longer entry-ready");
+      }
+      if (decision.trancheNumber > 1 && !walletReadiness.ready) {
+        throw new LaneReadinessDeferred("later-lane wallet is no longer fully ready");
       }
       signerAddress = signerBinding.entry.address;
       const lease = leaseByAddress.get(signerBinding.entry.address.toLowerCase());
@@ -409,6 +458,7 @@ async function main(): Promise<void> {
       });
       const principalUsdMicros =
         (CLOCKIN_POLICY_V2.nominalLaneUsdMicros * decision.principalRaw) / runtime.priceBatchWei;
+      if (decision.trancheNumber === 1) assertBoundedCanaryPrincipal(principalUsdMicros);
       reservation = Object.freeze({
         reservationId:
           runtime.feePlan.lanes[decision.trancheNumber - 1]?.reservationId ??
@@ -558,6 +608,8 @@ async function main(): Promise<void> {
         payload: {
           formatVersion: 1,
           kind: "ENTRY_BUY",
+          principalAsset: profile.mechanism.quoteAsset,
+          principalAssetKind: "NATIVE",
           principalBalanceBeforeRaw: principalBefore.toString(),
           tokenBalanceBeforeRaw: tokenBefore.toString(),
           plannedPrincipalRaw: decision.principalRaw.toString(),
@@ -667,6 +719,7 @@ async function main(): Promise<void> {
           }
         }
         if (vaultRef !== null) await vault.remove(vaultRef).catch(() => undefined);
+        if (error instanceof LaneReadinessDeferred) throw error;
         throw new ProvenPreBroadcastFailure(
           error instanceof Error ? error.message : String(error),
           error,
@@ -724,6 +777,7 @@ async function main(): Promise<void> {
         const calibrated = canaryEffect.result === "SUCCESS" && actual >= minimum;
         runtime.orchestrator.applyCanaryCalibration(!calibrated);
         runtime.canaryApplied = true;
+        runtime.canaryEffectConfirmed = calibrated;
         log(
           calibrated ? "INFO" : "ERROR",
           calibrated ? "canary calibrated" : "canary stopped unsent lanes",
@@ -741,10 +795,49 @@ async function main(): Promise<void> {
     if (observation.quoteAsset.toLowerCase() !== profile.mechanism.quoteAsset.toLowerCase()) {
       throw new Error("observed pool quote asset differs from the production profile");
     }
-    const caState = runtime.officialCa.snapshot().state;
-    if (caState === "mismatch") runtime.orchestrator.applyCanaryCalibration(true);
-    const identityLevel =
-      caState === "confirmed" && runtime.canaryApplied ? ("L3" as const) : ("L2" as const);
+    if (runtime.canaryEffectConfirmed && runtime.codeIdentityTier !== "PROFILE_ALLOWLISTED") {
+      try {
+        const fullCodeIdentity = await verifyConfiguredCodeIdentity({
+          requester: canonical,
+          profile,
+          blockNumber,
+          identity: runtime.identity,
+          requiredCodeIdentityTier: "PROFILE_ALLOWLISTED",
+        });
+        runtime.codeIdentityTier = fullCodeIdentity.codeIdentityTier ?? "NON_EMPTY_OBSERVED";
+      } catch (error) {
+        log("ERROR", "full-deployment code identity remains blocked", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    const dependencyReadiness = await inspectExecutorDependencies(dependencyInput);
+    fullDeploymentDependencyReady = dependencyReadiness.fullDeploymentReady;
+    fullDeploymentDependencyReason = dependencyReadiness.fullDeploymentReasons.join(" | ");
+    const expansion = evaluateEntryExpansion({
+      codeIdentityTier: runtime.codeIdentityTier,
+      canonicalCanaryEffect: runtime.canaryEffectConfirmed,
+      executableExitReady: profile.exit.routes.length > 0,
+      laterWalletsReady: runtime.laterWalletsReady,
+      fullDependenciesReady: dependencyReadiness.fullDeploymentReady,
+    });
+    const expansionSummary = expansion.ready ? "READY" : expansion.reasons.join(" | ");
+    runtime.orchestrator.setLaterLaneExecutionReadiness(expansion.ready, expansionSummary);
+    if (expansionSummary !== runtime.lastExpansionGateSummary) {
+      runtime.lastExpansionGateSummary = expansionSummary;
+      log(expansion.ready ? "INFO" : "ERROR", "later-lane expansion gate changed", {
+        ready: expansion.ready,
+        reasons: expansion.reasons,
+      });
+    }
+    const identityGate = evaluateRuntimeIdentityGate({
+      officialCaState: runtime.officialCa.snapshot().state,
+      gateMode: CLOCKIN_POLICY_V2.caGateMode,
+      canaryEffectConfirmed: runtime.canaryEffectConfirmed,
+      strongOnchainBindingReady: runtime.codeIdentityTier === "PROFILE_ALLOWLISTED",
+    });
+    if (identityGate.stopUnsent) runtime.orchestrator.applyCanaryCalibration(true);
+    const identityLevel = identityGate.identityLevel;
     const quotes = new Map<string, ReturnType<typeof createQuoteSnapshot>>();
     for (const lane of runtime.orchestrator.snapshot()) {
       if (
@@ -794,11 +887,15 @@ async function main(): Promise<void> {
         try {
           await dispatchLane(runtime, decision, observation.block.blockHash, blockNumber, expected);
         } catch (error) {
-          runtime.orchestrator.recordLaneOutcome(
-            decision.laneId,
-            error instanceof ProvenPreBroadcastFailure ? "REVERTED" : "UNKNOWN",
-            error instanceof Error ? error.message : String(error),
-          );
+          if (error instanceof LaneReadinessDeferred) {
+            runtime.orchestrator.deferDispatchedLane(decision.laneId, error.message);
+          } else {
+            runtime.orchestrator.recordLaneOutcome(
+              decision.laneId,
+              error instanceof ProvenPreBroadcastFailure ? "REVERTED" : "UNKNOWN",
+              error instanceof Error ? error.message : String(error),
+            );
+          }
           throw error;
         }
       }),
@@ -819,6 +916,7 @@ async function main(): Promise<void> {
     requester: canonical,
     profile,
     blockNumber: discovered.log.blockNumber,
+    requiredCodeIdentityTier: "NON_EMPTY_OBSERVED",
     identity: Object.freeze({
       ...discovered.candidate,
       launchId: "pre-freeze",
@@ -880,7 +978,9 @@ async function main(): Promise<void> {
       latestPrice.primary.usdMicrosPerEth,
     automaticTopUpAllowed: false,
   });
-  if (!readiness.hotArmed) throw new Error("wallet readiness changed before launch dispatch");
+  if (!readiness.canaryArmed) {
+    throw new Error("bounded canary wallet readiness changed before launch dispatch");
+  }
   readinessByWalletId = new Map(readiness.rows.map((row) => [row.walletId, row] as const));
   const reservationIds = Array.from(
     { length: 10 },
@@ -935,7 +1035,12 @@ async function main(): Promise<void> {
     }),
     lanes,
   );
-  const pool = new ConfiguredLauncherPoolRuntime({ requester: canonical, profile, identity });
+  const pool = new ConfiguredLauncherPoolRuntime({
+    requester: canonical,
+    profile,
+    identity,
+    requiredCodeIdentityTier: "NON_EMPTY_OBSERVED",
+  });
   const launchObservation = await pool.observe(discovered.log.blockNumber, identity.evidenceIds);
   const canaryExpectedOutputRaw = await pool.previewBuyRaw(
     latestPrice.batchValueWei,
@@ -1004,7 +1109,11 @@ async function main(): Promise<void> {
       Number(
         launchObservation.block.blockTimestamp + BigInt(profile.mechanism.decayWindowSeconds),
       ) * 1_000,
+    laterWalletsReady: readiness.laterLanesArmed,
+    codeIdentityTier: code.codeIdentityTier ?? "NON_EMPTY_OBSERVED",
     canaryApplied: false,
+    canaryEffectConfirmed: false,
+    lastExpansionGateSummary: "",
   };
   await writeStatus("ACTIVE", ["CLOCKIN_IDENTITY_FROZEN", `SOURCE_${discovered.source}`]);
   log("ACTION", "ClockIn identity frozen", {

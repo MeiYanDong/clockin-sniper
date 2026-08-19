@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { assertDirectEoaEntryPath } from "../src/adapters/protocol-contracts.js";
 import { CanonicalInvariantError, type LaunchIdentity } from "../src/core/canonical.js";
+import {
+  assertBoundedCanaryPrincipal,
+  BOUNDED_CANARY_POLICY,
+  BOUNDED_CANARY_POLICY_HASH,
+  evaluateEntryExpansion,
+} from "../src/entry/bounded-canary-policy.js";
 import { prepareCanaryInParallel } from "../src/entry/canary-preparation.js";
 import {
   assertCanarySnapshotMatchesPlan,
@@ -366,6 +372,38 @@ describe("speed canary reconciliation", () => {
   });
 });
 
+describe("bounded canary and expansion policy", () => {
+  it("caps the early-risk bypass at one 5U canary and binds a stable policy hash", () => {
+    assert.equal(BOUNDED_CANARY_POLICY.maximumAttemptsPerLaunch, 1);
+    assert.equal(BOUNDED_CANARY_POLICY.maximumPrincipalUsdMicros, 5_000_000n);
+    assert.equal(BOUNDED_CANARY_POLICY.primaryQuoteRoute, "NATIVE_ETH");
+    assert.equal(BOUNDED_CANARY_POLICY.optionalQuoteRouteBlocksNativeReadiness, false);
+    assert.match(BOUNDED_CANARY_POLICY_HASH, /^sha256:/);
+    assert.doesNotThrow(() => assertBoundedCanaryPrincipal(5_000_000n));
+    assert.throws(() => assertBoundedCanaryPrincipal(5_000_001n), /5U maximum/);
+  });
+
+  it("requires canonical effect, allowlisted code, later wallets and exit before expansion", () => {
+    const blocked = evaluateEntryExpansion({
+      codeIdentityTier: "NON_EMPTY_OBSERVED",
+      canonicalCanaryEffect: false,
+      executableExitReady: false,
+      laterWalletsReady: false,
+      fullDependenciesReady: false,
+    });
+    assert.equal(blocked.ready, false);
+    assert.equal(blocked.reasons.length, 5);
+    const ready = evaluateEntryExpansion({
+      codeIdentityTier: "PROFILE_ALLOWLISTED",
+      canonicalCanaryEffect: true,
+      executableExitReady: true,
+      laterWalletsReady: true,
+      fullDependenciesReady: true,
+    });
+    assert.deepEqual(ready, { ready: true, reasons: [] });
+  });
+});
+
 describe("ten independent entry lanes", () => {
   function engine(
     catchUpPolicy:
@@ -373,8 +411,9 @@ describe("ten independent entry lanes", () => {
       | "ALL_ELIGIBLE"
       | "QUOTE_RANKED_BOUNDED" = "QUOTE_RANKED_BOUNDED",
     capPolicy: "STRICT_5U" | "SHRINK_TO_CAP" = "STRICT_5U",
+    fullDeploymentReady = true,
   ) {
-    return new TenLaneOrchestrator(plan(), {
+    const orchestrator = new TenLaneOrchestrator(plan(), {
       batchPrincipalRaw: 5_000n,
       minimumShrunkPrincipalRaw: 1_000n,
       aggregatePrincipalCapRaw: 50_000n,
@@ -382,6 +421,10 @@ describe("ten independent entry lanes", () => {
       maxConcurrentCatchUpLanes: 2,
       capPolicy,
     });
+    if (fullDeploymentReady) {
+      orchestrator.setLaterLaneExecutionReadiness(true, "fixture full deployment is ready");
+    }
+    return orchestrator;
   }
 
   it("dispatches lane 1 at L2 but gates lanes 2-10 on canary and L3", () => {
@@ -488,7 +531,7 @@ describe("ten independent entry lanes", () => {
     );
   });
 
-  it("falls back to one lane per block when trustworthy catch-up quotes are absent", () => {
+  it("defers later lanes when trustworthy exact-block quotes are absent", () => {
     const orchestrator = engine();
     orchestrator.observe(observation(), "L2", new Map());
     orchestrator.applyCanaryCalibration(false);
@@ -501,13 +544,40 @@ describe("ten independent entry lanes", () => {
       "L3",
       new Map(),
     );
-    assert.deepEqual(
-      dispatched.map((decision) => decision.trancheNumber),
-      [2],
-    );
-    assert.equal(dispatched[0]?.quoteId, undefined);
-    assert.match(dispatched[0]?.reason ?? "", /QUOTE_UNAVAILABLE/);
+    assert.equal(dispatched.length, 0);
+    assert.match(orchestrator.snapshot()[1]?.reason ?? "", /QUOTE_UNAVAILABLE/);
     assert.equal(orchestrator.snapshot()[2]?.state, "DEFERRED");
+  });
+
+  it("keeps later lanes retryable until the full deployment gate becomes ready", () => {
+    const orchestrator = engine("ONE_PER_BLOCK", "STRICT_5U", false);
+    orchestrator.observe(observation(), "L2", new Map());
+    orchestrator.applyCanaryCalibration(false);
+    const next = observation({
+      observationId: "blocked-full-deployment",
+      block: { blockNumber: 101n, blockHash: HASH_B, blockTimestamp: 1_001n },
+      currentFeeBps: 0,
+    });
+    const quotes = new Map([
+      ["clockin-entry-02", quote("clockin-entry-02", 1_000n, 101n, HASH_B, next.observationId)],
+    ]);
+    assert.equal(orchestrator.observe(next, "L3", quotes).length, 0);
+    assert.match(orchestrator.snapshot()[1]?.reason ?? "", /full deployment readiness/);
+
+    orchestrator.setLaterLaneExecutionReadiness(true, "exit and full dependencies are ready");
+    const later = observation({
+      observationId: "ready-full-deployment",
+      block: { blockNumber: 102n, blockHash: HASH_A, blockTimestamp: 1_002n },
+      currentFeeBps: 0,
+    });
+    const laterQuotes = new Map([
+      ["clockin-entry-02", quote("clockin-entry-02", 1_000n, 102n, HASH_A, later.observationId)],
+    ]);
+    const dispatched = orchestrator.observe(later, "L3", laterQuotes);
+    assert.equal(dispatched[0]?.trancheNumber, 2);
+    orchestrator.deferDispatchedLane("clockin-entry-02", "dependency became stale before signing");
+    assert.equal(orchestrator.snapshot()[1]?.state, "DEFERRED");
+    assert.equal(orchestrator.snapshot()[1]?.dispatchedPrincipalRaw, 0n);
   });
 
   it("implements all-eligible and one-per-block policies independently", () => {

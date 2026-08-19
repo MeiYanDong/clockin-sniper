@@ -42,19 +42,29 @@ function classifyFailure(error: unknown): {
   if (message.includes("already known") || message.includes("known transaction")) {
     return { result: "KNOWN", reason };
   }
-  if (
-    message.includes("timeout") ||
-    message.includes("network") ||
-    message.includes("connection") ||
-    message.includes("rate limit") ||
-    message.includes("429") ||
-    /\b5\d\d\b/.test(message) ||
-    message.includes("nonce too low") ||
-    message.includes("replacement transaction underpriced")
-  ) {
-    return { result: "UNKNOWN", reason };
+
+  // A route may be called REJECTED only when its response proves that this exact signed payload
+  // failed validation before it could enter that route's transaction pool. Everything else is
+  // UNKNOWN: JSON-RPC internal errors, transport failures, unfamiliar provider text and even
+  // nonce-related responses cannot prove that another route did not accept the same bytes.
+  const deterministicPreAcceptanceRejections = [
+    /\binvalid sender\b/u,
+    /\binvalid signature\b/u,
+    /\binvalid chain id\b/u,
+    /\binvalid chainid\b/u,
+    /\bchain id mismatch\b/u,
+    /\binvalid transaction type\b/u,
+    /\btransaction type not supported\b/u,
+    /\bunsupported transaction type\b/u,
+    /\binvalid rlp\b/u,
+    /\brlp(?:\s+decode|\s+encoding)? error\b/u,
+    /\bintrinsic gas too low\b/u,
+    /\binsufficient funds(?: for (?:gas \* price \+ value|gas \* price \+ value \+ blob fee|transfer))?\b/u,
+  ];
+  if (deterministicPreAcceptanceRejections.some((pattern) => pattern.test(message))) {
+    return { result: "REJECTED", reason };
   }
-  return { result: "REJECTED", reason };
+  return { result: "UNKNOWN", reason };
 }
 
 export class SameRawBroadcaster {
@@ -117,9 +127,10 @@ export class SameRawBroadcaster {
               providerId: provider.providerId,
               region: provider.region,
               txHash,
-              result: "REJECTED",
+              result: "UNKNOWN",
               latencyMs,
-              reason: "provider returned a hash different from the signed payload",
+              reason:
+                "provider returned a hash different from the signed payload; submission state is unknown",
             });
           }
           return Object.freeze({

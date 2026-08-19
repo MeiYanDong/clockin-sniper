@@ -62,3 +62,14 @@ This preserves continuous low-cost discovery and makes paid capability a deliber
 - Automated tests must prove Control cannot be configured to another RPC and has no paid credential mount.
 - Deployment readback must prove Control is the only active process, has no credentials directory or RPC environment variables, reports `OFFICIAL_PUBLIC_HTTP_ONLY`, advances its public request counters, and completes the paced wallet-readiness burst without an unresolved HTTP 429.
 - Deployment readback must also prove all paid services are disabled/inactive and both approval markers are absent.
+
+## Follow-up note — 2026-08-20
+
+[ADR 0010](0010-bounded-canary-and-staged-expansion.md) narrows the readiness clause above for exactly one maximum-5U bounded canary. That canary still requires the paid-RPC marker, production-arm marker, current immutable profile/authorization, the authorized ten-key manifest, `entry-01` funding/nonce readiness, current Reconciler/WAL state and zero unresolved attempts; it does not require Exit readiness or funding/exit-Gas readiness for wallets 2–10. The original ten-wallet and Reconciler/Exit readiness clause remains fully in force before lanes 2–10.
+
+[ADR 0011](0011-public-handoff-and-weth-quoted-production-hotpath.md) supersedes that historical
+startup/readiness detail for the verified CLOCKIN WETH-quoted launch. Public exact-chain handoff now
+starts the paid plane through `clockin-executor.path`; paid services do not prewarm. Wallet preparation
+is completed before the path is enabled, and lanes 2–10 require canonical canary reconciliation plus
+readiness of the remaining wallets, not official X confirmation or Exit readiness. Executor,
+Reconciler and Exit continuously validate both runtime markers and have finite paid lifecycles.

@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import { getBytes, keccak256 } from "ethers";
@@ -16,6 +16,15 @@ interface VaultEnvelope {
 function keyBytes(key: Uint8Array): Buffer {
   if (key.length !== 32) throw new RangeError("vault encryption key must be 32 bytes");
   return Buffer.from(key);
+}
+
+async function syncDirectory(directory: string): Promise<void> {
+  const handle = await open(directory, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
 }
 
 export class SignedTxVault {
@@ -44,12 +53,15 @@ export class SignedTxVault {
     await mkdir(this.#directory, { recursive: true, mode: 0o700 });
     await chmod(this.#directory, 0o700);
     const reference = join(this.#directory, `${txHash.slice(2)}.vault`);
-    await writeFile(reference, `${JSON.stringify(envelope)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-      mode: 0o600,
-    });
+    const handle = await open(reference, "wx", 0o600);
+    try {
+      await handle.writeFile(`${JSON.stringify(envelope)}\n`, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     await chmod(reference, 0o600);
+    await syncDirectory(this.#directory);
     return reference;
   }
 
@@ -77,6 +89,7 @@ export class SignedTxVault {
     const absolute = resolve(reference);
     if (dirname(absolute) !== this.#directory) throw new Error("vault reference escapes directory");
     await rm(absolute, { force: true });
+    await syncDirectory(this.#directory);
   }
 
   async cleanup(

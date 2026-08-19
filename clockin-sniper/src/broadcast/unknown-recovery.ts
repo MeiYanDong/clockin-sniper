@@ -31,7 +31,12 @@ export interface RecoveryBroadcaster {
 export interface UnknownRecoveryResult {
   readonly attemptId: string;
   readonly txHash: Hex32;
-  readonly state: "RECEIPT_FOUND" | "PENDING" | "REBROADCASTED" | "EXPIRED_UNRESOLVED";
+  readonly state:
+    | "RECEIPT_FOUND"
+    | "PENDING"
+    | "REBROADCASTED"
+    | "NONCE_MISMATCH_UNRESOLVED"
+    | "EXPIRED_UNRESOLVED";
   readonly nonceLeaseMustRemain: true;
   readonly reservationMustRemain: true;
   readonly backgroundRecheckRequired: boolean;
@@ -42,15 +47,18 @@ export class UnknownRecoveryManager {
   readonly #probe: UnknownRecoveryProbe;
   readonly #vault: RecoveryVault;
   readonly #broadcaster: RecoveryBroadcaster;
+  readonly #beforeBroadcast: () => Promise<void>;
 
   constructor(options: {
     probe: UnknownRecoveryProbe;
     vault: RecoveryVault;
     broadcaster: RecoveryBroadcaster;
+    beforeBroadcast?: () => Promise<void>;
   }) {
     this.#probe = options.probe;
     this.#vault = options.vault;
     this.#broadcaster = options.broadcaster;
+    this.#beforeBroadcast = options.beforeBroadcast ?? (async () => undefined);
   }
 
   async recover(
@@ -88,6 +96,18 @@ export class UnknownRecoveryManager {
         probe,
       });
     }
+    const attemptNonce = BigInt(attempt.nonce);
+    if (probe.latestNonce !== attemptNonce || probe.pendingNonce !== attemptNonce) {
+      return Object.freeze({
+        attemptId: attempt.attemptId,
+        txHash: attempt.signedTxHash,
+        state: "NONCE_MISMATCH_UNRESOLVED",
+        nonceLeaseMustRemain: true,
+        reservationMustRemain: true,
+        backgroundRecheckRequired: true,
+        probe,
+      });
+    }
     if (nowMs > expiresAtMs) {
       return Object.freeze({
         attemptId: attempt.attemptId,
@@ -105,6 +125,7 @@ export class UnknownRecoveryManager {
     if (actualHash.toLowerCase() !== attempt.signedTxHash.toLowerCase()) {
       throw new Error("vault returned a different signed payload");
     }
+    await this.#beforeBroadcast();
     const replay = await this.#broadcaster.broadcast(raw);
     if (replay.txHash.toLowerCase() !== attempt.signedTxHash.toLowerCase()) {
       throw new Error("same-raw recovery broadcaster returned a different txHash");

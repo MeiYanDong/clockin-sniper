@@ -1,8 +1,8 @@
 [Unit]
-Description=ClockIn active ten-lane executor
+Description=ClockIn WETH Safe Launch active ten-lane executor
 Wants=network-online.target time-sync.target
-Requires=clockin-reconciler.service clockin-exit.service
-After=network-online.target time-sync.target clockin-control.service clockin-reconciler.service clockin-exit.service
+Requires=clockin-reconciler.service
+After=network-online.target time-sync.target clockin-control.service clockin-reconciler.service
 StartLimitIntervalSec=60s
 StartLimitBurst=8
 ConditionPathExists=/etc/clockin-sniper/PAID_RPC_APPROVED
@@ -68,6 +68,4 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 AmbientCapabilities=
 ReadWritePaths=/var/lib/clockin-sniper /run/clockin-executor /run/clockin-status
-
-[Install]
-WantedBy=multi-user.target
+ReadOnlyPaths=/var/lib/clockin-handoff

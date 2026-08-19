@@ -84,7 +84,7 @@ describe("receipt-to-effect economic truth", () => {
     assert.deepEqual(result.effect.positionLotIds, [result.positionLot?.lotId]);
   });
 
-  it("does not create a lot for revert, success-without-tokens, or disputed delivery", () => {
+  it("isolates receipt delivery from dust and disputes only a receipt amount the balance cannot cover", () => {
     const reverted = buildEntryEffect(receipt({ receiptStatus: 0 }));
     assert.equal(reverted.effect.result, "REVERTED");
     assert.equal(reverted.positionLot, undefined);
@@ -95,7 +95,13 @@ describe("receipt-to-effect economic truth", () => {
     assert.equal(empty.effect.result, "SUCCESS_NO_TOKENS");
     assert.equal(empty.positionLot, undefined);
 
-    const disputed = buildEntryEffect(receipt({ transferLogTokenOutRaw: 599n }));
+    const dusted = buildEntryEffect(receipt({ transferLogTokenOutRaw: 599n }));
+    assert.equal(dusted.effect.result, "SUCCESS");
+    assert.equal(dusted.positionLot?.quantityRaw, "599");
+    assert.equal(dusted.externalTokenDeltaRaw, 1n);
+    assert.match(dusted.effect.evidenceIds.at(-1) ?? "", /external-token-delta-raw:1/u);
+
+    const disputed = buildEntryEffect(receipt({ transferLogTokenOutRaw: 601n }));
     assert.equal(disputed.effect.result, "DISPUTED");
     assert.equal(disputed.positionLot, undefined);
   });
@@ -301,7 +307,7 @@ describe("same-raw multi-route broadcast", () => {
     }
   });
 
-  it("treats a provider hash mismatch as deterministic rejection", async () => {
+  it("fences a provider hash mismatch as UNKNOWN because submission cannot be disproved", async () => {
     const broadcaster = new SameRawBroadcaster({
       providers: [new FixtureProvider("wrong", "local", identity(), async () => WRONG_HASH)],
       expectedChainId: 4_663,
@@ -309,8 +315,52 @@ describe("same-raw multi-route broadcast", () => {
     });
     await broadcaster.preflight();
     const result = await broadcaster.broadcast(RAW);
-    assert.equal(result.state, "REJECTED");
+    assert.equal(result.state, "UNKNOWN");
+    assert.equal(result.outcomes[0]?.result, "UNKNOWN");
     assert.match(result.outcomes[0]?.reason ?? "", /different/);
+  });
+
+  it("keeps internal and unfamiliar provider failures UNKNOWN", async () => {
+    for (const error of [
+      new Error("JSON-RPC -32603 internal error"),
+      new Error("upstream refused this request for an unfamiliar reason"),
+    ]) {
+      const broadcaster = new SameRawBroadcaster({
+        providers: [
+          new FixtureProvider("unknown", "local", identity(), async () => {
+            throw error;
+          }),
+        ],
+        expectedChainId: 4_663,
+        expectedGenesisHash: GENESIS_HASH,
+      });
+      await broadcaster.preflight();
+      const result = await broadcaster.broadcast(RAW);
+      assert.equal(result.state, "UNKNOWN");
+      assert.equal(result.outcomes[0]?.result, "UNKNOWN");
+    }
+  });
+
+  it("requires every route to prove a pre-acceptance rejection before returning REJECTED", async () => {
+    const broadcaster = new SameRawBroadcaster({
+      providers: [
+        new FixtureProvider("deterministic", "local", identity(), async () => {
+          throw new Error("invalid sender");
+        }),
+        new FixtureProvider("unproven", "local", identity(), async () => {
+          throw new Error("provider policy failure");
+        }),
+      ],
+      expectedChainId: 4_663,
+      expectedGenesisHash: GENESIS_HASH,
+    });
+    await broadcaster.preflight();
+    const result = await broadcaster.broadcast(RAW);
+    assert.equal(result.state, "UNKNOWN");
+    assert.deepEqual(
+      result.outcomes.map((outcome) => outcome.result),
+      ["REJECTED", "UNKNOWN"],
+    );
   });
 });
 
@@ -379,7 +429,7 @@ describe("UNKNOWN same-raw recovery", () => {
   it("does not replay a known transaction and keeps expired ambiguity under background audit", async () => {
     for (const [snapshot, nowMs, expected] of [
       [recoveryProbe({ transactionKnown: true, pendingNonce: 8n }), 1_500, "PENDING"],
-      [recoveryProbe({ latestNonce: 8n, pendingNonce: 8n }), 2_001, "EXPIRED_UNRESOLVED"],
+      [recoveryProbe(), 2_001, "EXPIRED_UNRESOLVED"],
       [
         recoveryProbe({ receipt: { txHash: TX_HASH, blockHash: BLOCK_HASH, status: 1 } }),
         1_500,
@@ -402,6 +452,68 @@ describe("UNKNOWN same-raw recovery", () => {
       assert.equal(replayed, false);
       assert.equal(result.backgroundRecheckRequired, expected !== "RECEIPT_FOUND");
     }
+  });
+
+  it("never replays when either canonical nonce no longer equals the UNKNOWN attempt nonce", async () => {
+    for (const snapshot of [
+      recoveryProbe({ latestNonce: 8n, pendingNonce: 8n }),
+      recoveryProbe({ latestNonce: 7n, pendingNonce: 8n }),
+      recoveryProbe({ latestNonce: 8n, pendingNonce: 7n }),
+      recoveryProbe({ latestNonce: 6n, pendingNonce: 6n }),
+    ]) {
+      let vaultRead = false;
+      let replayed = false;
+      const manager = new UnknownRecoveryManager({
+        probe: { snapshot: async () => snapshot },
+        vault: {
+          get: async () => {
+            vaultRead = true;
+            return RAW;
+          },
+        },
+        broadcaster: {
+          broadcast: async () => {
+            replayed = true;
+            return { txHash: TX_HASH };
+          },
+        },
+      });
+      const result = await manager.recover(unknownAttempt(), 2_000, 1_500);
+      assert.equal(result.state, "NONCE_MISMATCH_UNRESOLVED");
+      assert.equal(result.backgroundRecheckRequired, true);
+      assert.equal(result.nonceLeaseMustRemain, true);
+      assert.equal(result.reservationMustRemain, true);
+      assert.equal(vaultRead, false);
+      assert.equal(replayed, false);
+    }
+  });
+
+  it("rechecks live authorization immediately before same-raw broadcast", async () => {
+    const sequence: string[] = [];
+    const manager = new UnknownRecoveryManager({
+      probe: { snapshot: async () => recoveryProbe() },
+      vault: {
+        get: async () => {
+          sequence.push("vault");
+          return RAW;
+        },
+      },
+      beforeBroadcast: async () => {
+        sequence.push("approval");
+        throw new Error("runtime approvals revoked");
+      },
+      broadcaster: {
+        broadcast: async () => {
+          sequence.push("broadcast");
+          return { txHash: TX_HASH };
+        },
+      },
+    });
+    await assert.rejects(
+      () => manager.recover(unknownAttempt(), 2_000, 1_500),
+      /runtime approvals revoked/u,
+    );
+    assert.deepEqual(sequence, ["vault", "approval"]);
   });
 });
 

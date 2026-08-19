@@ -399,6 +399,107 @@ const migrations: readonly Migration[] = Object.freeze([
       CREATE INDEX idx_attempt_state ON tx_attempts(state, updated_at);
     `,
   },
+  {
+    version: 6,
+    name: "retryable_capital_reservations",
+    up: `
+      ALTER TABLE capital_reservations RENAME TO capital_reservations_v5;
+      CREATE TABLE capital_reservations (
+        reservation_id TEXT PRIMARY KEY,
+        strategy_id TEXT NOT NULL,
+        budget_id TEXT NOT NULL REFERENCES strategy_budgets(budget_id),
+        launch_id TEXT NOT NULL,
+        lane_id TEXT NOT NULL REFERENCES wallet_lanes(lane_id),
+        intent_id TEXT NOT NULL,
+        config_hash TEXT NOT NULL,
+        principal_raw TEXT NOT NULL,
+        state TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO capital_reservations SELECT * FROM capital_reservations_v5;
+      DROP TABLE capital_reservations_v5;
+      CREATE INDEX idx_capital_reservation_lane
+        ON capital_reservations(strategy_id, launch_id, lane_id, state);
+      CREATE INDEX idx_capital_reservation_intent
+        ON capital_reservations(intent_id, state);
+    `,
+    down: `
+      DROP INDEX idx_capital_reservation_intent;
+      DROP INDEX idx_capital_reservation_lane;
+      ALTER TABLE capital_reservations RENAME TO capital_reservations_v6;
+      CREATE TABLE capital_reservations (
+        reservation_id TEXT PRIMARY KEY,
+        strategy_id TEXT NOT NULL,
+        budget_id TEXT NOT NULL REFERENCES strategy_budgets(budget_id),
+        launch_id TEXT NOT NULL,
+        lane_id TEXT NOT NULL REFERENCES wallet_lanes(lane_id),
+        intent_id TEXT NOT NULL,
+        config_hash TEXT NOT NULL,
+        principal_raw TEXT NOT NULL,
+        state TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (strategy_id, launch_id, lane_id),
+        UNIQUE (intent_id)
+      );
+      INSERT INTO capital_reservations SELECT * FROM capital_reservations_v6;
+      DROP TABLE capital_reservations_v6;
+    `,
+  },
+  {
+    version: 7,
+    name: "retryable_execution_plans",
+    up: `
+      DROP INDEX idx_execution_plan_hash;
+      DROP INDEX idx_execution_wallet_nonce;
+      ALTER TABLE execution_plans RENAME TO execution_plans_v6;
+      CREATE TABLE execution_plans (
+        plan_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        strategy_id TEXT NOT NULL,
+        launch_id TEXT NOT NULL,
+        lane_id TEXT NOT NULL REFERENCES wallet_lanes(lane_id),
+        wallet_address TEXT NOT NULL,
+        nonce TEXT NOT NULL,
+        plan_hash TEXT NOT NULL,
+        state TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (plan_id, revision)
+      );
+      INSERT INTO execution_plans SELECT * FROM execution_plans_v6;
+      DROP TABLE execution_plans_v6;
+      CREATE INDEX idx_execution_plan_hash ON execution_plans(plan_hash);
+      CREATE INDEX idx_execution_wallet_nonce ON execution_plans(wallet_address, nonce);
+    `,
+    down: `
+      DROP INDEX idx_execution_plan_hash;
+      DROP INDEX idx_execution_wallet_nonce;
+      ALTER TABLE execution_plans RENAME TO execution_plans_v7;
+      CREATE TABLE execution_plans (
+        plan_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        strategy_id TEXT NOT NULL,
+        launch_id TEXT NOT NULL,
+        lane_id TEXT NOT NULL REFERENCES wallet_lanes(lane_id),
+        wallet_address TEXT NOT NULL,
+        nonce TEXT NOT NULL,
+        plan_hash TEXT NOT NULL,
+        state TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (plan_id, revision),
+        UNIQUE (wallet_address, nonce, revision)
+      );
+      INSERT INTO execution_plans SELECT * FROM execution_plans_v7;
+      DROP TABLE execution_plans_v7;
+      CREATE INDEX idx_execution_plan_hash ON execution_plans(plan_hash);
+      CREATE INDEX idx_execution_wallet_nonce ON execution_plans(wallet_address, nonce);
+    `,
+  },
 ]);
 
 interface CountRow {
@@ -439,6 +540,23 @@ export interface PersistedNonceSlot {
     | "RELEASED"
     | "UNKNOWN";
   readonly planId: string;
+}
+
+export interface ReleasedPrePlanEntryReservation {
+  readonly reservationId: string;
+  readonly laneId: string;
+  readonly intentId: string;
+  readonly walletAddress: `0x${string}`;
+  readonly nonce: bigint;
+  readonly planId: string;
+  readonly previousFencingEpoch: number;
+}
+
+export interface ReleasedProvenPreBroadcastEntryReservation
+  extends ReleasedPrePlanEntryReservation {
+  readonly previousPlanState: "FROZEN" | "SIGNED";
+  readonly attemptId?: string;
+  readonly vaultRef?: string;
 }
 
 function run(statement: StatementSync, ...values: readonly SQLInputValue[]): number {
@@ -674,6 +792,21 @@ export class SqliteStore {
           `reservation exceeds budget ${reservation.budgetId}`,
         );
       }
+      const activeLaneReservation = this.#database
+        .prepare(
+          `SELECT reservation_id AS value FROM capital_reservations
+           WHERE strategy_id = ? AND launch_id = ? AND lane_id = ?
+             AND state NOT IN ('RELEASED', 'EXPIRED') LIMIT 1`,
+        )
+        .get(reservation.strategyId, reservation.launchId, reservation.laneId) as
+        | (TextRow & Record<string, unknown>)
+        | undefined;
+      if (activeLaneReservation !== undefined) {
+        throw new CanonicalInvariantError(
+          "BUDGET_EXCEEDED",
+          `lane ${reservation.laneId} already has an active capital reservation`,
+        );
+      }
 
       this.#database
         .prepare(
@@ -778,7 +911,7 @@ export class SqliteStore {
              WHERE strategy_id = ? AND launch_id = ?
              GROUP BY plan_id
            ) latest ON latest.plan_id = current.plan_id AND latest.revision = current.revision
-           ORDER BY current.wallet_address, CAST(current.nonce AS INTEGER)`,
+           ORDER BY current.wallet_address, CAST(current.nonce AS INTEGER), current.plan_id`,
       )
       .all(strategyId, launchId) as unknown as readonly TextRow[];
     return Object.freeze(rows.map((row) => Object.freeze(parseStored<ExecutionPlan>(row.value))));
@@ -1070,6 +1203,37 @@ export class SqliteStore {
       const existing = this.walletNonceSlot(slot.walletAddress, slot.nonce);
       if (existing !== undefined) {
         if (
+          existing.state === "RELEASED" &&
+          existing.ownerId === slot.ownerId &&
+          existing.fencingEpoch <= slot.fencingEpoch &&
+          existing.purpose === slot.purpose
+        ) {
+          const changed = run(
+            this.#database.prepare(
+              `UPDATE wallet_nonce_slots
+               SET fencing_epoch = ?, state = ?, plan_id = ?, updated_at = ?
+               WHERE wallet_address = ? AND nonce = ? AND owner_id = ?
+                 AND fencing_epoch = ? AND purpose = ? AND state = 'RELEASED'`,
+            ),
+            slot.fencingEpoch,
+            slot.state,
+            slot.planId,
+            updatedAt,
+            slot.walletAddress.toLowerCase(),
+            slot.nonce.toString(),
+            slot.ownerId,
+            existing.fencingEpoch,
+            slot.purpose,
+          );
+          if (changed !== 1) {
+            throw new CanonicalInvariantError(
+              "NONCE_CONFLICT",
+              `wallet nonce ${slot.walletAddress}:${slot.nonce} could not be reopened`,
+            );
+          }
+          return true;
+        }
+        if (
           existing.ownerId === slot.ownerId &&
           existing.fencingEpoch === slot.fencingEpoch &&
           existing.planId === slot.planId &&
@@ -1141,6 +1305,21 @@ export class SqliteStore {
             `reservation exceeds budget ${reservation.budgetId}`,
           );
         }
+        const activeLaneReservation = this.#database
+          .prepare(
+            `SELECT reservation_id AS value FROM capital_reservations
+             WHERE strategy_id = ? AND launch_id = ? AND lane_id = ?
+               AND state NOT IN ('RELEASED', 'EXPIRED') LIMIT 1`,
+          )
+          .get(reservation.strategyId, reservation.launchId, reservation.laneId) as
+          | (TextRow & Record<string, unknown>)
+          | undefined;
+        if (activeLaneReservation !== undefined) {
+          throw new CanonicalInvariantError(
+            "BUDGET_EXCEEDED",
+            `lane ${reservation.laneId} already has an active capital reservation`,
+          );
+        }
         this.#database
           .prepare(
             `INSERT INTO capital_reservations
@@ -1206,6 +1385,36 @@ export class SqliteStore {
           );
         nonceCreated = true;
       } else if (
+        existingSlot.state === "RELEASED" &&
+        existingSlot.ownerId === slot.ownerId &&
+        existingSlot.fencingEpoch <= slot.fencingEpoch &&
+        existingSlot.purpose === slot.purpose
+      ) {
+        const changed = run(
+          this.#database.prepare(
+            `UPDATE wallet_nonce_slots
+             SET fencing_epoch = ?, state = ?, plan_id = ?, updated_at = ?
+             WHERE wallet_address = ? AND nonce = ? AND owner_id = ?
+               AND fencing_epoch = ? AND purpose = ? AND state = 'RELEASED'`,
+          ),
+          slot.fencingEpoch,
+          slot.state,
+          slot.planId,
+          updatedAt,
+          slot.walletAddress.toLowerCase(),
+          slot.nonce.toString(),
+          slot.ownerId,
+          existingSlot.fencingEpoch,
+          slot.purpose,
+        );
+        if (changed !== 1) {
+          throw new CanonicalInvariantError(
+            "NONCE_CONFLICT",
+            `wallet nonce ${slot.walletAddress}:${slot.nonce} could not be reopened`,
+          );
+        }
+        nonceCreated = true;
+      } else if (
         existingSlot.ownerId !== slot.ownerId ||
         existingSlot.fencingEpoch !== slot.fencingEpoch ||
         existingSlot.planId !== slot.planId ||
@@ -1217,6 +1426,450 @@ export class SqliteStore {
         );
       }
       return Object.freeze({ reservationCreated, nonceCreated });
+    });
+  }
+
+  /**
+   * Release only the crash window where capital + nonce were durably reserved but no execution
+   * plan (and therefore no signed transaction) was ever persisted. The reservation, nonce slot,
+   * entry claim, and audit receipt change atomically. Any ownership or durable-effect ambiguity
+   * fails closed so recovery can never turn a possibly submitted buy into a second buy.
+   */
+  releaseOrphanedPrePlanEntryReservations(
+    strategyId: string,
+    launchId: string,
+    ownerId: string,
+    recoveredAt: IsoTimestamp,
+  ): readonly ReleasedPrePlanEntryReservation[] {
+    return this.#transaction(() => {
+      const reservations = this.#database
+        .prepare(
+          `SELECT reservation.reservation_id, reservation.lane_id, reservation.intent_id,
+                  lane.wallet_address
+           FROM capital_reservations reservation
+           JOIN wallet_lanes lane ON lane.lane_id = reservation.lane_id
+           WHERE reservation.strategy_id = ? AND reservation.launch_id = ?
+             AND reservation.state = 'RESERVED'
+           ORDER BY reservation.created_at, reservation.reservation_id`,
+        )
+        .all(strategyId, launchId) as unknown as readonly {
+        reservation_id: string;
+        lane_id: string;
+        intent_id: string;
+        wallet_address: string;
+      }[];
+      const planRows = this.#database
+        .prepare(
+          `SELECT plan_id, payload_json FROM execution_plans
+           WHERE strategy_id = ? AND launch_id = ?`,
+        )
+        .all(strategyId, launchId) as unknown as readonly {
+        plan_id: string;
+        payload_json: string;
+      }[];
+      const plannedReservationIds = new Set(
+        planRows.map(
+          (row) =>
+            parseStored<Pick<ExecutionPlan, "capitalReservationId">>(row.payload_json)
+              .capitalReservationId,
+        ),
+      );
+      const released: ReleasedPrePlanEntryReservation[] = [];
+
+      for (const reservation of reservations) {
+        // Once a plan exists, preserve the fence for explicit plan/attempt recovery; this
+        // narrowly-scoped repair must never infer that a durable plan remained unsigned.
+        if (plannedReservationIds.has(reservation.reservation_id)) continue;
+
+        const slots = this.#database
+          .prepare(
+            `SELECT wallet_address, nonce, owner_id, fencing_epoch, purpose, state, plan_id
+             FROM wallet_nonce_slots
+             WHERE wallet_address = ?
+               AND state IN ('RESERVED', 'SIGNED', 'POSSIBLY_SUBMITTED', 'UNKNOWN')`,
+          )
+          .all(reservation.wallet_address.toLowerCase()) as unknown as readonly {
+          wallet_address: string;
+          nonce: string;
+          owner_id: string;
+          fencing_epoch: number | bigint;
+          purpose: PersistedNonceSlot["purpose"];
+          state: PersistedNonceSlot["state"];
+          plan_id: string;
+        }[];
+        if (slots.length !== 1) {
+          throw new CanonicalInvariantError(
+            "NONCE_CONFLICT",
+            `pre-plan reservation ${reservation.reservation_id} has ${slots.length} active nonce slots`,
+          );
+        }
+        const slot = slots[0];
+        if (slot === undefined) throw new Error("pre-plan nonce slot disappeared during recovery");
+        const attemptKey = reservation.reservation_id.startsWith("entry-reservation:")
+          ? reservation.reservation_id.slice("entry-reservation:".length)
+          : "";
+        const expectedPlanId = attemptKey === "" ? "" : `entry-plan:${attemptKey}`;
+        const durablePlanOrAttempt = this.#database
+          .prepare(
+            `SELECT
+               (SELECT COUNT(*) FROM execution_plans WHERE plan_id = ?) +
+               (SELECT COUNT(*) FROM tx_attempts
+                WHERE plan_id = ? OR (wallet_address = ? AND nonce = ?)) AS value`,
+          )
+          .get(
+            slot.plan_id,
+            slot.plan_id,
+            reservation.wallet_address.toLowerCase(),
+            slot.nonce,
+          ) as unknown as CountRow;
+        if (
+          slot.plan_id !== expectedPlanId ||
+          slot.state !== "RESERVED" ||
+          slot.purpose !== "ENTRY" ||
+          slot.owner_id !== ownerId ||
+          Number(durablePlanOrAttempt.value) !== 0
+        ) {
+          throw new CanonicalInvariantError(
+            "NONCE_CONFLICT",
+            `pre-plan reservation ${reservation.reservation_id} is not provably unsigned and owned`,
+          );
+        }
+        const claim = this.#database
+          .prepare(
+            `SELECT intent_id AS value FROM wallet_entry_claims
+             WHERE strategy_id = ? AND launch_id = ? AND wallet_address = ?`,
+          )
+          .get(strategyId, launchId, reservation.wallet_address.toLowerCase()) as unknown as
+          | TextRow
+          | undefined;
+        if (claim?.value !== reservation.intent_id) {
+          throw new CanonicalInvariantError(
+            "NONCE_CONFLICT",
+            `pre-plan reservation ${reservation.reservation_id} has no matching entry claim`,
+          );
+        }
+
+        const reservationChanged = run(
+          this.#database.prepare(
+            `UPDATE capital_reservations SET state = 'RELEASED', updated_at = ?
+             WHERE reservation_id = ? AND state = 'RESERVED'`,
+          ),
+          recoveredAt,
+          reservation.reservation_id,
+        );
+        const slotChanged = run(
+          this.#database.prepare(
+            `UPDATE wallet_nonce_slots SET state = 'RELEASED', updated_at = ?
+             WHERE wallet_address = ? AND nonce = ? AND owner_id = ? AND fencing_epoch = ?
+               AND purpose = 'ENTRY' AND state = 'RESERVED' AND plan_id = ?`,
+          ),
+          recoveredAt,
+          reservation.wallet_address.toLowerCase(),
+          slot.nonce,
+          slot.owner_id,
+          Number(slot.fencing_epoch),
+          slot.plan_id,
+        );
+        const claimDeleted = run(
+          this.#database.prepare(
+            `DELETE FROM wallet_entry_claims
+             WHERE strategy_id = ? AND launch_id = ? AND wallet_address = ? AND intent_id = ?`,
+          ),
+          strategyId,
+          launchId,
+          reservation.wallet_address.toLowerCase(),
+          reservation.intent_id,
+        );
+        if (reservationChanged !== 1 || slotChanged !== 1 || claimDeleted !== 1) {
+          throw new CanonicalInvariantError(
+            "NONCE_CONFLICT",
+            `pre-plan reservation ${reservation.reservation_id} changed during recovery`,
+          );
+        }
+        const result = Object.freeze({
+          reservationId: reservation.reservation_id,
+          laneId: reservation.lane_id,
+          intentId: reservation.intent_id,
+          walletAddress: reservation.wallet_address.toLowerCase() as `0x${string}`,
+          nonce: BigInt(slot.nonce),
+          planId: slot.plan_id,
+          previousFencingEpoch: Number(slot.fencing_epoch),
+        });
+        this.#database
+          .prepare(
+            `INSERT INTO audit_events
+              (event_id, event_kind, strategy_id, launch_id, object_id, parent_event_id,
+               reason_code, payload_json, observed_at)
+             VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+          )
+          .run(
+            `pre-plan-orphan-released:${reservation.reservation_id}`,
+            "ENTRY_PRE_PLAN_ORPHAN_RELEASED",
+            strategyId,
+            launchId,
+            reservation.reservation_id,
+            "SIGKILL_BEFORE_EXECUTION_PLAN",
+            canonicalJson({
+              formatVersion: 1,
+              reservationId: result.reservationId,
+              laneId: result.laneId,
+              intentId: result.intentId,
+              walletAddress: result.walletAddress,
+              nonce: result.nonce.toString(),
+              planId: result.planId,
+              previousFencingEpoch: result.previousFencingEpoch,
+              recoveryOwnerId: ownerId,
+            }),
+            recoveredAt,
+          );
+        released.push(result);
+      }
+      return Object.freeze(released);
+    });
+  }
+
+  /**
+   * Repair the later SIGKILL windows that are still provably pre-broadcast. The executor always
+   * fsyncs ENTRY_PRE_BROADCAST_SNAPSHOT before changing the nonce slot to POSSIBLY_SUBMITTED or
+   * calling a transport. Therefore a FROZEN/SIGNED plan (optionally with a SIGNED attempt) with no
+   * snapshot, no effect, no transport event, and a RESERVED/SIGNED nonce can be invalidated and
+   * released atomically. Any weaker proof remains fenced.
+   */
+  releaseProvenPreBroadcastEntryReservations(
+    strategyId: string,
+    launchId: string,
+    ownerId: string,
+    recoveredAt: IsoTimestamp,
+  ): readonly ReleasedProvenPreBroadcastEntryReservation[] {
+    return this.#transaction(() => {
+      const latestPlans = this.#database
+        .prepare(
+          `SELECT current.payload_json AS value
+           FROM execution_plans current
+           JOIN (
+             SELECT plan_id, MAX(revision) AS revision
+             FROM execution_plans
+             WHERE strategy_id = ? AND launch_id = ?
+             GROUP BY plan_id
+           ) latest ON latest.plan_id = current.plan_id AND latest.revision = current.revision
+           ORDER BY current.plan_id`,
+        )
+        .all(strategyId, launchId) as unknown as readonly TextRow[];
+      const released: ReleasedProvenPreBroadcastEntryReservation[] = [];
+
+      for (const plan of latestPlans.map((row) => parseStored<ExecutionPlan>(row.value))) {
+        if (plan.state !== "FROZEN" && plan.state !== "SIGNED") continue;
+        const reservation = this.#database
+          .prepare(
+            `SELECT reservation_id, lane_id, intent_id, state
+             FROM capital_reservations
+             WHERE reservation_id = ? AND strategy_id = ? AND launch_id = ?`,
+          )
+          .get(plan.capitalReservationId, strategyId, launchId) as unknown as
+          | { reservation_id: string; lane_id: string; intent_id: string; state: ReservationState }
+          | undefined;
+        if (reservation?.state !== "RESERVED") continue;
+
+        const attemptRows = this.#database
+          .prepare(
+            `SELECT current.payload_json AS value
+             FROM tx_attempts current
+             JOIN (
+               SELECT attempt_id, MAX(revision) AS revision
+               FROM tx_attempts WHERE plan_id = ? GROUP BY attempt_id
+             ) latest
+             ON latest.attempt_id = current.attempt_id AND latest.revision = current.revision`,
+          )
+          .all(plan.planId) as unknown as readonly TextRow[];
+        if (attemptRows.length > 1) {
+          throw new CanonicalInvariantError(
+            "NONCE_CONFLICT",
+            `pre-broadcast plan ${plan.planId} has multiple durable attempts`,
+          );
+        }
+        const attempt =
+          attemptRows[0] === undefined ? undefined : parseStored<TxAttempt>(attemptRows[0].value);
+        if (
+          attempt !== undefined &&
+          (attempt.state !== "SIGNED" || attempt.transportEvents.length !== 0)
+        ) {
+          continue;
+        }
+        const snapshotCount = this.#database
+          .prepare(
+            `SELECT COUNT(*) AS value FROM audit_events
+             WHERE strategy_id = ? AND launch_id = ?
+               AND event_kind = 'ENTRY_PRE_BROADCAST_SNAPSHOT'
+               AND object_id IN (?, ?)`,
+          )
+          .get(strategyId, launchId, attempt?.attemptId ?? "", plan.planId) as unknown as CountRow;
+        if (Number(snapshotCount.value) !== 0) continue;
+        const effectCount = this.#database
+          .prepare(
+            `SELECT COUNT(*) AS value FROM effect_records
+             WHERE strategy_id = ? AND launch_id = ? AND lane_id = ?`,
+          )
+          .get(strategyId, launchId, plan.laneId) as unknown as CountRow;
+        if (Number(effectCount.value) !== 0) continue;
+
+        const slot = this.walletNonceSlot(plan.walletAddress, BigInt(plan.nonce));
+        if (
+          slot === undefined ||
+          slot.ownerId !== ownerId ||
+          slot.planId !== plan.planId ||
+          slot.purpose !== "ENTRY" ||
+          (slot.state !== "RESERVED" && slot.state !== "SIGNED")
+        ) {
+          continue;
+        }
+        const claim = this.#database
+          .prepare(
+            `SELECT intent_id AS value FROM wallet_entry_claims
+             WHERE strategy_id = ? AND launch_id = ? AND wallet_address = ?`,
+          )
+          .get(strategyId, launchId, plan.walletAddress.toLowerCase()) as unknown as
+          | TextRow
+          | undefined;
+        if (claim?.value !== reservation.intent_id || plan.intentId !== reservation.intent_id) {
+          throw new CanonicalInvariantError(
+            "NONCE_CONFLICT",
+            `pre-broadcast plan ${plan.planId} has no matching entry claim`,
+          );
+        }
+
+        const invalidatedPlan = Object.freeze({
+          ...plan,
+          revision: plan.revision + 1,
+          state: "INVALIDATED" as const,
+        });
+        this.#database
+          .prepare(
+            `INSERT INTO execution_plans
+              (plan_id, revision, strategy_id, launch_id, lane_id, wallet_address, nonce,
+               plan_hash, state, payload_json, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            invalidatedPlan.planId,
+            invalidatedPlan.revision,
+            invalidatedPlan.strategyId,
+            invalidatedPlan.launchId,
+            invalidatedPlan.laneId,
+            invalidatedPlan.walletAddress,
+            invalidatedPlan.nonce,
+            invalidatedPlan.planHash,
+            invalidatedPlan.state,
+            canonicalJson(invalidatedPlan),
+            invalidatedPlan.createdAt,
+          );
+        if (attempt !== undefined) {
+          const droppedAttempt = Object.freeze({
+            ...attempt,
+            revision: attempt.revision + 1,
+            state: "DROPPED_PROVEN" as const,
+            updatedAt: recoveredAt,
+          });
+          this.#database
+            .prepare(
+              `INSERT INTO tx_attempts
+                (attempt_id, revision, plan_id, strategy_id, launch_id, lane_id, wallet_address,
+                 nonce, tx_hash, payload_hash, state, payload_json, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              droppedAttempt.attemptId,
+              droppedAttempt.revision,
+              droppedAttempt.planId,
+              droppedAttempt.strategyId,
+              droppedAttempt.launchId,
+              droppedAttempt.laneId,
+              droppedAttempt.walletAddress,
+              droppedAttempt.nonce,
+              droppedAttempt.signedTxHash,
+              droppedAttempt.payloadHash,
+              droppedAttempt.state,
+              canonicalJson(droppedAttempt),
+              droppedAttempt.updatedAt,
+            );
+        }
+        const reservationChanged = run(
+          this.#database.prepare(
+            `UPDATE capital_reservations SET state = 'RELEASED', updated_at = ?
+             WHERE reservation_id = ? AND state = 'RESERVED'`,
+          ),
+          recoveredAt,
+          reservation.reservation_id,
+        );
+        const slotChanged = run(
+          this.#database.prepare(
+            `UPDATE wallet_nonce_slots SET state = 'RELEASED', updated_at = ?
+             WHERE wallet_address = ? AND nonce = ? AND owner_id = ? AND fencing_epoch = ?
+               AND purpose = 'ENTRY' AND state IN ('RESERVED', 'SIGNED') AND plan_id = ?`,
+          ),
+          recoveredAt,
+          plan.walletAddress.toLowerCase(),
+          plan.nonce,
+          ownerId,
+          slot.fencingEpoch,
+          plan.planId,
+        );
+        const claimDeleted = run(
+          this.#database.prepare(
+            `DELETE FROM wallet_entry_claims
+             WHERE strategy_id = ? AND launch_id = ? AND wallet_address = ? AND intent_id = ?`,
+          ),
+          strategyId,
+          launchId,
+          plan.walletAddress.toLowerCase(),
+          plan.intentId,
+        );
+        if (reservationChanged !== 1 || slotChanged !== 1 || claimDeleted !== 1) {
+          throw new CanonicalInvariantError(
+            "NONCE_CONFLICT",
+            `pre-broadcast plan ${plan.planId} changed during recovery`,
+          );
+        }
+        const result = Object.freeze({
+          reservationId: reservation.reservation_id,
+          laneId: reservation.lane_id,
+          intentId: reservation.intent_id,
+          walletAddress: plan.walletAddress,
+          nonce: BigInt(plan.nonce),
+          planId: plan.planId,
+          previousFencingEpoch: slot.fencingEpoch,
+          previousPlanState: plan.state,
+          ...(attempt === undefined
+            ? {}
+            : {
+                attemptId: attempt.attemptId,
+                ...(attempt.vaultRef ? { vaultRef: attempt.vaultRef } : {}),
+              }),
+        }) satisfies ReleasedProvenPreBroadcastEntryReservation;
+        this.#database
+          .prepare(
+            `INSERT INTO audit_events
+              (event_id, event_kind, strategy_id, launch_id, object_id, parent_event_id,
+               reason_code, payload_json, observed_at)
+             VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+          )
+          .run(
+            `proven-pre-broadcast-released:${plan.planId}`,
+            "ENTRY_PROVEN_PRE_BROADCAST_RELEASED",
+            strategyId,
+            launchId,
+            plan.planId,
+            "SIGKILL_BEFORE_PRE_BROADCAST_SNAPSHOT",
+            canonicalJson({
+              formatVersion: 1,
+              ...result,
+              nonce: result.nonce.toString(),
+              recoveryOwnerId: ownerId,
+            }),
+            recoveredAt,
+          );
+        released.push(result);
+      }
+      return Object.freeze(released);
     });
   }
 

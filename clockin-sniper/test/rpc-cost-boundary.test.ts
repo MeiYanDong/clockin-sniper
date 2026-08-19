@@ -7,6 +7,10 @@ import {
   PAID_RPC_APPROVAL_VALUE,
   validatePaidRpcApproval,
 } from "../src/runtime/paid-rpc-approval.js";
+import {
+  PRODUCTION_ARM_APPROVAL_VALUE,
+  validateProductionArmApproval,
+} from "../src/runtime/production-arm-approval.js";
 import { PublicControlRpc } from "../src/runtime/public-control-rpc.js";
 
 describe("public Control RPC cost boundary", () => {
@@ -162,12 +166,69 @@ describe("public Control RPC cost boundary", () => {
   it("checks paid approval before any paid service loads credentials", async () => {
     for (const file of ["executor-service.ts", "reconciler-service.ts", "exit-service.ts"]) {
       const source = await readFile(new URL(`../src/${file}`, import.meta.url), "utf8");
-      assert.match(
-        source,
-        /await assertPaidRpcApproved\(\);\s+const \[[\s\S]+?readSystemdCredential\("rpc_http"\)/u,
-        file,
-      );
+      const approvalIndex = source.indexOf("await assertPaidRpcApproved();");
+      const credentialIndex = source.indexOf('readSystemdCredential("rpc_http")');
+      assert.ok(approvalIndex >= 0 && credentialIndex > approvalIndex, file);
     }
+  });
+
+  it("checks production arm approval before the executor reads any signer", async () => {
+    const source = await readFile(new URL("../src/executor-service.ts", import.meta.url), "utf8");
+    const approvalIndex = source.indexOf("await assertProductionArmApproved();");
+    const signerIndex = source.indexOf("loadProductionWalletSigners()");
+    assert.ok(approvalIndex >= 0 && signerIndex > approvalIndex);
+  });
+
+  it("continuously gates reconciler paid work and same-raw replay on both live approvals", async () => {
+    const source = await readFile(new URL("../src/reconciler-service.ts", import.meta.url), "utf8");
+    const mainIndex = source.indexOf("async function main(): Promise<void>");
+    const credentialIndex = source.indexOf('readSystemdCredential("rpc_http")', mainIndex);
+    const paidStartupIndex = source.indexOf("await assertPaidRpcApproved();", mainIndex);
+    const armStartupIndex = source.indexOf("await assertProductionArmApproved();", mainIndex);
+    assert.ok(mainIndex >= 0);
+    assert.ok(paidStartupIndex > mainIndex && paidStartupIndex < credentialIndex);
+    assert.ok(armStartupIndex > paidStartupIndex && armStartupIndex < credentialIndex);
+    assert.match(source, /beforeBroadcast: assertRuntimeApprovals/u);
+    assert.match(
+      source,
+      /const tick = async \(\): Promise<string \| null> => \{[\s\S]*await assertRuntimeApprovals\(\);/u,
+    );
+    assert.match(source, /stopping = true;[\s\S]*clearInterval\(timer\)/u);
+    assert.match(source, /writeStatus\("FAILED", \["RUNTIME_APPROVAL_REVOKED", reason\]\)/u);
+    assert.match(source, /process\.exitCode = 1;/u);
+  });
+
+  it("continuously gates Exit startup, ticks, signing and broadcast on both live approvals", async () => {
+    const source = await readFile(new URL("../src/exit-service.ts", import.meta.url), "utf8");
+    const mainIndex = source.indexOf("async function main(): Promise<void>");
+    const startupApprovalIndex = source.indexOf("await assertRuntimeApprovals();", mainIndex);
+    const credentialIndex = source.indexOf('readSystemdCredential("rpc_http")', mainIndex);
+    assert.ok(mainIndex >= 0);
+    assert.ok(startupApprovalIndex > mainIndex && startupApprovalIndex < credentialIndex);
+
+    const tickIndex = source.indexOf("const tick = async (): Promise<void>", mainIndex);
+    const tickApprovalIndex = source.indexOf("await assertRuntimeApprovals();", tickIndex);
+    const tickRpcIndex = source.indexOf('canonical.request<string>("eth_blockNumber")', tickIndex);
+    assert.ok(tickIndex > mainIndex);
+    assert.ok(tickApprovalIndex > tickIndex && tickApprovalIndex < tickRpcIndex);
+
+    const submitIndex = source.indexOf("const submit = async", mainIndex);
+    const signingIndex = source.indexOf("input.signer.signer.signTransaction", submitIndex);
+    const signingApprovalIndex = source.lastIndexOf(
+      "await assertRuntimeApprovals();",
+      signingIndex,
+    );
+    const broadcastIndex = source.indexOf("broadcaster.broadcast(raw)", signingIndex);
+    const broadcastApprovalIndex = source.lastIndexOf(
+      "await assertRuntimeApprovals();",
+      broadcastIndex,
+    );
+    assert.ok(signingApprovalIndex > submitIndex && signingApprovalIndex < signingIndex);
+    assert.ok(broadcastApprovalIndex > signingIndex && broadcastApprovalIndex < broadcastIndex);
+    assert.match(source, /runtime approval revoked; paid exit lifecycle stopped/u);
+    assert.match(source, /stop\("RUNTIME_APPROVAL_REVOKED", "FAILED"/u);
+    assert.match(source, /if \(tickTimer !== null\) clearInterval\(tickTimer\)/u);
+    assert.match(source, /if \(approvalTimer !== null\) clearInterval\(approvalTimer\)/u);
   });
 });
 
@@ -200,6 +261,45 @@ describe("paid RPC approval marker", () => {
     );
     assert.throws(
       () => validatePaidRpcApproval("wrong", { isFile: true, uid: 0, mode: 0o100640 }),
+      /invalid value/,
+    );
+  });
+});
+
+describe("production arm approval marker", () => {
+  it("accepts only an exact root-owned non-writable marker", () => {
+    assert.doesNotThrow(() =>
+      validateProductionArmApproval(`${PRODUCTION_ARM_APPROVAL_VALUE}\n`, {
+        isFile: true,
+        uid: 0,
+        mode: 0o100640,
+      }),
+    );
+    assert.throws(
+      () =>
+        validateProductionArmApproval(PRODUCTION_ARM_APPROVAL_VALUE, {
+          isFile: true,
+          uid: 501,
+          mode: 0o100640,
+        }),
+      /owned by root/,
+    );
+    assert.throws(
+      () =>
+        validateProductionArmApproval(PRODUCTION_ARM_APPROVAL_VALUE, {
+          isFile: true,
+          uid: 0,
+          mode: 0o100660,
+        }),
+      /group\/world writable/,
+    );
+    assert.throws(
+      () =>
+        validateProductionArmApproval("wrong", {
+          isFile: true,
+          uid: 0,
+          mode: 0o100640,
+        }),
       /invalid value/,
     );
   });

@@ -1,6 +1,6 @@
 import { CanonicalInvariantError, stableHash } from "../core/canonical.js";
 
-export type CapScope = "PER_TX" | "PER_WALLET" | "GLOBAL" | "UNKNOWN";
+export type CapScope = "PER_TX" | "PER_WALLET" | "GLOBAL" | "NO_CAP" | "UNKNOWN";
 export type CooldownScope = "PER_WALLET" | "GLOBAL" | "NONE" | "UNKNOWN";
 
 export interface MechanismSnapshot {
@@ -164,6 +164,7 @@ export async function readMechanismSnapshot(
       "PER_TX",
       "PER_WALLET",
       "GLOBAL",
+      "NO_CAP",
       "UNKNOWN",
     ]),
     quoteAsset: quoteAsset as `0x${string}`,

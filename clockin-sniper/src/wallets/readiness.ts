@@ -24,6 +24,9 @@ export interface WalletReadinessRow {
   readonly principalRequiredWei: bigint;
   readonly entryGasRequiredWei: bigint;
   readonly exitGasRequiredWei: bigint;
+  readonly canaryGasSafetyMarginWei: bigint;
+  readonly canaryTotalRequiredWei: bigint;
+  readonly canaryShortfallWei: bigint;
   readonly gasSafetyMarginWei: bigint;
   readonly totalRequiredWei: bigint;
   readonly shortfallWei: bigint;
@@ -31,6 +34,7 @@ export interface WalletReadinessRow {
   readonly entryGasReady: boolean;
   readonly exitGasReady: boolean;
   readonly nonceClean: boolean;
+  readonly canaryReady: boolean;
   readonly ready: boolean;
 }
 
@@ -41,11 +45,16 @@ export interface WalletReadinessReport {
   readonly entryGasReadyWallets: number;
   readonly exitGasReadyWallets: number;
   readonly nonceCleanWallets: number;
+  readonly canaryReadyWallets: number;
+  readonly laterLaneReadyWallets: number;
   readonly readyWallets: number;
+  readonly canaryAggregateRequiredWei: bigint;
   readonly aggregateRequiredWei: bigint;
   readonly aggregateAllInCapWei: bigint;
   readonly allInCapReady: boolean;
   readonly automaticTopUpAllowed: false;
+  readonly canaryArmed: boolean;
+  readonly laterLanesArmed: boolean;
   readonly hotArmed: boolean;
 }
 
@@ -92,6 +101,10 @@ export async function inspectWalletReadiness(
   const exitGasRequiredWei =
     (policy.approvalGasLimit + policy.sellGasLimit * BigInt(policy.maximumSellTransactions)) *
     policy.exitMaxFeePerGasWei;
+  const canaryGasSafetyMarginWei =
+    (entryGasRequiredWei * BigInt(policy.gasSafetyMarginBps) + 9_999n) / 10_000n;
+  const canaryTotalRequiredWei =
+    policy.batchValueWei + entryGasRequiredWei + canaryGasSafetyMarginWei;
   const gasSafetyMarginWei =
     ((entryGasRequiredWei + exitGasRequiredWei) * BigInt(policy.gasSafetyMarginBps) + 9_999n) /
     10_000n;
@@ -113,6 +126,7 @@ export async function inspectWalletReadiness(
       const entryGasReady = balanceWei >= policy.batchValueWei + entryGasRequiredWei;
       const exitGasReady = balanceWei >= totalRequiredWei;
       const nonceClean = !unknownPending;
+      const canaryReady = balanceWei >= canaryTotalRequiredWei && nonceClean;
       return Object.freeze({
         walletId: entry.walletId,
         address: entry.address,
@@ -123,6 +137,10 @@ export async function inspectWalletReadiness(
         principalRequiredWei: policy.batchValueWei,
         entryGasRequiredWei,
         exitGasRequiredWei,
+        canaryGasSafetyMarginWei,
+        canaryTotalRequiredWei,
+        canaryShortfallWei:
+          balanceWei >= canaryTotalRequiredWei ? 0n : canaryTotalRequiredWei - balanceWei,
         gasSafetyMarginWei,
         totalRequiredWei,
         shortfallWei: balanceWei >= totalRequiredWei ? 0n : totalRequiredWei - balanceWei,
@@ -130,13 +148,17 @@ export async function inspectWalletReadiness(
         entryGasReady,
         exitGasReady,
         nonceClean,
+        canaryReady,
         ready: principalReady && entryGasReady && exitGasReady && nonceClean,
       });
     }),
   );
   const expectedWalletCount = manifest.entries.length;
   const aggregateRequiredWei = totalRequiredWei * BigInt(expectedWalletCount);
+  const canaryAggregateRequiredWei = canaryTotalRequiredWei;
   const allInCapReady = aggregateRequiredWei <= policy.aggregateAllInCapWei;
+  const canaryReadyWallets = rows.filter((row) => row.canaryReady).length;
+  const laterLaneReadyWallets = rows.slice(1).filter((row) => row.ready).length;
   const report: WalletReadinessReport = Object.freeze({
     chainId,
     rows: Object.freeze(rows),
@@ -144,11 +166,19 @@ export async function inspectWalletReadiness(
     entryGasReadyWallets: rows.filter((row) => row.entryGasReady).length,
     exitGasReadyWallets: rows.filter((row) => row.exitGasReady).length,
     nonceCleanWallets: rows.filter((row) => row.nonceClean).length,
+    canaryReadyWallets,
+    laterLaneReadyWallets,
     readyWallets: rows.filter((row) => row.ready).length,
+    canaryAggregateRequiredWei,
     aggregateRequiredWei,
     aggregateAllInCapWei: policy.aggregateAllInCapWei,
     allInCapReady,
     automaticTopUpAllowed: false,
+    canaryArmed:
+      expectedWalletCount === 10 &&
+      rows[0]?.canaryReady === true &&
+      canaryAggregateRequiredWei <= policy.aggregateAllInCapWei,
+    laterLanesArmed: expectedWalletCount === 10 && laterLaneReadyWallets === 9 && allInCapReady,
     hotArmed: expectedWalletCount === 10 && rows.every((row) => row.ready) && allInCapReady,
   });
   return report;

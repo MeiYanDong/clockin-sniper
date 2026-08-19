@@ -53,6 +53,3 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 AmbientCapabilities=
 ReadWritePaths=/var/lib/clockin-sniper /run/clockin-reconciler /run/clockin-status
-
-[Install]
-WantedBy=multi-user.target

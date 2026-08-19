@@ -1,15 +1,19 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { Wallet, getAddress, getBytes, isHexString } from "ethers";
+import { getAddress, getBytes, isHexString, Wallet } from "ethers";
 
 import type { WalletManifest, WalletManifestEntry } from "../wallets/wallet-manifest.js";
 import {
-  parseProductionAuthorization,
-  parseProductionProfile,
   type ProductionAuthorization,
   type ProductionProtocolProfile,
+  parseProductionAuthorization,
+  parseProductionProfile,
 } from "./production-profile.js";
+import {
+  parseStonkSafeLaunchProductionProfile,
+  type StonkSafeLaunchProductionProfile,
+} from "./stonk-safe-launch-production-profile.js";
 
 export interface LoadedWalletSigner {
   readonly entry: WalletManifestEntry;
@@ -94,6 +98,28 @@ export async function loadProductionProfileAndAuthorization(
   Readonly<{ profile: ProductionProtocolProfile; authorization: ProductionAuthorization }>
 > {
   const profile = parseProductionProfile(
+    JSON.parse(await readSystemdCredential("factory_profile", env)),
+  );
+  const authorization = parseProductionAuthorization(
+    JSON.parse(await readSystemdCredential("authorization", env)),
+    profile,
+    manifest,
+    now,
+  );
+  return Object.freeze({ profile, authorization });
+}
+
+export async function loadStonkSafeLaunchProfileAndAuthorization(
+  manifest: WalletManifest,
+  env: NodeJS.ProcessEnv = process.env,
+  now = new Date().toISOString(),
+): Promise<
+  Readonly<{
+    profile: StonkSafeLaunchProductionProfile;
+    authorization: ProductionAuthorization;
+  }>
+> {
+  const profile = parseStonkSafeLaunchProductionProfile(
     JSON.parse(await readSystemdCredential("factory_profile", env)),
   );
   const authorization = parseProductionAuthorization(
