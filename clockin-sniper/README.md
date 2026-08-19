@@ -4,7 +4,7 @@ ClockIn Sniper v2 是 Robinhood Chain (`chainId=4663`) 的事件驱动、10 EOA 
 
 ## 当前状态
 
-`capability-manifest.json` 当前仍声明 `NOT_HOT_ARMED`，新 hot-path 收口处于 `IMPLEMENTED_FINAL_GATE_PENDING`。2026-08-20 已冻结当前 ClockIn WETH quoted 主路的 pad、approved creator、`LaunchCreated`、`LaunchArmed`、`getLaunch/currentTaxBps/quoteBuy` 和 `buy` 绑定；旧的“最终 Factory/ABI 未发布”已被这一新证据取代。常驻 Control 的唯一链 transport 仍是 Robinhood 官方公共 HTTP RPC；X/官网只异步确认或报告 CA 冲突，不会占用事件→签名热路。
+`capability-manifest.json` 当前仍声明 `NOT_HOT_ARMED`；新 hot-path 已通过本地 clean-tree 全量门禁，生产部署与钱包准备尚未执行。2026-08-20 已冻结当前 ClockIn WETH quoted 主路的 pad、approved creator、`LaunchCreated`、`LaunchArmed`、`getLaunch/currentTaxBps/quoteBuy` 和 `buy` 绑定；旧的“最终 Factory/ABI 未发布”已被这一新证据取代。常驻 Control 的唯一链 transport 仍是 Robinhood 官方公共 HTTP RPC；X/官网只异步确认或报告 CA 冲突，不会占用事件→签名热路。
 
 本地已完成 quoted adapter/discovery、exact-metadata public handoff、reorg replacement、dynamic quote/tax、WETH readiness/preparation recovery、真实 executor restart/lifecycle 的代码与测试。这些仍只是本地产物，不是生产部署回执。`47.251.28.201` 上仍只有 revision 11 公共 Control `enabled/active`，三个资金服务 `disabled/inactive`，`PAID_RPC_APPROVED`/`PRODUCTION_ARM_APPROVED` absent，因此线上当前不会买。10 个钱包均为 `0 WETH / 0 allowance`，尚未 wrap/approve；每个 `0.0032 ETH` 只是 native 余额证据。
 
@@ -33,7 +33,7 @@ ClockIn Sniper v2 是 Robinhood Chain (`chainId=4663`) 的事件驱动、10 EOA 
 - immutable production profile/7 天授权解析、Factory event exact decode、launch-bound pool target、configured buy/sell route、Executor/Reconciler/Exit 三进程、append-only crash recovery、redacted status interlock 和 systemd watchdog。
 - 官网 raw/semantic 双指纹、scope-bound launch 状态和未验证候选地址集合，以及同一公共 RPC 物理限速器内的链头 foreground / readiness background 优先级调度。
 
-quoted entry adapter 的主网身份与调用语义已验证，但“实现/targeted tests 通过”仍不等于本次全量门禁、部署或成交已完成。当前 generic Exit 无法解析 quoted profile，能力状态是 `UNSUPPORTED`；它不再是 lanes 2–10 的 entry 前置，但意味着不能宣称自动退出已武装。
+quoted entry adapter 的主网身份与调用语义已验证，本地 clean-tree 全量门禁也已通过；这些仍不等于生产部署或成交已完成。当前 generic Exit 无法解析 quoted profile，能力状态是 `UNSUPPORTED`；它不再是 lanes 2–10 的 entry 前置，但意味着不能宣称自动退出已武装。
 
 ## 验证和构建
 

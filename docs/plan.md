@@ -2176,7 +2176,7 @@ lanes 2–10 必须在同一时点同时满足：
 
 本节使用四层不可互换的证据状态：
 
-1. `IMPLEMENTED_FINAL_GATE_PENDING`：代码和定向测试已存在，但本次最终 clean-tree 全量门禁、archive 和 release readback 尚未完成；
+1. `LOCAL_FULL_GATE_PASSED`：代码、386 项测试、两套 coverage、clean-tree verify、secret/history/public-scope 与真实 archive audit 已通过，但不代表生产部署；
 2. `ENTRY_HOT_ARMED`：launch 前生产回执，必须证明 artifact/profile/auth、公共 cursor caught-up、10/10 WETH/allowance/Gas/nonce、双 marker 与 valid-only path 全部当前有效；
 3. `CANONICAL_ENTRY_EFFECT_CONFIRMED`：launch 后经 canonical receipt、WETH/token delta 和 `EffectRecord` 证明真实成交；
 4. `QUOTED_EXIT_UNSUPPORTED`：当前 generic Exit 不能解析 quoted profile，这是已接受的持仓风险限制，不会被 entry 回执或买入 effect 伪装成“自动退出已武装”。
@@ -2220,11 +2220,11 @@ Exit 仍应尽快实现 quoted 路由并取得真实回执，但当前 generic E
 
 | 层级 | 2026-08-20 当前状态 | 能证明什么 |
 |---|---|---|
-| 本地实现 | `IMPLEMENTED_FINAL_GATE_PENDING`：quoted adapter/discovery/public handoff/reorg recovery/readiness/preparation/executor/paid lifecycle 代码与 targeted tests 已存在；仓库外 profile + 7 天 authorization 需随最终 artifact 重生 | 证明定向行为，不证明本次全量门禁通过、云机已运行或交易已发生 |
+| 本地实现 | `LOCAL_FULL_GATE_PASSED`：quoted adapter/discovery/public handoff/reorg recovery/readiness/preparation/executor/paid lifecycle 已通过 386/386、两套 coverage、clean-tree verify 与真实 archive audit；仓库外 profile + 7 天 authorization 仍需随最终 artifact 重生 | 证明本地实现与发布边界，不证明云机已运行或交易已发生 |
 | 生产部署 | quoted artifact/profile/auth 未部署；资金服务 disabled/inactive；两 marker absent | 线上当前只能看，知道 CA 也不会买 |
 | 钱包 readiness | 每钱包 `0.0032 ETH`，但 `0 WETH / 0 allowance` | 还不能调用 quoted buy，必须先 wrap/approve 并回读 10/10 |
 | launch 前 entry 武装 | `ENTRY_HOT_ARMED` receipt 尚不存在 | 它只能证明公共观测、付费唤醒、签名与入场准备就绪，不能写“已成交” |
 | launch 后买入效果 | 无 canonical entry receipt/effect | 真实事件发生后才能升级为 `CANONICAL_ENTRY_EFFECT_CONFIRMED`；无此 receipt 是当前效果限制，不是 launch 前 `ENTRY_HOT_ARMED` 的 blocker |
 | 自动退出 | `QUOTED_EXIT_UNSUPPORTED`，无 canonical exit receipt | 入场可按已接受风险独立武装，但不得声称自动退出就绪 |
 
-当前总状态因此仍是 `NOT_HOT_ARMED`。解锁顺序为：全量 final gate 通过并生成 checksum artifact/profile/auth → 部署与当前进程/hash 回读 → 公共 cursor 追平 confirmed head → 在 path disabled 时创建双 marker 并完成 10/10 wrap/approve/readiness → 只 enable/start `clockin-executor.path` → 回读 valid-only `active.signal`、handoff 前零付费进程及所有当前门禁 → 生成 launch 前 `ENTRY_HOT_ARMED` receipt。真实 launch 后还必须另存 canonical receipt/delta/EffectRecord，才能声称成交。禁止 launch 前手动常驻 paid Executor/Reconciler，当前 generic Exit 不得随 quoted entry 启动或被写成已武装。
+当前总状态因此仍是 `NOT_HOT_ARMED`。本地 final gate 已通过；剩余顺序为：生成 checksum artifact/profile/auth → 部署与当前进程/hash 回读 → 公共 cursor 追平 confirmed head → 在 path disabled 时创建双 marker 并完成 10/10 wrap/approve/readiness → 只 enable/start `clockin-executor.path` → 回读 valid-only `active.signal`、handoff 前零付费进程及所有当前门禁 → 生成 launch 前 `ENTRY_HOT_ARMED` receipt。真实 launch 后还必须另存 canonical receipt/delta/EffectRecord，才能声称成交。禁止 launch 前手动常驻 paid Executor/Reconciler，当前 generic Exit 不得随 quoted entry 启动或被写成已武装。

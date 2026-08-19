@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Armed-oracle `quoteUsd8` principal conversion rounded down to at most 5U per lane, with external price providers removed from the event-to-sign hot path.
 - Ten-percent preparation reserves, preparation-time and Armed-time 60U all-in gates, and `deadline-1` fee-floor enumeration that supports executable 0 bps and non-divisible decay schedules.
 - Immediate pre-sign marker/canonical-block/quote/base-fee revalidation and proven-prebroadcast-only crash release; any possible broadcast remains same-raw reconciliation only.
+- Armed-wait handoff replacement monitoring, conservative UNKNOWN-by-default provider classification, UMask-safe handoff permissions, and cross-restart preparation receipt/Gas accounting.
 - Complete ClockIn production-system technical specification.
 - Executable phased backlog with story cards, checkboxes, tests, and acceptance criteria.
 - Public-repository scope and secret-boundary documentation.
@@ -54,11 +55,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Recorded the currently verified defaults as a 300-second `9999 bps` buffer followed by `3300 bps` start tax decaying `100 bps` per minute, while retaining mandatory runtime getter reads rather than hard-coding those values.
 - Corrected the final default lane from an unreachable 0% to the last tax buyable before the strict deadline, currently 1%; the value is derived per launch from its decay/window fields.
 - Removed Exit readiness as a prerequisite for lanes 2–10; canonical canary effect, fresh Reconciler state, and readiness of the remaining WETH/allowance/nonce/Gas lanes remain mandatory expansion gates.
-- Split evidence into `IMPLEMENTED_FINAL_GATE_PENDING`, launch-before `ENTRY_HOT_ARMED`, and launch-after canonical entry effect; the absence of a real event receipt is a current effect limitation, not a pre-launch entry blocker.
+- Split evidence into `LOCAL_FULL_GATE_PASSED`, launch-before `ENTRY_HOT_ARMED`, and launch-after canonical entry effect; the absence of a real event receipt is a current effect limitation, not a pre-launch entry blocker.
 - Declared the generic Exit service unsupported for the quoted profile. Entry may be armed under the accepted risk decision, but automatic exit may not be claimed as armed.
 - Extended the verification command to include formatting, linting, coverage, production dependency audit, and package-content audit.
-- Changed the default live entrypoint to fail closed while required mainnet evidence is unavailable; legacy single-wallet commands are explicitly audit/replay-only.
-- Reserved per-wallet Gas for one entry, one approval and three sells plus 30% margin; aggregate readiness now enforces the all-in cap and rejects automatic top-up.
+- Changed the default live entrypoint to fail closed until the verified quoted profile is deployed and current production readiness passes; legacy single-wallet commands are explicitly audit/replay-only.
+- Replaced the historical generic three-sell Gas readiness assumption for this quoted entry path with buffered WETH plus wrap/approve/entry maximum Gas under the 60U all-in cap.
 - Raised the current functional baseline to 386 passing tests; core coverage is line `89.13%`, branch `68.60%`, and function `88.19%`, with a separate production-entrypoint regression gate at line `34.35%`, branch `70.41%`, and function `68.82%`.
 - Updated operational truth: all ten wallets have native ETH and clean nonces, but remain `0 WETH / 0 quoted-pad allowance`; revision-11 keyless Control is enabled/active while the quoted artifact/profile/authorization is not deployed, both approval markers are absent, and paid services remain disabled/inactive.
 - Changed Executor startup ordering so Reconciler remains mandatory while Exit prewarms in parallel. The earlier rule making missing Exit block lanes 2–10 is superseded: Exit no longer gates entry expansion.

@@ -18,6 +18,7 @@
 - `[ ]`：尚未完成；
 - `[x]`：已经完成并有可回读证据；
 - `IMPLEMENTED_FINAL_GATE_PENDING`：代码和 targeted tests 已完成，但本次 clean-tree 全量门禁/release readback 未完成；对应任务仍保持 `[ ]`；
+- `LOCAL_FULL_GATE_PASSED`：clean-tree verify、两套 coverage、secret/history/public-scope 与真实 archive audit 已通过；仍不能代替生产部署、钱包 readiness 或链上 receipt；
 - 被外部信息阻塞的任务仍保持 `[ ]`，在任务下记录 `BLOCKED_BY`；
 - 测试通过、配置存在、服务器启用、真实 receipt 是四种不同证据，不能互相替代；
 - launch 前 `ENTRY_HOT_ARMED` 只证明 entry 自动触发与资金准备就绪；真实买入只能由 launch 后 canonical receipt/delta/`EffectRecord` 证明；
@@ -1376,7 +1377,7 @@
 
 `BLOCKED_BY: ENTRY_READINESS_RECEIPT_NOT_COMPLETE`。已创建 [receipts/production-readiness.md](./receipts/production-readiness.md) 负面回执，逐项记录证据、blocker 和 owner，不伪造 `ENTRY_HOT_ARMED`。
 
-当前运行态为 `DEPLOYED_PUBLIC_CONTROL_HARDENED / IMPLEMENTED_FINAL_GATE_PENDING / NOT_HOT_ARMED`。quoted 主路协议证据已冻结；当前 blocker 是最终全量门禁未通过、新 artifact/profile/auth 还未部署、两 marker absent、付费服务 disabled/inactive 且 10 个钱包均为 `0 WETH / 0 allowance`。
+当前运行态为 `DEPLOYED_PUBLIC_CONTROL_HARDENED / LOCAL_FULL_GATE_PASSED / NOT_HOT_ARMED`。quoted 主路协议证据与本地 clean-tree 门禁已完成；当前 blocker 是新 artifact/profile/auth 还未部署、两 marker absent、付费服务 disabled/inactive 且 10 个钱包均为 `0 WETH / 0 allowance`。
 
 - [x] chainId/current head。
 - [x] 官方公共 HTTP RPC health（当前生产 Control readback）。
@@ -1676,7 +1677,7 @@
 
 目标：以已验证 quoted pad 和 approved creator 为最早确定性触发，在不等待 X/官网的情况下完成 `LaunchCreated → LaunchArmed → dynamic tax/quote → real buy`。
 
-当前代码状态为 `IMPLEMENTED_FINAL_GATE_PENDING`，生产状态为 `NOT_HOT_ARMED`。本节的公共观测收口已有 targeted-test 证据并勾选；协议/executor 和 release/security 收口虽已实现 targeted 版本，但在 root 完成 clean-tree 全量门禁前仍保持未勾选。
+当前代码状态为 `LOCAL_FULL_GATE_PASSED`，生产状态为 `NOT_HOT_ARMED`。本节公共观测、协议/executor、release/security 已通过 386/386、两套 coverage、clean-tree verify、secret/history/public-scope 与真实 npm archive audit；这不等于生产部署或钱包准备。
 
 协议证据与身份：
 
@@ -1693,7 +1694,7 @@
 - [x] 读取并验证当前默认参数：300 秒 `9999 bps` buffer，之后 `3300 bps` 开始、每分钟降 `100 bps`。
 - [x] 实现运行时 dynamic getter；不把当前默认参数硬编码为永久 profile。
 - [x] 在 `9999 bps` buffer 期间不买，第一档等待 current tax 达到当前 `startTaxBps`。
-- [ ] 按 `deadline-1` 枚举实际可成交状态并生成 10 档：验证 `deadline=start+buffer+window`，支持窗口内 0 bps 和非整除 decay；当前 `3300/100/1980 → 100 bps`（`IMPLEMENTED_FINAL_GATE_PENDING`）。
+- [x] 按 `deadline-1` 枚举实际可成交状态并生成 10 档：验证 `deadline=start+buffer+window`，支持窗口内 0 bps 和非整除 decay；当前 `3300/100/1980 → 100 bps`。
 - [x] 确认当前主路不需 STONK；native ETH 用于 WETH deposit 和 Gas。
 - [x] 将 Exit 从 lanes 2–10 前置移除；保留 canonical canary effect、fresh Reconciler 和 10/10 wallet readiness 为扩张硬门。
 
@@ -1716,29 +1717,31 @@
 - [x] Reconciler 仅在 latest/pending nonce 都等于 UNKNOWN attempt nonce 时 same-raw 重播，并在广播紧前复核双 marker。
 - [x] Exit 取消 boot enable；启动、tick、签名和广播前复核双 marker，授权过期后停止并要求续授权/人工接管。
 
-协议与 Executor 最终门禁（targeted 实现已存在，root 全量验证后才勾选）：
+协议与 Executor 最终门禁：
 
-- [ ] paid discovery 精确接收 public handoff 的 `pad/id/token/txHash/logIndex/blockNumber/blockHash`，只等该 id Armed，不被随后其他 Created 污染。
-- [ ] Armed 后以 `quoteUsd8` 把 5U 换成 WETH raw 并向下取整；Coinbase/Kraken 仅用于 preparation/cross-check，其故障不得阻断 CA→签名热路。
-- [ ] 任一 preparation 交易前冻结 10/10 计划：每 lane 10% WETH buffer + wrap/approve/entry max Gas 合计 `<=60U`；Armed 后再证明 50U principal + entry max Gas `<=60U`，超过 buffer 时 fail closed。
-- [ ] 签名紧前（所有 awaited canonical RPC 之后）再校验双 marker、canonical handoff/block、`<=15s` 且同块 quote、`baseFee+priorityFee<=authorized maxFee`；瞬时失效只 `DEFERRED`，不消耗 lane。
-- [ ] canary `minOut=1` 仍必须先得到正数、当前且同 canonical block 的 quote，不得用风险授权绕过 freshness。
-- [ ] 对 FROZEN/SIGNED plan、TxAttempt 和 pre-broadcast snapshot 间的 crash gap 执行可证明的恢复：仅在证明 snapshot/广播未发生时原子 invalidation/release，一旦存在广播可能性只许 same-raw reconciliation。
-- [ ] preparer 对 canonical `status=0` 写入 `FINAL_REVERTED`并终结 journal/vault；entry effect 允许 `balance delta >= receipt Transfer sum`，lot 只计 receipt amount，额外 dust 单独记录。
-- [ ] 确认 handoff A 被 tombstone/replacement B 取代时，旧 Executor fail-exit 并由 systemd 重启读取 B，不在旧目标上继续等待。
-- [ ] 最终文档/能力回读明确 generic Exit 对 quoted profile 是 `UNSUPPORTED`；当前只武装 entry，不宣称自动退出就绪。
+- [x] paid discovery 精确接收 public handoff 的 `pad/id/token/txHash/logIndex/blockNumber/blockHash`，只等该 id Armed，不被随后其他 Created 污染。
+- [x] Armed 后以 `quoteUsd8` 把 5U 换成 WETH raw 并向下取整；Coinbase/Kraken 仅用于 preparation/cross-check，其故障不得阻断 CA→签名热路。
+- [x] 任一 preparation 交易前冻结 10/10 计划：每 lane 10% WETH buffer + wrap/approve/entry max Gas 合计 `<=60U`；Armed 后再证明 50U principal + entry max Gas `<=60U`，超过 buffer 时 fail closed。
+- [x] 签名紧前（所有 awaited canonical RPC 之后）再校验双 marker、canonical handoff/block、`<=15s` 且同块 quote、`baseFee+priorityFee<=authorized maxFee`；瞬时失效只 `DEFERRED`，不消耗 lane。
+- [x] canary `minOut=1` 仍必须先得到正数、当前且同 canonical block 的 quote，不得用风险授权绕过 freshness。
+- [x] 对 FROZEN/SIGNED plan、TxAttempt 和 pre-broadcast snapshot 间的 crash gap 执行可证明的恢复：仅在证明 snapshot/广播未发生时原子 invalidation/release，一旦存在广播可能性只许 same-raw reconciliation。
+- [x] preparer 对 canonical `status=0` 写入 `FINAL_REVERTED`并终结 journal/vault；entry effect 允许 `balance delta >= receipt Transfer sum`，lot 只计 receipt amount，额外 dust 单独记录。
+- [x] 确认 handoff A 被 tombstone/replacement B 取代时，包括仍在等待 Armed 的阶段，旧 Executor 都会 fail-exit 并由 systemd 重启读取 B。
+- [x] SameRaw 仅对白名单内可证明 pre-acceptance 错误标 `REJECTED`；错误 hash、internal error 和陌生错误一律保持 `UNKNOWN`、nonce/reservation/vault。
+- [x] Preparer 重启会重新 canonical 核验 `FINAL/FINAL_REVERTED`，把历史实际 Gas 合并进 60U 总账，并在每次签名前执行 base-fee gate。
+- [x] 最终文档/能力回读明确 generic Exit 对 quoted profile 是 `UNSUPPORTED`；当前只武装 entry，不宣称自动退出就绪。
 
-Release 与安全最终门禁（全部待 root 全量验证）：
+Release 与安全最终门禁：
 
-- [ ] release 只解包与 checksum 精确绑定的同一 tgz，包内必须含 lockfile；stage/release 权限可被非 root 服务账户 traverse/import。
-- [ ] 安装新 Control unit 后显式 restart，用 MainPID `/proc/<pid>/cmdline` 证明当前进程来自新 release；path 启用后无条件重播 Control 以恢复有效 pointer。
-- [ ] secret tree/history/archive 拒绝 JSON/array/CSV/逗号或分号列表中的 `0x`+64 私钥及 key-shaped filename，输出始终脱敏；public scope 使用根目录 allowlist。
-- [ ] `/run/clockin-status` 为 `root:clockin-status 0750`，`control/` 为 `clockin-observer:clockin-status 2750`，`paid/` 为 `clockin:clockin-status 2750`；状态文件只能在各自 plane 用随机 exclusive temp 原子替换。
-- [ ] Reconciler 发布早期 BOOTING 状态或给予足够启动宽限，不得因 30s 启动窗口误判为 stale。
+- [x] release 只解包与 checksum 精确绑定的同一 tgz，包内必须含 lockfile；stage/release 权限可被非 root 服务账户 traverse/import。
+- [x] 安装新 Control unit 后显式 restart，用 MainPID `/proc/<pid>/cmdline` 证明当前进程来自新 release；path 启用后无条件重播 Control 以恢复有效 pointer。
+- [x] secret tree/history/archive 拒绝 JSON/array/CSV/逗号或分号列表中的 `0x`+64 私钥及 key-shaped filename，输出始终脱敏；public scope 使用根目录 allowlist。
+- [x] `/run/clockin-status` 为 `root:clockin-status 0750`，`control/` 为 `clockin-observer:clockin-status 2750`，`paid/` 为 `clockin:clockin-status 2750`；handoff `outbox/records/invalidations` 为 `2750` 且在 `UMask=0077` 下仍可由 status group 遍历读取。
+- [x] Reconciler 使用 120 秒启动宽限，不得因 30 秒窗口误判为 stale。
 
 生产部署与资金准备：
 
-- [ ] 对当前本地完整代码运行 format/lint/typecheck/full tests/secret scan/package audit，并保存当次结果。
+- [x] 对当前本地完整代码运行 format/lint/typecheck/386 tests/两套 coverage/secret tree+525 history blobs/public-scope/production audit/真实 package archive audit，结果全部通过。
 - [ ] 构建 checksum-verified immutable artifact，部署 quoted Executor 到 `47.251.28.201`，回读 artifact hash 与 systemd `ExecStart`。
 - [ ] 将仓库外 quoted profile 与 7 天 authorization 以 root-only/systemd credential 边界安装到云机，回读非敏感 hash/scope/expiry。
 - [ ] 用新鲜 ETH/USD 与 gas snapshot 重算每钱包 5U WETH principal + 10% buffer + Gas，确认 10/10 仍在 60U all-in cap 内。
