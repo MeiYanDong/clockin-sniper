@@ -1780,7 +1780,7 @@ Release 与安全最终门禁：
 
 目标：修复 2026-08-20 真实 CLOCKIN 漏单，将已授权 creator 的 canonical `LaunchCreated` 作为唯一身份热触发，并在首个税率 `<=50%` 的可买块实盘并发 10×5U。
 
-`IMPLEMENTED_FINAL_GATE_PENDING`：creator-first v3 源码、测试和当前本地 coverage/security/build 门禁已通过；尚未在 clean committed source 上生成/审计真实 npm archive，也未部署、未授权、未武装。
+`LOCAL_FULL_GATE_PASSED / DEPLOYMENT_PENDING`：creator-first v3 源码已提交并同步 Public GitHub；393 项测试、两套 coverage、security/history/public-scope/build 和真实 npm archive audit 已通过。artifact 绑定 source commit `5f61af416b16d525639a50fbabfaa2cd5645c37c`，SHA-256 为 `2fd82c9fac490d17d80c0b2c2769442363996aa2a3156cf88a1613cc7f3e2dee`。尚未部署、未授权、未武装。
 
 复盘与决策：
 
@@ -1812,6 +1812,7 @@ creator-first 身份热路：
 发布与实盘证据：
 
 - [x] 新 profile/config/auth 必须换 revision/hash，旧 `ENTRY_HOT_ARMED` 回执不得继承新的 50% + 10-lane burst 风险。
-- [ ] 运行 format/lint/typecheck/full tests/coverage/secret/public-scope/archive 门禁，记录为发布证据而非模拟成交。
+- [x] 运行 format/lint/typecheck/full tests/coverage/secret/public-scope/archive 门禁，记录为发布证据而非模拟成交。
+- [x] 将 creator-first v3 commit 与 artifact 同步 Public GitHub，并记录 [release/deployment attempt 回执](./receipts/2026-08-20-creator-first-v3-release-and-deployment-attempt.md)。
 - [ ] 部署新 artifact 后保持 paid path disabled、资金服务 inactive、双 marker absent；没有新事件授权时不能标记 `ENTRY_HOT_ARMED`。
 - [ ] 下一次实盘武装需新 profile/auth/marker/current readiness 回执；只有主网 canonical buy receipt + WETH/token delta + EffectRecord 能勾选真实成交。
