@@ -24,8 +24,6 @@ import {
 
 const DEFAULT_MAXIMUM_BLOCKS_PER_QUERY = 2_000n;
 const DEFAULT_CONFIRMATION_DEPTH = 2n;
-const CLOCKIN_TOKEN_NAME_CANONICAL = "CLOCK IN";
-const CLOCKIN_TOKEN_SYMBOL = "CLOCKIN";
 const erc20MetadataInterface = new Interface([
   "function name() view returns (string)",
   "function symbol() view returns (string)",
@@ -46,6 +44,18 @@ export interface PublicSafeLaunchHandoffSnapshot {
   }>;
   readonly lastError: string | null;
   readonly conflict: boolean;
+  readonly metadataObservation: PublicSafeLaunchMetadataObservation | null;
+}
+
+export interface PublicSafeLaunchMetadataObservation {
+  readonly launchId: string;
+  readonly tokenAddress: string;
+  readonly blockNumber: string;
+  readonly state: "OBSERVED" | "UNAVAILABLE";
+  readonly name: string | null;
+  readonly symbol: string | null;
+  readonly error: string | null;
+  readonly observedAt: string;
 }
 
 export interface PublicSafeLaunchHandoffScanResult {
@@ -65,6 +75,9 @@ export interface PublicSafeLaunchHandoffProducerOptions {
   readonly confirmationDepth?: bigint;
   readonly initialCursor?: bigint;
   readonly now?: () => string;
+  readonly onMetadataObservation?: (
+    observation: PublicSafeLaunchMetadataObservation,
+  ) => void | Promise<void>;
 }
 
 interface RawRpcBlock {
@@ -205,15 +218,16 @@ async function readErc20MetadataField(
   return decoded[0];
 }
 
-async function matchesClockInMetadata(
+async function readClockInMetadataForAudit(
   requester: JsonRpcRequester,
   tokenAddress: string,
   blockNumber: bigint,
-): Promise<boolean> {
-  const name = await readErc20MetadataField(requester, tokenAddress, "name", blockNumber);
-  if (name.toUpperCase() !== CLOCKIN_TOKEN_NAME_CANONICAL) return false;
-  const symbol = await readErc20MetadataField(requester, tokenAddress, "symbol", blockNumber);
-  return symbol === CLOCKIN_TOKEN_SYMBOL;
+): Promise<Readonly<{ name: string; symbol: string }>> {
+  const [name, symbol] = await Promise.all([
+    readErc20MetadataField(requester, tokenAddress, "name", blockNumber),
+    readErc20MetadataField(requester, tokenAddress, "symbol", blockNumber),
+  ]);
+  return Object.freeze({ name, symbol });
 }
 
 export class PublicSafeLaunchHandoffProducer {
@@ -223,11 +237,15 @@ export class PublicSafeLaunchHandoffProducer {
   readonly #confirmationDepth: bigint;
   readonly #initialCursor: bigint;
   readonly #now: () => string;
+  readonly #onMetadataObservation:
+    | ((observation: PublicSafeLaunchMetadataObservation) => void | Promise<void>)
+    | undefined;
   #cursor: bigint;
   #confirmedHead: bigint | null = null;
   #current: PublicLaunchHandoffRecord | null = null;
   #lastError: string | null = null;
   #conflict = false;
+  #metadataObservation: PublicSafeLaunchMetadataObservation | null = null;
   #initialized = false;
   #queue: Promise<unknown> = Promise.resolve();
 
@@ -252,6 +270,7 @@ export class PublicSafeLaunchHandoffProducer {
     this.#initialCursor = initialCursor;
     this.#cursor = initialCursor;
     this.#now = options.now ?? (() => new Date().toISOString());
+    this.#onMetadataObservation = options.onMetadataObservation;
   }
 
   async initialize(): Promise<void> {
@@ -284,7 +303,57 @@ export class PublicSafeLaunchHandoffProducer {
       handoff: redacted(this.#current),
       lastError: this.#lastError,
       conflict: this.#conflict,
+      metadataObservation: this.#metadataObservation,
     });
+  }
+
+  #observeMetadataWithoutBlocking(input: {
+    readonly launchId: bigint;
+    readonly tokenAddress: string;
+    readonly blockNumber: bigint;
+    readonly canonicalBlockHash: Hex;
+  }): void {
+    void (async () => {
+      let observation: PublicSafeLaunchMetadataObservation;
+      try {
+        const metadata = await readClockInMetadataForAudit(
+          this.#requester,
+          input.tokenAddress,
+          input.blockNumber,
+        );
+        const observedBlockHash = await this.#readCanonicalBlockHash(input.blockNumber);
+        if (observedBlockHash.toLowerCase() !== input.canonicalBlockHash.toLowerCase()) {
+          throw new Error("public canonical block changed during asynchronous metadata audit");
+        }
+        observation = Object.freeze({
+          launchId: input.launchId.toString(),
+          tokenAddress: input.tokenAddress,
+          blockNumber: input.blockNumber.toString(),
+          state: "OBSERVED",
+          name: metadata.name,
+          symbol: metadata.symbol,
+          error: null,
+          observedAt: this.#now(),
+        });
+      } catch (error) {
+        observation = Object.freeze({
+          launchId: input.launchId.toString(),
+          tokenAddress: input.tokenAddress,
+          blockNumber: input.blockNumber.toString(),
+          state: "UNAVAILABLE",
+          name: null,
+          symbol: null,
+          error: errorMessage(error),
+          observedAt: this.#now(),
+        });
+      }
+      this.#metadataObservation = observation;
+      try {
+        await this.#onMetadataObservation?.(observation);
+      } catch {
+        // Audit sinks are deliberately outside the handoff liveness path.
+      }
+    })();
   }
 
   async signalExistingCurrent(): Promise<boolean> {
@@ -414,18 +483,6 @@ export class PublicSafeLaunchHandoffProducer {
             throw new Error("public Safe Launch handoff rejects externalToken=true");
           }
           const canonicalBlockHash = await bindLogToCanonicalBlock(this.#requester, log, "created");
-          const metadataMatches = await matchesClockInMetadata(
-            this.#requester,
-            decoded.tokenAddress,
-            decoded.blockNumber,
-          );
-          const metadataBlockHash = await this.#readCanonicalBlockHash(decoded.blockNumber);
-          if (metadataBlockHash.toLowerCase() !== canonicalBlockHash.toLowerCase()) {
-            throw new Error("public canonical block changed while validating token metadata");
-          }
-          if (!metadataMatches) {
-            continue;
-          }
           const record = createPublicLaunchHandoffRecord(decoded, canonicalBlockHash, this.#now());
           let result = await this.#store.publish(record);
           if (result.state === "CONFLICT") {
@@ -445,6 +502,12 @@ export class PublicSafeLaunchHandoffProducer {
           this.#current = result.record;
           if (result.state === "CREATED") created += 1;
           else duplicates += 1;
+          this.#observeMetadataWithoutBlocking({
+            launchId: decoded.id,
+            tokenAddress: decoded.tokenAddress,
+            blockNumber: decoded.blockNumber,
+            canonicalBlockHash,
+          });
         }
         const current = this.#current;
         if (current !== null) {

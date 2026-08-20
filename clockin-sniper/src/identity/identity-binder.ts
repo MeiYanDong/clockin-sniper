@@ -17,6 +17,8 @@ export interface ClockInIdentityPolicy {
   readonly requireCreator: boolean;
   readonly requireMetadata: boolean;
   readonly requireTokenSuffix: boolean;
+  /** Descriptive token fields may be retained for audit without authorizing or vetoing execution. */
+  readonly nameSymbolAuthority?: "AUTHORIZATION" | "AUDIT_ONLY";
   readonly policyRevision: number;
 }
 
@@ -39,14 +41,17 @@ export function evaluateClockInIdentity(
   policy: ClockInIdentityPolicy,
 ): IdentityEvaluation {
   const reasons: string[] = [];
+  const nameSymbolAuthority = policy.nameSymbolAuthority ?? "AUTHORIZATION";
   const nameMatch = policy.expectedNames
     .map(normalizeIdentityText)
     .includes(normalizeIdentityText(candidate.name));
   const symbolMatch = policy.expectedSymbols
     .map(normalizeIdentityText)
     .includes(normalizeIdentityText(candidate.symbol));
-  if (!nameMatch) reasons.push("NAME_MISMATCH");
-  if (!symbolMatch) reasons.push("SYMBOL_MISMATCH");
+  if (nameSymbolAuthority === "AUTHORIZATION") {
+    if (!nameMatch) reasons.push("NAME_MISMATCH");
+    if (!symbolMatch) reasons.push("SYMBOL_MISMATCH");
+  }
 
   const creatorMatch = policy.expectedCreators.some(
     (creator) => getAddress(creator).toLowerCase() === candidate.creator.toLowerCase(),
@@ -61,7 +66,7 @@ export function evaluateClockInIdentity(
   if (policy.requireMetadata && !metadataMatch) reasons.push("METADATA_MISMATCH");
   if (policy.requireTokenSuffix && !suffixMatch) reasons.push("TOKEN_SUFFIX_MISMATCH");
 
-  const candidateMatch = nameMatch && symbolMatch;
+  const candidateMatch = nameSymbolAuthority === "AUDIT_ONLY" ? true : nameMatch && symbolMatch;
   return Object.freeze({
     candidateMatch,
     clockInBound: candidateMatch && reasons.length === 0,

@@ -630,7 +630,11 @@ export class StonkSafeLaunchQuotedPoolRuntime implements PoolReadAdapter {
       this.readBlock(blockNumber),
     ]);
     return (
-      state.armed && !state.graduated && !state.aborted && block.blockTimestamp < state.deadline
+      state.armed &&
+      !state.graduated &&
+      !state.bonded &&
+      !state.aborted &&
+      block.blockTimestamp < state.deadline
     );
   }
 

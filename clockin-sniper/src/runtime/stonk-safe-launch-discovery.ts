@@ -22,7 +22,8 @@ import {
   WebSocketContractLogsClient,
 } from "../rpc/websocket-logs.js";
 
-export const CLOCKIN_EXPECTED_TOKEN_NAME = "Clock In" as const;
+/** Display hints only. They are not part of the creator-first authorization key. */
+export const CLOCKIN_EXPECTED_TOKEN_NAME = "CLOCK IN" as const;
 export const CLOCKIN_EXPECTED_TOKEN_SYMBOL = "CLOCKIN" as const;
 const ERC20_METADATA_ABI = Object.freeze([
   "function name() view returns (string)",
@@ -42,7 +43,7 @@ export type StonkSafeLaunchDiscoverySource = "WSS" | "BACKFILL";
 export interface StonkSafeLaunchDiscoveryResult {
   readonly created: StonkSafeLaunchQuotedCreated;
   readonly armed: StonkSafeLaunchQuotedArmed;
-  readonly metadata: StonkSafeLaunchTokenMetadata;
+  readonly metadata: StonkSafeLaunchTokenMetadata | null;
   readonly createdSource: StonkSafeLaunchDiscoverySource;
   readonly armedSource: StonkSafeLaunchDiscoverySource;
 }
@@ -52,12 +53,11 @@ export type StonkSafeLaunchDiscoveryEvent =
   | Readonly<{ kind: "BACKFILL"; fromBlock: bigint; toBlock: bigint }>
   | Readonly<{ kind: "WSS_RECONNECT"; attempt: number; message: string }>
   | Readonly<{
-      kind: "METADATA_RETRY";
+      kind: "METADATA_OBSERVED" | "METADATA_UNAVAILABLE";
       launchId: bigint;
       tokenAddress: Hex;
-      attempt: number;
-      delayMs: number;
-      message: string;
+      metadata: StonkSafeLaunchTokenMetadata | null;
+      message?: string;
     }>
   | Readonly<{
       kind: "CANDIDATE_REJECTED";
@@ -97,7 +97,6 @@ export interface StonkSafeLaunchDiscoveryOptions {
     onLog: (log: RpcContractLog) => void,
   ) => Promise<ContractLogSubscription>;
   readonly sleep?: (ms: number) => Promise<void>;
-  readonly metadataAttemptsPerConnection?: number;
   readonly backfillChunkSize?: bigint;
 }
 
@@ -119,7 +118,6 @@ function matchesExpectedCreated(
 
 interface BoundCandidate {
   readonly created: StonkSafeLaunchQuotedCreated;
-  readonly metadata: StonkSafeLaunchTokenMetadata;
   readonly source: StonkSafeLaunchDiscoverySource;
 }
 
@@ -240,16 +238,6 @@ function sameArmed(left: StonkSafeLaunchQuotedArmed, right: StonkSafeLaunchQuote
   );
 }
 
-class RetryableDiscoveryError extends Error {
-  readonly retryFromBlock: bigint;
-
-  constructor(message: string, retryFromBlock: bigint, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "RetryableDiscoveryError";
-    this.retryFromBlock = retryFromBlock;
-  }
-}
-
 export async function discoverStonkSafeLaunchClockIn(
   options: StonkSafeLaunchDiscoveryOptions,
 ): Promise<StonkSafeLaunchDiscoveryResult> {
@@ -270,10 +258,6 @@ export async function discoverStonkSafeLaunchClockIn(
   if (startBlock < 0n)
     throw new RangeError("Safe Launch discovery startBlock must not be negative");
   await options.onEvent?.({ kind: "ARMED", padAddress, startBlock, currentBlock: initialHead });
-  const metadataAttemptsPerConnection = options.metadataAttemptsPerConnection ?? 3;
-  if (!Number.isSafeInteger(metadataAttemptsPerConnection) || metadataAttemptsPerConnection < 1) {
-    throw new RangeError("metadataAttemptsPerConnection must be a positive safe integer");
-  }
   const backfillChunkSize = options.backfillChunkSize ?? DEFAULT_BACKFILL_CHUNK_SIZE;
   if (backfillChunkSize < 1n) throw new RangeError("backfillChunkSize must be positive");
   const sleep =
@@ -284,13 +268,12 @@ export async function discoverStonkSafeLaunchClockIn(
   let reconnectAttempt = 0;
   let finished = false;
   let bound: BoundCandidate | null = null;
+  const metadataById = new Map<string, StonkSafeLaunchTokenMetadata>();
   const rejectedIds = new Set<string>();
   const armedById = new Map<string, ObservedArmed>();
   const seen = new Set<string>();
   let activeSubscriptions: readonly ContractLogSubscription[] = Object.freeze([]);
   let queue = Promise.resolve();
-  let pendingRecovery: RetryableDiscoveryError | null = null;
-  let wakeRecovery: ((error: RetryableDiscoveryError) => void) | null = null;
   let resolveResult!: (result: StonkSafeLaunchDiscoveryResult) => void;
   let rejectResult!: (error: Error) => void;
   const resultPromise = new Promise<StonkSafeLaunchDiscoveryResult>((resolve, reject) => {
@@ -316,18 +299,12 @@ export async function discoverStonkSafeLaunchClockIn(
       Object.freeze({
         created: candidate.created,
         armed: observed.armed,
-        metadata: candidate.metadata,
+        metadata: metadataById.get(candidate.created.id.toString()) ?? null,
         createdSource: candidate.source,
         armedSource: observed.source,
       }),
     );
   };
-  const requestRecovery = (error: RetryableDiscoveryError): void => {
-    cursor = cursor < error.retryFromBlock ? cursor : error.retryFromBlock;
-    pendingRecovery = error;
-    wakeRecovery?.(error);
-  };
-
   const processLog = async (
     log: RpcContractLog,
     source: StonkSafeLaunchDiscoverySource,
@@ -370,61 +347,13 @@ export async function discoverStonkSafeLaunchClockIn(
         return;
       }
 
-      let metadata: StonkSafeLaunchTokenMetadata | null = null;
-      let metadataError: unknown = null;
-      for (let attempt = 1; attempt <= metadataAttemptsPerConnection; attempt += 1) {
-        try {
-          metadata = await readTokenMetadata(
-            options.requester,
-            created.tokenAddress,
-            created.blockNumber,
-          );
-          break;
-        } catch (error) {
-          metadataError = error;
-          if (attempt === metadataAttemptsPerConnection) break;
-          const delayMs = Math.min(2_000, 100 * 2 ** Math.min(attempt - 1, 4));
-          await options.onEvent?.({
-            kind: "METADATA_RETRY",
-            launchId: created.id,
-            tokenAddress: created.tokenAddress,
-            attempt,
-            delayMs,
-            message: errorMessage(error),
-          });
-          await sleep(delayMs);
-          if (isAborted()) throw new Error("Safe Launch discovery aborted");
-        }
-      }
-      if (metadata === null) {
-        throw new RetryableDiscoveryError(
-          `exact-block ERC20 metadata temporarily unavailable: ${errorMessage(metadataError)}`,
-          created.blockNumber,
-          { cause: metadataError },
-        );
-      }
-      const reasons: string[] = [];
-      if (metadata.name !== CLOCKIN_EXPECTED_TOKEN_NAME) reasons.push("token name mismatch");
-      if (metadata.symbol !== CLOCKIN_EXPECTED_TOKEN_SYMBOL) reasons.push("token symbol mismatch");
-      if (reasons.length > 0) {
-        rejectedIds.add(idKey);
-        seen.add(key);
-        await options.onEvent?.({
-          kind: "CANDIDATE_REJECTED",
-          launchId: created.id,
-          tokenAddress: created.tokenAddress,
-          transactionHash: created.transactionHash,
-          reasons: Object.freeze(reasons),
-        });
-        return;
-      }
       if (bound !== null) {
         throw new CanonicalInvariantError(
           "IDENTITY_CONFLICT",
           "multiple distinct approved ClockIn Safe Launch candidates observed",
         );
       }
-      bound = Object.freeze({ created, metadata, source });
+      bound = Object.freeze({ created, source });
       seen.add(key);
       await options.onEvent?.({
         kind: "CANDIDATE_BOUND",
@@ -432,6 +361,29 @@ export async function discoverStonkSafeLaunchClockIn(
         tokenAddress: created.tokenAddress,
         blockNumber: created.blockNumber,
       });
+      void readTokenMetadata(options.requester, created.tokenAddress, created.blockNumber)
+        .then(async (metadata) => {
+          metadataById.set(idKey, metadata);
+          await options.onEvent?.({
+            kind: "METADATA_OBSERVED",
+            launchId: created.id,
+            tokenAddress: created.tokenAddress,
+            metadata,
+          });
+        })
+        .catch(async (error: unknown) => {
+          try {
+            await options.onEvent?.({
+              kind: "METADATA_UNAVAILABLE",
+              launchId: created.id,
+              tokenAddress: created.tokenAddress,
+              metadata: null,
+              message: errorMessage(error),
+            });
+          } catch {
+            // Metadata audit is deliberately unable to fail creator-first discovery.
+          }
+        });
       const pendingArmed = armedById.get(idKey);
       if (pendingArmed !== undefined) succeed(bound, pendingArmed);
       return;
@@ -473,12 +425,7 @@ export async function discoverStonkSafeLaunchClockIn(
   };
 
   const enqueue = (log: RpcContractLog, source: StonkSafeLaunchDiscoverySource): void => {
-    queue = queue
-      .then(() => processLog(log, source))
-      .catch((error: unknown) => {
-        if (error instanceof RetryableDiscoveryError) requestRecovery(error);
-        else fail(error);
-      });
+    queue = queue.then(() => processLog(log, source)).catch((error: unknown) => fail(error));
   };
 
   const abortPromise = new Promise<never>((_resolve, reject) => {
@@ -493,11 +440,6 @@ export async function discoverStonkSafeLaunchClockIn(
       throw new Error("Safe Launch discovery aborted");
     }
     try {
-      const recoveryPromise = new Promise<RetryableDiscoveryError>((resolve) => {
-        wakeRecovery = resolve;
-        if (pendingRecovery !== null) resolve(pendingRecovery);
-      });
-      pendingRecovery = null;
       const subscribe =
         options.logsClientFactory ??
         ((topic0: Hex, onLog: (log: RpcContractLog) => void) =>
@@ -528,14 +470,6 @@ export async function discoverStonkSafeLaunchClockIn(
       if (head > cursor) cursor = head;
       await queue;
       if (finished) return await resultPromise;
-      const recoveryAfterBackfill = pendingRecovery as RetryableDiscoveryError | null;
-      if (recoveryAfterBackfill !== null) {
-        cursor =
-          cursor < recoveryAfterBackfill.retryFromBlock
-            ? cursor
-            : recoveryAfterBackfill.retryFromBlock;
-        throw recoveryAfterBackfill;
-      }
       reconnectAttempt = 0;
 
       const subscriptionEnded = Promise.race(
@@ -546,15 +480,12 @@ export async function discoverStonkSafeLaunchClockIn(
         subscriptionEnded.then(
           () => new Error("Safe Launch log subscription ended before matching LaunchArmed"),
         ),
-        recoveryPromise,
         abortPromise,
       ]);
       if (finished) return await resultPromise;
       if (recovery instanceof Error) throw recovery;
       throw new Error("Safe Launch discovery ended without a result");
     } catch (error) {
-      wakeRecovery = null;
-      pendingRecovery = null;
       closeSubscriptions();
       if (finished) return await resultPromise;
       if (isAborted()) throw new Error("Safe Launch discovery aborted");

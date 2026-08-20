@@ -5,6 +5,7 @@ export type RuntimeIdentityLevel = Extract<IdentityLevel, "L2" | "L3">;
 
 export type RuntimeIdentityGateReason =
   | "OFFICIAL_CA_MISMATCH"
+  | "OFFICIAL_CA_MISMATCH_AUDIT_ONLY"
   | "OFFICIAL_CA_CONFIRMED"
   | "STRONG_ONCHAIN_BINDING_CONFIRMED"
   | "CANARY_EFFECT_PENDING"
@@ -32,11 +33,22 @@ export interface RuntimeIdentityGateDecision {
 export function evaluateRuntimeIdentityGate(
   input: RuntimeIdentityGateInput,
 ): RuntimeIdentityGateDecision {
-  if (input.officialCaState === "mismatch") {
+  if (input.officialCaState === "mismatch" && input.gateMode !== "FACTORY_FULL") {
     return Object.freeze({
       identityLevel: "L2",
       stopUnsent: true,
       reason: "OFFICIAL_CA_MISMATCH",
+    });
+  }
+
+  if (input.gateMode === "FACTORY_FULL" && input.strongOnchainBindingReady) {
+    return Object.freeze({
+      identityLevel: "L3",
+      stopUnsent: false,
+      reason:
+        input.officialCaState === "mismatch"
+          ? "OFFICIAL_CA_MISMATCH_AUDIT_ONLY"
+          : "STRONG_ONCHAIN_BINDING_CONFIRMED",
     });
   }
 

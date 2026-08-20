@@ -19,7 +19,7 @@
 - `[x]`：已经完成并有可回读证据；
 - `IMPLEMENTED_FINAL_GATE_PENDING`：代码和 targeted tests 已完成，但本次 clean-tree 全量门禁/release readback 未完成；对应任务仍保持 `[ ]`；
 - `LOCAL_FULL_GATE_PASSED`：clean-tree verify、两套 coverage、secret/history/public-scope 与真实 archive audit 已通过；仍不能代替生产部署、钱包 readiness 或链上 receipt；
-- `ENTRY_HOT_ARMED`：launch 前 quoted entry 的 artifact/profile/auth、公共 cursor、10/10 WETH/allowance/Gas/nonce、双 marker 与 valid-only path 已有生产回执；它不代表已成交或退出已武装；
+- `ENTRY_HOT_ARMED`：launch 前 quoted entry 的 artifact/profile/auth、公共 cursor、10/10 WETH/allowance/Gas/nonce、双 marker 与 valid-only path 已有生产回执；它不代表已成交，且在 launch 结束或 marker 撤销后会过期；
 - 被外部信息阻塞的任务仍保持 `[ ]`，在任务下记录 `BLOCKED_BY`；
 - 测试通过、配置存在、服务器启用、真实 receipt 是四种不同证据，不能互相替代；
 - launch 前 `ENTRY_HOT_ARMED` 只证明 entry 自动触发与资金准备就绪；真实买入只能由 launch 后 canonical receipt/delta/`EffectRecord` 证明；
@@ -50,7 +50,7 @@
 - [ ] `GATE-A SPEC_READY`：最终 Factory/Profile 事实与用户参数已确认。
 - [x] `GATE-B CORE_READY`：Canonical model、SQLite、预算与钱包 lane 完成。
 - [ ] `GATE-C SENTINEL_READY`：已知和未知 Factory 监控完成。
-- [x] `GATE-D ENTRY_READY`：10 EOA、fee bands、canary、same-raw 与 launch 前 `ENTRY_HOT_ARMED` 回执完成；尚无 live effect。
+- [ ] `GATE-D ENTRY_READY`：历史 v2 `ENTRY_HOT_ARMED` 回执已完成但已过期；creator-first v3 尚未重新部署/授权/武装。
 - [ ] `GATE-E EXIT_READY`：内盘/外盘退出与净清算价值完成。
 - [ ] `GATE-F PROD_READY`：CI/CD、云部署、readiness、recovery 和安全审计完成。
 - [ ] `GATE-G LIVE_EFFECT`：出现真实 receipt、token delta、position 与退出证据后才可标记。
@@ -1210,7 +1210,7 @@
 
 目标：云机以非 root、可重启、仓库外 credentials 运行。
 
-`ENTRY_HOT_ARMED / NO_LIVE_EFFECT / QUOTED_GENERIC_EXIT_UNSUPPORTED`。`47.251.28.201` 已部署 quoted release/profile/authorization；无私钥 Control active、public cursor caught up，valid-only path enabled/active waiting，双 marker 为 `root:clockin 0440`。无 CA/handoff 时 Wallet Preparer/Executor/Reconciler/generic Exit 均 static inactive、PID `0`，这是零付费进程的正确 armed-idle 状态，不是成交证据。
+`EXPIRED_LAUNCH_AUTH_REVOKED / MISSED_ZERO_BUY / QUOTED_GENERIC_EXIT_UNSUPPORTED`。官方 launch 已毕业；`clockin-executor.path` 已 disabled/stopped，Executor/Reconciler/Exit 已停止，双 marker 已撤销并 root-only 归档。revision-17 release 仅是历史回执，不包含 creator-first v3。
 
 - [x] 创建 Control Sentinel unit。
 - [x] 创建 Executor unit。
@@ -1377,9 +1377,9 @@
 
 目标：在 launch 前生成一份可审计的 `ENTRY_HOT_ARMED` 证明，且与 launch 后 canonical 买入 effect 分开。
 
-`COMPLETED: ENTRY_HOT_ARMED_2026_08_20`。当前生产回执见 [2026-08-20-clockin-entry-hot-armed.md](./receipts/2026-08-20-clockin-entry-hot-armed.md)；旧 [production-readiness.md](./receipts/production-readiness.md) 保留为当时的负面历史快照。
+`HISTORICAL_COMPLETED_THEN_EXPIRED: ENTRY_HOT_ARMED_2026_08_20`。历史武装回执见 [2026-08-20-clockin-entry-hot-armed.md](./receipts/2026-08-20-clockin-entry-hot-armed.md)；真实漏单与授权撤销见 [2026-08-20-clockin-missed-launch-postmortem.md](./receipts/2026-08-20-clockin-missed-launch-postmortem.md)。
 
-当前运行态为 `ENTRY_HOT_ARMED / NO_LIVE_EFFECT / QUOTED_GENERIC_EXIT_UNSUPPORTED`。Control active 且 cursor/head `40914339`、lag `0`；path enabled/active waiting，双 marker present；10/10 钱包准备完成。CA/handoff 尚未出现，因此 paid services 仍 static inactive、PID `0`，没有 buy receipt。
+当前运行态为 `EXPIRED_LAUNCH_AUTH_REVOKED / MISSED_ZERO_BUY / QUOTED_GENERIC_EXIT_UNSUPPORTED`。官方 CA 已出现，但旧 metadata veto 导致无 handoff、无 buy receipt。path 已 disabled，双 marker absent；历史 10/10 准备快照不是下一次 launch 的 current readiness。
 
 - [x] chainId/current head。
 - [x] 官方公共 HTTP RPC health（当前生产 Control readback）。
@@ -1680,7 +1680,7 @@
 
 目标：以已验证 quoted pad 和 approved creator 为最早确定性触发，在不等待 X/官网的情况下完成 `LaunchCreated → LaunchArmed → dynamic tax/quote → real buy`。
 
-当前代码状态为 `LOCAL_FULL_GATE_PASSED`，quoted entry 生产状态为 `ENTRY_HOT_ARMED`。本节公共观测、协议/executor、release/security 已通过 386/386、两套 coverage、clean-tree verify、secret/history/public-scope 与真实 npm archive audit；生产 artifact/profile/auth、20 笔准备交易、10/10 readiness、双 marker 与 valid-only path 另有生产回执。CA 尚未出现，仍无 buy effect，generic quoted Exit 仍 `UNSUPPORTED`。
+本节是 revision-17 历史实现/部署记录，已被 STORY-124 的 creator-first v3 身份与竞速策略取代。官方 CA 已出现，但本地效果为 `MISSED_ZERO_BUY`；历史 marker/path 已撤销。
 
 协议证据与身份：
 
@@ -1775,3 +1775,43 @@ Release 与安全最终门禁：
 - [x] 钱包证据明确证明 10/10 WETH/allowance/native-Gas/nonce ready。
 - [ ] 实盘经济证据不以 CA、tx hash 或 RPC accepted 代替 canonical receipt/effect。
 - [x] 回执明确 generic quoted Exit `UNSUPPORTED`，不把 entry 武装或买入 effect 写成自动退出已武装。
+
+### STORY-124：creator-first 实盘竞速修复（P0）
+
+目标：修复 2026-08-20 真实 CLOCKIN 漏单，将已授权 creator 的 canonical `LaunchCreated` 作为唯一身份热触发，并在首个税率 `<=50%` 的可买块实盘并发 10×5U。
+
+`IMPLEMENTED_FINAL_GATE_PENDING`：creator-first v3 源码、测试和当前本地 coverage/security/build 门禁已通过；尚未在 clean committed source 上生成/审计真实 npm archive，也未部署、未授权、未武装。
+
+复盘与决策：
+
+- [x] 固化真实漏单根因：exact pad + approved creator 已命中，但 `Clock In`/`CLOCK IN` 同步 metadata veto 使 handoff 为空。
+- [x] 记录市场机制：WETH/STONK 曲线均在 buffer 结束时立即 graduated，固定十档等待与 canary-first 在本次不可存活。
+- [x] 用 ADR 0012 确认 `factory+creator+canonical log` 为强授权键，name/symbol/X/网页只异步 audit。
+- [x] 将「强证据不得被弱证据反向 veto」和本次案例沉淀到 `sniper-engineering`。
+- [x] 当前 launch 已毕业后停止 paid path/资金服务，撤销并可恢复归档旧双 marker，不让过期授权继续生效。
+
+creator-first 身份热路：
+
+- [x] Public Control 在 exact pad/topic/approved creator/`externalToken=false` + canonical receipt/block 通过后立即发布 handoff，不读 name/symbol 才决定发布。
+- [x] name/symbol 改为非阻塞异步 observation；timeout、invalid ABI、mismatch 均只记录/报警。
+- [x] paid discovery 按 public handoff 精确坐标绑定 Created 并只等 same-id Armed，不再为 token metadata 重试或拒绝。
+- [x] LaunchIdentity 的授权结果仅由 exact creator/factory/canonical event 决定；metadata 仅保存观察值或 `UNOBSERVED`。
+- [x] official CA/X 的 mismatch 在 `FACTORY_FULL` 模式下只报警，不将已冻结 creator-first 身份降级或停止未发交易。
+- [x] 增加反回归：真实大写 `CLOCK IN`、任意其他名称、metadata timeout/invalid ABI 都不阻塞；wrong creator 必须阻塞。
+
+首个可买块 10×5U：
+
+- [x] 将生产签名时的最大当前税率从 40% 升为 50%；`9999 bps` buffer 仍永不买，初始税率更高时等待首个 `<=5000 bps` 的 canonical block。
+- [x] 增加 `FIRST_BUYABLE_ALL_TEN` 计划：10 个 lane 的 target tax 均为当次首个授权可买税率，不等待后续 decay 档位。
+- [x] 生产 catch-up 改为 `ALL_ELIGIBLE` / maximum concurrency 10，lanes 2–10 不等 canary receipt，但仍要求发布前 10/10 readiness、Reconciler 和 strong binding。
+- [x] 每个 head 只读一次同块 `quoteBuy(5U)` 并为 10 lane 冻结独立 quote snapshot，然后使用 10 个钱包并发签名/双路 same-raw 广播。
+- [x] 移除 specialized quoted burst 的 canary `minOut=1`；10 笔全部用同一授权 entry slippage 与签名紧前 quote/block/base-fee/marker 复核。
+- [x] 保留每钱包 5U、合计 50U principal 和 60U all-in cap；任意准备、nonce、allowance、Gas 失效时不用其他钱包超额补买。
+- [x] graduated/bonded/aborted/deadline 状态默认 `NO_SHOT`，不在同一授权下自动切外盘追价。
+
+发布与实盘证据：
+
+- [x] 新 profile/config/auth 必须换 revision/hash，旧 `ENTRY_HOT_ARMED` 回执不得继承新的 50% + 10-lane burst 风险。
+- [ ] 运行 format/lint/typecheck/full tests/coverage/secret/public-scope/archive 门禁，记录为发布证据而非模拟成交。
+- [ ] 部署新 artifact 后保持 paid path disabled、资金服务 inactive、双 marker absent；没有新事件授权时不能标记 `ENTRY_HOT_ARMED`。
+- [ ] 下一次实盘武装需新 profile/auth/marker/current readiness 回执；只有主网 canonical buy receipt + WETH/token delta + EffectRecord 能勾选真实成交。

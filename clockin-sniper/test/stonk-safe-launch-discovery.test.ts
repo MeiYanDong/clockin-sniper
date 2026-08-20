@@ -188,7 +188,7 @@ describe("ClockIn quoted Safe Launch discovery", () => {
     );
   });
 
-  it("keeps an exact-block metadata candidate pending until the same id is armed", async () => {
+  it("binds the creator event immediately and waits only for the same id Armed", async () => {
     const live = liveSubscriptions();
     const exactBlocks: unknown[] = [];
     const discovery = discoverStonkSafeLaunchClockIn({
@@ -219,11 +219,14 @@ describe("ClockIn quoted Safe Launch discovery", () => {
       result.created.creatorAddress.toLowerCase(),
       CLOCKIN_APPROVED_LAUNCH_CREATOR.toLowerCase(),
     );
-    assert.deepEqual(result.metadata, {
-      name: CLOCKIN_EXPECTED_TOKEN_NAME,
-      symbol: CLOCKIN_EXPECTED_TOKEN_SYMBOL,
-      blockNumber: 101n,
-    });
+    if (result.metadata !== null) {
+      assert.deepEqual(result.metadata, {
+        name: CLOCKIN_EXPECTED_TOKEN_NAME,
+        symbol: CLOCKIN_EXPECTED_TOKEN_SYMBOL,
+        blockNumber: 101n,
+      });
+    }
+    await nextTurn();
     assert.deepEqual(exactBlocks, ["0x65", "0x65"]);
     assert.equal(result.createdSource, "WSS");
     assert.equal(result.armedSource, "WSS");
@@ -271,7 +274,7 @@ describe("ClockIn quoted Safe Launch discovery", () => {
     assert.equal(result.armed.id, 9n);
   });
 
-  it("retries transient exact-block metadata failures without rejecting or forgetting the CA", async () => {
+  it("does not retry or reject the CA when asynchronous metadata is unavailable", async () => {
     const live = liveSubscriptions();
     const events: string[] = [];
     const delays: number[] = [];
@@ -296,12 +299,13 @@ describe("ClockIn quoted Safe Launch discovery", () => {
     const result = await discovery;
 
     assert.equal(result.created.id, 9n);
-    assert.deepEqual(delays, [100]);
-    assert.equal(events.filter((kind) => kind === "METADATA_RETRY").length, 1);
+    await nextTurn();
+    assert.deepEqual(delays, []);
+    assert.equal(events.filter((kind) => kind === "METADATA_UNAVAILABLE").length, 1);
     assert.equal(events.includes("CANDIDATE_REJECTED"), false);
   });
 
-  it("rejects creator and metadata mismatches, then accepts a valid later launch", async () => {
+  it("rejects a wrong creator but never lets mismatched metadata veto the first approved launch", async () => {
     const live = liveSubscriptions();
     const events: string[] = [];
     const requester = fixtureRequester({
@@ -327,16 +331,10 @@ describe("ClockIn quoted Safe Launch discovery", () => {
         logIndex: 2n,
       }),
     );
-    live.emit(
-      createdLog(9n, TOKEN, CLOCKIN_APPROVED_LAUNCH_CREATOR.toLowerCase() as Hex, {
-        transactionHash: TX_CREATED,
-        logIndex: 3n,
-      }),
-    );
-    live.emit(armedLog(9n, { logIndex: 4n }));
+    live.emit(armedLog(8n, { logIndex: 4n }));
     const result = await discovery;
-    assert.equal(result.created.id, 9n);
-    assert.equal(events.filter((kind) => kind === "CANDIDATE_REJECTED").length, 2);
+    assert.equal(result.created.id, 8n);
+    assert.equal(events.filter((kind) => kind === "CANDIDATE_REJECTED").length, 1);
     assert.equal(events.includes("CANDIDATE_BOUND"), true);
   });
 
@@ -439,40 +437,28 @@ describe("ClockIn quoted Safe Launch discovery", () => {
     );
   });
 
-  it("reconnects and backfills a created log after metadata retries are exhausted", async () => {
-    let subscriptionCalls = 0;
-    const reconnects: number[] = [];
-    const requester = fixtureRequester({
-      heads: [100n, 101n, 101n],
-      metadataFailures: 4,
-      backfills: [[], [raw(createdLog()), raw(armedLog())]],
-    });
-    const callbacks = new Map<string, (log: RpcContractLog) => void>();
+  it("keeps the WSS candidate live when every metadata audit call fails", async () => {
+    const live = liveSubscriptions();
+    const events: string[] = [];
     const discovery = discoverStonkSafeLaunchClockIn({
-      requester,
+      requester: fixtureRequester({ metadataFailures: 4 }),
       wssUrl: "wss://fixture.invalid",
-      metadataAttemptsPerConnection: 2,
-      logsClientFactory: async (topic0, onLog) => {
-        subscriptionCalls += 1;
-        callbacks.set(topic0.toLowerCase(), onLog);
-        return neverEndingSubscription();
-      },
+      logsClientFactory: live.factory,
       sleep: async () => {},
       onEvent(event) {
-        if (event.kind === "WSS_RECONNECT") reconnects.push(event.attempt);
+        events.push(event.kind);
       },
     });
     await nextTurn();
-    const createdCallback = callbacks.get(STONK_SAFE_LAUNCH_QUOTED_CREATED_TOPIC.toLowerCase());
-    assert.notEqual(createdCallback, undefined);
-    createdCallback?.(createdLog());
-
+    live.emit(createdLog());
+    live.emit(armedLog());
     const result = await discovery;
+    await nextTurn();
     assert.equal(result.created.id, 9n);
-    assert.equal(result.createdSource, "BACKFILL");
-    assert.equal(result.armedSource, "BACKFILL");
-    assert.equal(subscriptionCalls >= 4, true);
-    assert.deepEqual(reconnects, [1]);
+    assert.equal(result.createdSource, "WSS");
+    assert.equal(result.armedSource, "WSS");
+    assert.equal(events.includes("METADATA_UNAVAILABLE"), true);
+    assert.equal(events.includes("WSS_RECONNECT"), false);
   });
 
   it("fails closed on a removed log and on a second matching candidate", async () => {

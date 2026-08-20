@@ -273,6 +273,34 @@ describe("verified quoted Safe Launch adapter", () => {
     );
   });
 
+  it("treats a bonded curve as NO_SHOT even before its deadline", async () => {
+    const requester: JsonRpcRequester = {
+      providerId: "bonded-window-test",
+      async request<T>(method: string, params: readonly unknown[] = []): Promise<T> {
+        if (method === "eth_call") {
+          const call = params[0] as { readonly data: string };
+          if (call.data.startsWith(abi.getFunction("getLaunch")?.selector ?? "missing")) {
+            return abi.encodeFunctionResult("getLaunch", [launchTuple({ bonded: true })]) as T;
+          }
+          if (call.data.startsWith(abi.getFunction("bufferSecsOf")?.selector ?? "missing")) {
+            return abi.encodeFunctionResult("bufferSecsOf", [300n]) as T;
+          }
+        }
+        if (method === "eth_getBlockByNumber") {
+          return { number: "0x7b", hash: HASH, timestamp: "0x4b0" } as T;
+        }
+        throw new Error(`unexpected ${method}`);
+      },
+    };
+    const runtime = new StonkSafeLaunchQuotedPoolRuntime({
+      requester,
+      created: decodeStonkSafeLaunchQuotedCreated(createdLog()),
+      armed: decodeStonkSafeLaunchQuotedArmed(armedLog()),
+      profileRevision: 1,
+    });
+    assert.equal(await runtime.readWindow(123n), false);
+  });
+
   it("reads and requires the exact-block protocol oracle freshness bit", async () => {
     const selector = abi.getFunction("viewLaunch")?.selector ?? "";
     const fresh = new StonkSafeLaunchQuotedAdapter(

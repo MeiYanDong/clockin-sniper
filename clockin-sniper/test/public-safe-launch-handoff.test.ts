@@ -224,7 +224,7 @@ async function temporaryDirectory(): Promise<string> {
 }
 
 describe("public Safe Launch handoff producer", () => {
-  it("uses the exact WETH pad/topic/creator filter and publishes only after exact-block metadata", async () => {
+  it("publishes from the exact WETH pad/topic/creator before asynchronous metadata audit", async () => {
     const directory = await temporaryDirectory();
     try {
       const rpc = new FakePublicRpc();
@@ -335,7 +335,7 @@ describe("public Safe Launch handoff producer", () => {
     }
   });
 
-  it("rejects a same-creator non-CLOCKIN launch and accepts a later exact metadata match", async () => {
+  it("freezes the first canonical creator launch even when a later token has matching metadata", async () => {
     const directory = await temporaryDirectory();
     try {
       const firstToken = "0x1111111111111111111111111111111111111111";
@@ -360,59 +360,58 @@ describe("public Safe Launch handoff producer", () => {
         now: () => "2026-08-20T00:00:00.000Z",
       });
 
-      const result = await producer.scanToHead(100n);
-      assert.equal(result.matchingLogs, 2);
-      assert.equal(result.created, 1);
-      assert.equal((await readCurrentPublicLaunchHandoff(directory))?.created.launchId, "8");
+      await assert.rejects(
+        () => producer.scanToHead(100n),
+        /second public Safe Launch candidate conflicts/u,
+      );
+      assert.equal((await readCurrentPublicLaunchHandoff(directory))?.created.launchId, "7");
       assert.equal(
         (await readCurrentPublicLaunchHandoff(directory))?.created.tokenAddress,
-        secondToken,
+        firstToken,
       );
-      assert.equal(producer.snapshot().cursor, "100");
+      assert.equal(producer.snapshot().cursor, "99");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });
 
-  it("retries the same chunk after transient or invalid metadata without advancing cursor", async () => {
-    const directory = await temporaryDirectory();
-    try {
-      const rpc = new FakePublicRpc();
-      rpc.results = [rawCreated()];
-      rpc.metadataFailuresRemaining = 1;
-      const producer = publicProducer({
-        requester: rpc,
-        directory,
-        initialCursor: 99n,
-      });
+  it("commits the creator-first handoff when metadata transport or ABI audit fails", async () => {
+    for (const failure of ["TRANSPORT", "INVALID_ABI"] as const) {
+      const directory = await temporaryDirectory();
+      try {
+        const rpc = new FakePublicRpc();
+        rpc.results = [rawCreated()];
+        if (failure === "TRANSPORT") rpc.metadataFailuresRemaining = 1;
+        else rpc.invalidMetadataResponsesRemaining = 1;
+        let resolveObservation!: () => void;
+        const observed = new Promise<void>((resolve) => {
+          resolveObservation = resolve;
+        });
+        const producer = publicProducer({
+          requester: rpc,
+          directory,
+          initialCursor: 99n,
+          onMetadataObservation: () => resolveObservation(),
+        });
 
-      await assert.rejects(() => producer.scanToHead(100n), /metadata temporarily unavailable/u);
-      assert.equal(producer.snapshot().cursor, "99");
-      assert.equal(await readCurrentPublicLaunchHandoff(directory), null);
-      assert.equal(await new PublicLaunchHandoffStore(directory).readCursor(), null);
-
-      rpc.invalidMetadataResponsesRemaining = 1;
-      await assert.rejects(() => producer.scanToHead(100n), /metadata name ABI decode failed/u);
-      assert.equal(producer.snapshot().cursor, "99");
-      assert.equal(await readCurrentPublicLaunchHandoff(directory), null);
-
-      const retried = await producer.scanToHead(100n);
-      assert.equal(retried.created, 1);
-      assert.equal(producer.snapshot().cursor, "100");
-      assert.equal((await readCurrentPublicLaunchHandoff(directory))?.created.launchId, "7");
-      const logFilters = rpc.calls
-        .filter((call) => call.method === "eth_getLogs")
-        .map(
-          (call) =>
-            call.params[0] as { readonly fromBlock?: string; readonly topics?: readonly unknown[] },
-        )
-        .filter((filter) => filter.topics?.[0] === STONK_SAFE_LAUNCH_QUOTED_CREATED_TOPIC);
-      assert.deepEqual(
-        logFilters.map((filter) => filter.fromBlock),
-        ["0x64", "0x64", "0x64"],
-      );
-    } finally {
-      await rm(directory, { recursive: true, force: true });
+        const result = await producer.scanToHead(100n);
+        assert.equal(result.created, 1);
+        assert.equal(producer.snapshot().cursor, "100");
+        assert.equal((await readCurrentPublicLaunchHandoff(directory))?.created.launchId, "7");
+        await observed;
+        assert.equal(producer.snapshot().metadataObservation?.state, "UNAVAILABLE");
+        assert.equal(
+          rpc.calls.filter(
+            (call) =>
+              call.method === "eth_getLogs" &&
+              (call.params[0] as { readonly topics?: readonly unknown[] }).topics?.[0] ===
+                STONK_SAFE_LAUNCH_QUOTED_CREATED_TOPIC,
+          ).length,
+          1,
+        );
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
     }
   });
 

@@ -147,7 +147,7 @@ function armedBackfillLog(
 
 function profile(): StonkSafeLaunchProductionProfile {
   return freezeStonkSafeLaunchProductionProfile({
-    formatVersion: 1,
+    formatVersion: 2,
     profileId: "clockin-safe-launch-weth-mainnet-v1",
     revision: 1,
     chainId: 4_663,
@@ -167,10 +167,13 @@ function profile(): StonkSafeLaunchProductionProfile {
     }),
     identity: Object.freeze({
       expectedCreator: CLOCKIN_APPROVED_LAUNCH_CREATOR,
-      expectedName: "Clock In",
-      expectedSymbol: "CLOCKIN",
+      identityAnchor: "EXACT_FACTORY_APPROVED_CREATOR_FIRST_PRIMARY_EVENT",
+      displayNameHint: "CLOCK IN",
+      symbolHint: "CLOCKIN",
+      metadataAuthority: "AUDIT_ONLY",
       requirePrimaryExternalToken: false,
       officialCa: Object.freeze({
+        authority: "AUDIT_ONLY",
         url: "https://clockin.win/",
         jsonKey: "contractAddress",
         pollMs: 500,
@@ -179,11 +182,12 @@ function profile(): StonkSafeLaunchProductionProfile {
     mechanismBounds: Object.freeze({
       bufferTaxBps: SAFE_LAUNCH_BUFFER_TAX_BPS,
       maximumBufferSeconds: 600,
-      maximumStartTaxBps: 9_900,
+      maximumStartTaxBps: 10_000,
+      maximumEntryTaxBps: 5_000,
       minimumDecayPerMinuteBps: 1,
       minimumWindowSeconds: 60,
       maximumWindowSeconds: 5_940,
-      minimumDistinctExecutableTaxStates: 10,
+      minimumDistinctExecutableTaxStates: 1,
       capMode: "NO_CAP",
       cooldownMode: "NONE",
       floorTaxBps: 0,
@@ -195,12 +199,12 @@ function profile(): StonkSafeLaunchProductionProfile {
       maximumFeePerGasWei: "2000000000",
       maximumPriorityFeePerGasWei: "1000000000",
       quoteMaximumAgeMs: 15_000,
-      laterLaneMaximumDriftBps: 300,
-      canaryMinimumOutputRaw: "1",
+      maximumEntrySlippageBps: 300,
       maximumExecutionDriftBps: 500,
     }),
     expansion: Object.freeze({
-      requireCanonicalCanaryEffect: true,
+      executionMode: "FIRST_BUYABLE_ALL_TEN",
+      requireCanonicalCanaryEffect: false,
       requireStrongOnchainBinding: true,
       requireExecutableExitBeforeLanes2To10: false,
     }),
@@ -639,13 +643,15 @@ describe("quoted Safe Launch executor primitives", () => {
     );
   });
 
-  it("never buys the 9999-bps buffer and unlocks later lanes without an exit dependency", () => {
-    assert.equal(safeLaunchTaxIsBuyable(9_999, 9_900, 100), false);
-    assert.equal(safeLaunchTaxIsBuyable(4_000, 4_000, 100), true);
-    assert.equal(safeLaunchTaxIsBuyable(4_001, 4_000, 100), false);
-    assert.equal(safeLaunchTaxIsBuyable(100, 4_000, 100), true);
-    assert.equal(safeLaunchTaxIsBuyable(0, 4_000, 100), false);
-    assert.equal(safeLaunchTaxIsBuyable(0, 4_000, 0), true);
+  it("never buys the 9999-bps buffer and accepts the owner-approved 50% ceiling", () => {
+    assert.equal(safeLaunchTaxIsBuyable(9_999, 9_900, 100, 5_000), false);
+    assert.equal(safeLaunchTaxIsBuyable(4_000, 4_000, 100, 5_000), true);
+    assert.equal(safeLaunchTaxIsBuyable(4_001, 4_000, 100, 5_000), false);
+    assert.equal(safeLaunchTaxIsBuyable(5_000, 8_000, 100, 5_000), true);
+    assert.equal(safeLaunchTaxIsBuyable(5_001, 8_000, 100, 5_000), false);
+    assert.equal(safeLaunchTaxIsBuyable(100, 4_000, 100, 5_000), true);
+    assert.equal(safeLaunchTaxIsBuyable(0, 4_000, 100, 5_000), false);
+    assert.equal(safeLaunchTaxIsBuyable(0, 4_000, 0, 5_000), true);
     const reachablePlan = planTenFeeBands(
       3_300,
       100,
@@ -674,6 +680,16 @@ describe("quoted Safe Launch executor primitives", () => {
         reconcilerReady: true,
       }).reasons.join(" "),
       /canary effect/,
+    );
+    assert.deepEqual(
+      evaluateQuotedExpansion({
+        requireCanonicalCanaryEffect: false,
+        canonicalCanaryEffect: false,
+        strongCreatorPadBinding: true,
+        allWalletsReady: true,
+        reconcilerReady: true,
+      }),
+      { ready: true, reasons: [] },
     );
   });
 
@@ -731,7 +747,7 @@ describe("quoted Safe Launch executor primitives", () => {
       requester,
       profile: profile(),
       created: created(),
-      metadata: { name: "Clock In", symbol: "CLOCKIN" },
+      metadata: { name: "UNEXPECTED DISPLAY NAME", symbol: "OTHER" },
       launch: launch(),
       frozenAt: NOW,
     });
@@ -741,6 +757,18 @@ describe("quoted Safe Launch executor primitives", () => {
     assert.equal(identity.mechanismProfileId, "safe-launch-quoted:1:3300-100-1980-300");
     assert.match(identity.tokenRuntimeCodeHash, /^0x[0-9a-f]{64}$/u);
     assert.equal(identity.state, "FROZEN");
+    assert.equal(identity.name, "UNEXPECTED DISPLAY NAME");
+
+    const unobserved = await buildCanonicalSafeLaunchIdentity({
+      requester,
+      profile: profile(),
+      created: created(),
+      metadata: null,
+      launch: launch(),
+      frozenAt: NOW,
+    });
+    assert.equal(unobserved.name, "UNOBSERVED");
+    assert.equal(unobserved.symbol, "UNOBSERVED");
 
     await assert.rejects(
       buildCanonicalSafeLaunchIdentity({

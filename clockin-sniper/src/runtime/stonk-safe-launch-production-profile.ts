@@ -14,13 +14,15 @@ import {
 } from "../adapters/stonk-safe-launch-quoted.js";
 import { type Address, type Hex32, stableHash } from "../core/canonical.js";
 
-/** Owner-approved ceiling for the first economically buyable tax band. */
-export const CLOCKIN_MAXIMUM_AUTHORIZED_START_TAX_BPS = 4_000;
-/** Ten one-shot wallets require at least ten distinct executable tax states (zero may be valid). */
-export const CLOCKIN_MINIMUM_DISTINCT_EXECUTABLE_TAX_STATES = 10;
+/** Protocol-level bound for the dynamic launch field; execution has a separate owner cap. */
+export const CLOCKIN_MAXIMUM_SUPPORTED_START_TAX_BPS = 10_000;
+/** Owner-approved ceiling for the tax observed at the actual signing block. */
+export const CLOCKIN_MAXIMUM_AUTHORIZED_ENTRY_TAX_BPS = 5_000;
+/** First-buyable burst needs one legal state; it does not wait for a decay ladder. */
+export const CLOCKIN_MINIMUM_DISTINCT_EXECUTABLE_TAX_STATES = 1;
 
 export interface StonkSafeLaunchProductionProfile {
-  readonly formatVersion: 1;
+  readonly formatVersion: 2;
   readonly profileId: string;
   readonly revision: number;
   readonly chainId: 4663;
@@ -40,10 +42,13 @@ export interface StonkSafeLaunchProductionProfile {
   }>;
   readonly identity: Readonly<{
     expectedCreator: typeof CLOCKIN_APPROVED_LAUNCH_CREATOR;
-    expectedName: "Clock In";
-    expectedSymbol: "CLOCKIN";
+    identityAnchor: "EXACT_FACTORY_APPROVED_CREATOR_FIRST_PRIMARY_EVENT";
+    displayNameHint: "CLOCK IN";
+    symbolHint: "CLOCKIN";
+    metadataAuthority: "AUDIT_ONLY";
     requirePrimaryExternalToken: false;
     officialCa: Readonly<{
+      authority: "AUDIT_ONLY";
       url: string;
       jsonKey: string;
       pollMs: number;
@@ -53,10 +58,11 @@ export interface StonkSafeLaunchProductionProfile {
     bufferTaxBps: typeof SAFE_LAUNCH_BUFFER_TAX_BPS;
     maximumBufferSeconds: number;
     maximumStartTaxBps: number;
+    maximumEntryTaxBps: typeof CLOCKIN_MAXIMUM_AUTHORIZED_ENTRY_TAX_BPS;
     minimumDecayPerMinuteBps: number;
     minimumWindowSeconds: number;
     maximumWindowSeconds: number;
-    minimumDistinctExecutableTaxStates: 10;
+    minimumDistinctExecutableTaxStates: 1;
     capMode: "NO_CAP";
     cooldownMode: "NONE";
     floorTaxBps: 0;
@@ -68,12 +74,12 @@ export interface StonkSafeLaunchProductionProfile {
     maximumFeePerGasWei: string;
     maximumPriorityFeePerGasWei: string;
     quoteMaximumAgeMs: number;
-    laterLaneMaximumDriftBps: number;
-    canaryMinimumOutputRaw: string;
+    maximumEntrySlippageBps: number;
     maximumExecutionDriftBps: number;
   }>;
   readonly expansion: Readonly<{
-    requireCanonicalCanaryEffect: true;
+    executionMode: "FIRST_BUYABLE_ALL_TEN";
+    requireCanonicalCanaryEffect: false;
     requireStrongOnchainBinding: true;
     requireExecutableExitBeforeLanes2To10: false;
   }>;
@@ -166,8 +172,8 @@ export function parseStonkSafeLaunchProductionProfile(
   const bounds = object(input.mechanismBounds, "mechanismBounds");
   const entry = object(input.entry, "entry");
   const expansion = object(input.expansion, "expansion");
-  if (input.formatVersion !== 1 || input.chainId !== 4_663) {
-    throw new TypeError("Safe Launch profile must use format 1 and chainId 4663");
+  if (input.formatVersion !== 2 || input.chainId !== 4_663) {
+    throw new TypeError("Safe Launch profile must use format 2 and chainId 4663");
   }
   if (input.adapterId !== STONK_SAFE_LAUNCH_QUOTED_ADAPTER_ID) {
     throw new TypeError("Safe Launch production adapter is unsupported");
@@ -176,9 +182,12 @@ export function parseStonkSafeLaunchProductionProfile(
     throw new TypeError("Safe Launch quote must be prewrapped and preapproved");
   }
   if (
-    identity.expectedName !== "Clock In" ||
-    identity.expectedSymbol !== "CLOCKIN" ||
-    identity.requirePrimaryExternalToken !== false
+    identity.identityAnchor !== "EXACT_FACTORY_APPROVED_CREATOR_FIRST_PRIMARY_EVENT" ||
+    identity.displayNameHint !== "CLOCK IN" ||
+    identity.symbolHint !== "CLOCKIN" ||
+    identity.metadataAuthority !== "AUDIT_ONLY" ||
+    identity.requirePrimaryExternalToken !== false ||
+    officialCa.authority !== "AUDIT_ONLY"
   ) {
     throw new TypeError("Safe Launch identity policy differs from CLOCKIN primary launch");
   }
@@ -193,7 +202,8 @@ export function parseStonkSafeLaunchProductionProfile(
     throw new TypeError("Safe Launch buffer/tax-state/limit/EOA invariants changed");
   }
   if (
-    expansion.requireCanonicalCanaryEffect !== true ||
+    expansion.executionMode !== "FIRST_BUYABLE_ALL_TEN" ||
+    expansion.requireCanonicalCanaryEffect !== false ||
     expansion.requireStrongOnchainBinding !== true ||
     expansion.requireExecutableExitBeforeLanes2To10 !== false
   ) {
@@ -201,7 +211,7 @@ export function parseStonkSafeLaunchProductionProfile(
   }
   const createdAt = new Date(text(input.createdAt, "createdAt")).toISOString();
   const draft: StonkSafeLaunchProductionProfileDraft = Object.freeze({
-    formatVersion: 1,
+    formatVersion: 2,
     profileId: text(input.profileId, "profileId"),
     revision: integer(input.revision, "revision", 1),
     chainId: 4_663,
@@ -245,10 +255,13 @@ export function parseStonkSafeLaunchProductionProfile(
         CLOCKIN_APPROVED_LAUNCH_CREATOR,
         "identity.expectedCreator",
       ),
-      expectedName: "Clock In",
-      expectedSymbol: "CLOCKIN",
+      identityAnchor: "EXACT_FACTORY_APPROVED_CREATOR_FIRST_PRIMARY_EVENT",
+      displayNameHint: "CLOCK IN",
+      symbolHint: "CLOCKIN",
+      metadataAuthority: "AUDIT_ONLY",
       requirePrimaryExternalToken: false,
       officialCa: Object.freeze({
+        authority: "AUDIT_ONLY",
         url: httpsUrl(officialCa.url, "identity.officialCa.url"),
         jsonKey: text(officialCa.jsonKey, "identity.officialCa.jsonKey"),
         pollMs: integer(officialCa.pollMs, "identity.officialCa.pollMs", 250),
@@ -261,6 +274,10 @@ export function parseStonkSafeLaunchProductionProfile(
         "mechanismBounds.maximumBufferSeconds",
       ),
       maximumStartTaxBps: integer(bounds.maximumStartTaxBps, "mechanismBounds.maximumStartTaxBps"),
+      maximumEntryTaxBps: integer(
+        bounds.maximumEntryTaxBps,
+        "mechanismBounds.maximumEntryTaxBps",
+      ) as typeof CLOCKIN_MAXIMUM_AUTHORIZED_ENTRY_TAX_BPS,
       minimumDecayPerMinuteBps: integer(
         bounds.minimumDecayPerMinuteBps,
         "mechanismBounds.minimumDecayPerMinuteBps",
@@ -292,26 +309,29 @@ export function parseStonkSafeLaunchProductionProfile(
         true,
       ),
       quoteMaximumAgeMs: integer(entry.quoteMaximumAgeMs, "entry.quoteMaximumAgeMs", 1),
-      laterLaneMaximumDriftBps: integer(
-        entry.laterLaneMaximumDriftBps,
-        "entry.laterLaneMaximumDriftBps",
+      maximumEntrySlippageBps: integer(
+        entry.maximumEntrySlippageBps,
+        "entry.maximumEntrySlippageBps",
       ),
-      canaryMinimumOutputRaw: decimal(entry.canaryMinimumOutputRaw, "entry.canaryMinimumOutputRaw"),
       maximumExecutionDriftBps: integer(
         entry.maximumExecutionDriftBps,
         "entry.maximumExecutionDriftBps",
       ),
     }),
     expansion: Object.freeze({
-      requireCanonicalCanaryEffect: true,
+      executionMode: "FIRST_BUYABLE_ALL_TEN",
+      requireCanonicalCanaryEffect: false,
       requireStrongOnchainBinding: true,
       requireExecutableExitBeforeLanes2To10: false,
     }),
     evidenceIds: evidence(input.evidenceIds),
     createdAt,
   });
-  if (draft.mechanismBounds.maximumStartTaxBps > CLOCKIN_MAXIMUM_AUTHORIZED_START_TAX_BPS) {
-    throw new RangeError("maximum start tax exceeds the owner-approved execution bound");
+  if (draft.mechanismBounds.maximumStartTaxBps > CLOCKIN_MAXIMUM_SUPPORTED_START_TAX_BPS) {
+    throw new RangeError("maximum start tax exceeds the verified protocol field bound");
+  }
+  if (draft.mechanismBounds.maximumEntryTaxBps !== CLOCKIN_MAXIMUM_AUTHORIZED_ENTRY_TAX_BPS) {
+    throw new RangeError("maximum entry tax differs from the owner-approved execution bound");
   }
   if (draft.mechanismBounds.minimumWindowSeconds > draft.mechanismBounds.maximumWindowSeconds) {
     throw new RangeError("Safe Launch window bounds are inverted");
@@ -319,7 +339,7 @@ export function parseStonkSafeLaunchProductionProfile(
   if (BigInt(draft.entry.maximumPriorityFeePerGasWei) > BigInt(draft.entry.maximumFeePerGasWei)) {
     throw new RangeError("entry priority fee exceeds maximum fee");
   }
-  for (const bps of [draft.entry.laterLaneMaximumDriftBps, draft.entry.maximumExecutionDriftBps]) {
+  for (const bps of [draft.entry.maximumEntrySlippageBps, draft.entry.maximumExecutionDriftBps]) {
     if (bps < 0 || bps >= 10_000) throw new RangeError("entry drift bps must be in 0..9999");
   }
   const expectedHash = stableHash(draft);
@@ -362,8 +382,14 @@ export function assertLaunchWithinProductionBounds(
   if (
     distinctExecutableTaxStates.size < profile.mechanismBounds.minimumDistinctExecutableTaxStates
   ) {
-    throw new Error(
-      "dynamic launch economics provide fewer than ten distinct executable tax states",
-    );
+    throw new Error("dynamic launch economics provide no executable tax state");
+  }
+  const hasAuthorizedEntryState = [...distinctExecutableTaxStates].some(
+    (taxBps) =>
+      taxBps <= profile.mechanismBounds.maximumEntryTaxBps &&
+      taxBps !== profile.mechanismBounds.bufferTaxBps,
+  );
+  if (!hasAuthorizedEntryState) {
+    throw new Error("dynamic launch economics never reach the owner-authorized entry tax");
   }
 }

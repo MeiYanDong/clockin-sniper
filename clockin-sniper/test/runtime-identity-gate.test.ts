@@ -4,8 +4,8 @@ import { describe, it } from "node:test";
 import { evaluateRuntimeIdentityGate } from "../src/v2-index.js";
 
 describe("runtime identity gate", () => {
-  it("treats an official CA mismatch as a terminal veto in every mode", () => {
-    for (const gateMode of ["STRICT_CA", "HYBRID_CA_GATE", "FACTORY_FULL"] as const) {
+  it("keeps CA mismatch terminal for CA-gated modes but audit-only for FACTORY_FULL", () => {
+    for (const gateMode of ["STRICT_CA", "HYBRID_CA_GATE"] as const) {
       assert.deepEqual(
         evaluateRuntimeIdentityGate({
           officialCaState: "mismatch",
@@ -20,6 +20,19 @@ describe("runtime identity gate", () => {
         },
       );
     }
+    assert.deepEqual(
+      evaluateRuntimeIdentityGate({
+        officialCaState: "mismatch",
+        gateMode: "FACTORY_FULL",
+        canaryEffectConfirmed: false,
+        strongOnchainBindingReady: true,
+      }),
+      {
+        identityLevel: "L3",
+        stopUnsent: false,
+        reason: "OFFICIAL_CA_MISMATCH_AUDIT_ONLY",
+      },
+    );
   });
 
   it("requires a canonical canary effect before any independent signal can produce L3", () => {
@@ -34,6 +47,22 @@ describe("runtime identity gate", () => {
         identityLevel: "L2",
         stopUnsent: false,
         reason: "CANARY_EFFECT_PENDING",
+      },
+    );
+  });
+
+  it("promotes an exact FACTORY_FULL creator binding without waiting for canary or social data", () => {
+    assert.deepEqual(
+      evaluateRuntimeIdentityGate({
+        officialCaState: "pending",
+        gateMode: "FACTORY_FULL",
+        canaryEffectConfirmed: false,
+        strongOnchainBindingReady: true,
+      }),
+      {
+        identityLevel: "L3",
+        stopUnsent: false,
+        reason: "STRONG_ONCHAIN_BINDING_CONFIRMED",
       },
     );
   });

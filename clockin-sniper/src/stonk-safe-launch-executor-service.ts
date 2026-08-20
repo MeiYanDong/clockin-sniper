@@ -35,7 +35,7 @@ import {
   type WalletLane,
 } from "./core/canonical.js";
 import { assertBoundedCanaryPrincipal } from "./entry/bounded-canary-policy.js";
-import { type FeeBandPlan, planTenFeeBands } from "./entry/fee-band-planner.js";
+import { type FeeBandPlan, planTenFirstBuyableBurst } from "./entry/fee-band-planner.js";
 import {
   type LaneDispatchDecision,
   type LaneExecutionState,
@@ -207,11 +207,13 @@ export function safeLaunchTaxIsBuyable(
   taxBps: number,
   startTaxBps: number,
   minimumReachableTaxBps: number,
+  maximumEntryTaxBps: number,
 ): boolean {
   if (
     !Number.isSafeInteger(taxBps) ||
     !Number.isSafeInteger(startTaxBps) ||
-    !Number.isSafeInteger(minimumReachableTaxBps)
+    !Number.isSafeInteger(minimumReachableTaxBps) ||
+    !Number.isSafeInteger(maximumEntryTaxBps)
   ) {
     return false;
   }
@@ -219,6 +221,7 @@ export function safeLaunchTaxIsBuyable(
     minimumReachableTaxBps >= 0 &&
     taxBps >= minimumReachableTaxBps &&
     taxBps <= startTaxBps &&
+    taxBps <= maximumEntryTaxBps &&
     taxBps !== SAFE_LAUNCH_BUFFER_TAX_BPS
   );
 }
@@ -335,13 +338,16 @@ export async function recoverCanonicalArmedForPublicHandoff(input: {
 }
 
 export function evaluateQuotedExpansion(input: {
+  readonly requireCanonicalCanaryEffect?: boolean;
   readonly canonicalCanaryEffect: boolean;
   readonly strongCreatorPadBinding: boolean;
   readonly allWalletsReady: boolean;
   readonly reconcilerReady: boolean;
 }): Readonly<{ ready: boolean; reasons: readonly string[] }> {
   const reasons: string[] = [];
-  if (!input.canonicalCanaryEffect) reasons.push("canonical canary effect is pending");
+  if (input.requireCanonicalCanaryEffect !== false && !input.canonicalCanaryEffect) {
+    reasons.push("canonical canary effect is pending");
+  }
   if (!input.strongCreatorPadBinding)
     reasons.push("strong creator and WETH pad binding is missing");
   if (!input.allWalletsReady) reasons.push("all remaining WETH wallet lanes are not ready");
@@ -688,7 +694,7 @@ export async function buildCanonicalSafeLaunchIdentity(input: {
   readonly requester: JsonRpcRequester;
   readonly profile: StonkSafeLaunchProductionProfile;
   readonly created: StonkSafeLaunchQuotedCreated;
-  readonly metadata: Readonly<{ name: string; symbol: string }>;
+  readonly metadata: Readonly<{ name: string; symbol: string }> | null;
   readonly launch: StonkSafeLaunchQuotedState;
   readonly frozenAt: string;
 }): Promise<LaunchIdentity> {
@@ -699,12 +705,8 @@ export async function buildCanonicalSafeLaunchIdentity(input: {
   ) {
     throw new Error("Safe Launch creator is not the approved ClockIn wallet");
   }
-  if (
-    input.metadata.name !== input.profile.identity.expectedName ||
-    input.metadata.symbol !== input.profile.identity.expectedSymbol ||
-    input.created.externalToken !== input.profile.identity.requirePrimaryExternalToken
-  ) {
-    throw new Error("Safe Launch token identity differs from the authorized ClockIn identity");
+  if (input.created.externalToken !== input.profile.identity.requirePrimaryExternalToken) {
+    throw new Error("Safe Launch primary route differs from the authorized WETH launch");
   }
   const blockTag = quantityToHex(input.created.blockNumber);
   const [tokenCode, canonicalCreated] = await Promise.all([
@@ -727,9 +729,12 @@ export async function buildCanonicalSafeLaunchIdentity(input: {
     creator: getAddress(input.created.creatorAddress) as Address,
     tokenAddress: getAddress(input.created.tokenAddress) as Address,
     poolAddress: input.profile.factory.address,
-    name: input.metadata.name,
-    symbol: input.metadata.symbol,
-    metadataUri: "safe-launch://exact-factory-event",
+    name: input.metadata?.name ?? "UNOBSERVED",
+    symbol: input.metadata?.symbol ?? "UNOBSERVED",
+    metadataUri:
+      input.metadata === null
+        ? "safe-launch://creator-first/metadata-pending"
+        : "safe-launch://creator-first/metadata-observed",
     imageHash: keccak256("0x") as Hex32,
     blockNumber: input.created.blockNumber.toString(),
     blockHash,
@@ -746,14 +751,15 @@ export async function buildCanonicalSafeLaunchIdentity(input: {
   return freezeLaunchIdentity({
     candidate,
     policy: Object.freeze({
-      expectedNames: Object.freeze([input.profile.identity.expectedName]),
-      expectedSymbols: Object.freeze([input.profile.identity.expectedSymbol]),
+      expectedNames: Object.freeze([input.profile.identity.displayNameHint]),
+      expectedSymbols: Object.freeze([input.profile.identity.symbolHint]),
       expectedCreators: Object.freeze([input.profile.identity.expectedCreator]),
       metadataIncludes: Object.freeze([]),
       tokenSuffixes: Object.freeze([]),
       requireCreator: true,
       requireMetadata: false,
       requireTokenSuffix: false,
+      nameSymbolAuthority: "AUDIT_ONLY",
       policyRevision: input.profile.revision,
     }),
     tokenRuntimeCodeHash: keccak256(tokenCode) as Hex32,
@@ -1648,15 +1654,12 @@ export async function runStonkSafeLaunchExecutorService(): Promise<void> {
         expiresAtMs: Date.now() + profile.entry.quoteMaximumAgeMs,
         evidenceIds: Object.freeze([decision.observationId]),
       });
-      const minOutputRaw =
-        decision.trancheNumber === 1
-          ? BigInt(profile.entry.canaryMinimumOutputRaw)
-          : quoteBoundedMinOut(
-              quote,
-              profile.entry.laterLaneMaximumDriftBps,
-              Date.now(),
-              blockHash,
-            );
+      const minOutputRaw = quoteBoundedMinOut(
+        quote,
+        profile.entry.maximumEntrySlippageBps,
+        Date.now(),
+        blockHash,
+      );
       if (decision.trancheNumber === 1) runtime.canaryExpectedOutputRaw = expectedTokenOutRaw;
       let template: Readonly<{
         adapterId: string;
@@ -1743,7 +1746,7 @@ export async function runStonkSafeLaunchExecutorService(): Promise<void> {
         quote,
         expectedBlockHash: blockHash,
         nowMs: Date.now(),
-        maximumDriftBps: profile.entry.laterLaneMaximumDriftBps,
+        maximumDriftBps: profile.entry.maximumEntrySlippageBps,
         maximumFeePerGasWei: BigInt(profile.entry.maximumFeePerGasWei),
         maximumPriorityFeePerGasWei: BigInt(profile.entry.maximumPriorityFeePerGasWei),
       });
@@ -2042,6 +2045,7 @@ export async function runStonkSafeLaunchExecutorService(): Promise<void> {
         observation.currentFeeBps,
         runtime.launchState.startTaxBps,
         minimumReachableStonkSafeLaunchTaxBps(runtime.launchState),
+        profile.mechanismBounds.maximumEntryTaxBps,
       )
     ) {
       return;
@@ -2065,6 +2069,7 @@ export async function runStonkSafeLaunchExecutorService(): Promise<void> {
       });
     }
     const expansion = evaluateQuotedExpansion({
+      requireCanonicalCanaryEffect: profile.expansion.requireCanonicalCanaryEffect,
       canonicalCanaryEffect: runtime.canaryEffectConfirmed,
       strongCreatorPadBinding: true,
       allWalletsReady: runtime.laterWalletsReady,
@@ -2087,12 +2092,22 @@ export async function runStonkSafeLaunchExecutorService(): Promise<void> {
     });
     if (identityGate.stopUnsent) runtime.orchestrator.applyCanaryCalibration(true);
     const quotes = new Map<string, QuoteSnapshot>();
+    let sharedExpectedTokenOutRaw: bigint | null = null;
+    try {
+      sharedExpectedTokenOutRaw = await runtime.pool.previewBuyRaw(
+        runtime.batchWethRaw,
+        blockNumber,
+      );
+    } catch (error) {
+      log("ERROR", "first-buyable shared quote unavailable", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     for (const lane of runtime.orchestrator.snapshot()) {
       if (lane.state === "DISPATCHED" || lane.state === "EFFECT_CONFIRMED") {
         continue;
       }
-      try {
-        const expected = await runtime.pool.previewBuyRaw(runtime.batchWethRaw, blockNumber);
+      if (sharedExpectedTokenOutRaw !== null) {
         quotes.set(
           lane.laneId,
           createQuoteSnapshot({
@@ -2102,17 +2117,12 @@ export async function runStonkSafeLaunchExecutorService(): Promise<void> {
             blockNumber,
             blockHash: observation.block.blockHash,
             principalRaw: runtime.batchWethRaw,
-            expectedTokenOutRaw: expected,
+            expectedTokenOutRaw: sharedExpectedTokenOutRaw,
             observedAtMs: Date.now(),
             expiresAtMs: Date.now() + profile.entry.quoteMaximumAgeMs,
             evidenceIds: Object.freeze([observation.observationId]),
           }),
         );
-      } catch (error) {
-        log("ERROR", "quoted later-lane preview unavailable", {
-          laneId: lane.laneId,
-          error: error instanceof Error ? error.message : String(error),
-        });
       }
     }
     const decisions = runtime.orchestrator.observe(observation, identityGate.identityLevel, quotes);
@@ -2310,9 +2320,8 @@ export async function runStonkSafeLaunchExecutorService(): Promise<void> {
     { length: 10 },
     (_, index) => `${identity.launchId}:reservation-${String(index + 1).padStart(2, "0")}`,
   );
-  const feePlan = planTenFeeBands(
-    launchState.startTaxBps,
-    minimumReachableStonkSafeLaunchTaxBps(launchState),
+  const feePlan = planTenFirstBuyableBurst(
+    Math.min(launchState.startTaxBps, profile.mechanismBounds.maximumEntryTaxBps),
     walletBundle.manifest.entries.map((entry) => entry.walletId),
     reservationIds,
     CLOCKIN_POLICY_V2.nominalLaneUsdMicros,
@@ -2466,6 +2475,8 @@ export async function runStonkSafeLaunchExecutorService(): Promise<void> {
     catchUpPolicy: CLOCKIN_POLICY_V2.catchUpPolicy,
     maxConcurrentCatchUpLanes: CLOCKIN_POLICY_V2.maxConcurrentCatchUpLanes,
     capPolicy: "STRICT_5U",
+    requireCanaryBeforeLaterLanes: false,
+    requireQuoteForCanary: true,
   });
   for (const recovery of laneRecoveries) {
     if (recovery.state !== "WAITING") {

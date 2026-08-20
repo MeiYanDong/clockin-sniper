@@ -16,7 +16,8 @@ import {
 import { loadProductionWalletManifest } from "./runtime/credentials.js";
 import { createProductionAuthorization } from "./runtime/production-profile.js";
 import {
-  CLOCKIN_MAXIMUM_AUTHORIZED_START_TAX_BPS,
+  CLOCKIN_MAXIMUM_AUTHORIZED_ENTRY_TAX_BPS,
+  CLOCKIN_MAXIMUM_SUPPORTED_START_TAX_BPS,
   CLOCKIN_MINIMUM_DISTINCT_EXECUTABLE_TAX_STATES,
   freezeStonkSafeLaunchProductionProfile,
 } from "./runtime/stonk-safe-launch-production-profile.js";
@@ -56,9 +57,9 @@ async function main(): Promise<void> {
   });
 
   const profile = freezeStonkSafeLaunchProductionProfile({
-    formatVersion: 1,
+    formatVersion: 2,
     profileId: "clockin-safe-launch-weth-mainnet-v1",
-    revision: 3,
+    revision: 4,
     chainId: 4_663,
     adapterId: STONK_SAFE_LAUNCH_QUOTED_ADAPTER_ID,
     factory: Object.freeze({
@@ -76,10 +77,13 @@ async function main(): Promise<void> {
     }),
     identity: Object.freeze({
       expectedCreator: CLOCKIN_APPROVED_LAUNCH_CREATOR,
-      expectedName: "Clock In",
-      expectedSymbol: "CLOCKIN",
+      identityAnchor: "EXACT_FACTORY_APPROVED_CREATOR_FIRST_PRIMARY_EVENT",
+      displayNameHint: "CLOCK IN",
+      symbolHint: "CLOCKIN",
+      metadataAuthority: "AUDIT_ONLY",
       requirePrimaryExternalToken: false,
       officialCa: Object.freeze({
+        authority: "AUDIT_ONLY",
         url: "https://clockin.win/",
         jsonKey: "contractAddress",
         pollMs: 500,
@@ -88,7 +92,8 @@ async function main(): Promise<void> {
     mechanismBounds: Object.freeze({
       bufferTaxBps: SAFE_LAUNCH_BUFFER_TAX_BPS,
       maximumBufferSeconds: 3_600,
-      maximumStartTaxBps: CLOCKIN_MAXIMUM_AUTHORIZED_START_TAX_BPS,
+      maximumStartTaxBps: CLOCKIN_MAXIMUM_SUPPORTED_START_TAX_BPS,
+      maximumEntryTaxBps: CLOCKIN_MAXIMUM_AUTHORIZED_ENTRY_TAX_BPS,
       minimumDecayPerMinuteBps: 1,
       minimumWindowSeconds: 60,
       maximumWindowSeconds: 5_940,
@@ -104,12 +109,12 @@ async function main(): Promise<void> {
       maximumFeePerGasWei: "200000000",
       maximumPriorityFeePerGasWei: "0",
       quoteMaximumAgeMs: 15_000,
-      laterLaneMaximumDriftBps: 300,
-      canaryMinimumOutputRaw: "1",
+      maximumEntrySlippageBps: 300,
       maximumExecutionDriftBps: 500,
     }),
     expansion: Object.freeze({
-      requireCanonicalCanaryEffect: true,
+      executionMode: "FIRST_BUYABLE_ALL_TEN",
+      requireCanonicalCanaryEffect: false,
       requireStrongOnchainBinding: true,
       requireExecutableExitBeforeLanes2To10: false,
     }),
@@ -125,7 +130,7 @@ async function main(): Promise<void> {
     expiresAt: expiresAt.toISOString(),
     evidenceIds: Object.freeze(["owner-approved-real-snipe", ...PROFILE_EVIDENCE]),
     reason:
-      "Seven-day exact WETH Safe Launch pad and approved creator authorization for ten one-shot 5U lanes",
+      "Seven-day one-shot exact WETH Safe Launch pad and approved creator authorization for a first-buyable ten by 5U live burst at no more than 50 percent tax",
   });
   const outputs = [
     ["factory-profile.json", profile],

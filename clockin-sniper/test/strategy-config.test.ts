@@ -7,13 +7,16 @@ import {
 } from "../src/config/strategy-config.js";
 
 describe("versioned production strategy configuration", () => {
-  it("freezes the accepted v2 owner policy without claiming protocol readiness", () => {
+  it("freezes the accepted creator-first v3 owner policy", () => {
     assert.equal(INITIAL_CLOCKIN_POLICY.clockInBudgetUsdMicros, 50_000_000n);
     assert.equal(INITIAL_CLOCKIN_POLICY.allInRiskCapUsdMicros, 60_000_000n);
     assert.equal(INITIAL_CLOCKIN_POLICY.routineExitMaximumSlippageBps, 500);
     assert.equal(INITIAL_CLOCKIN_POLICY.breakGlassExitMaximumSlippageBps, 2_000);
     assert.equal(INITIAL_CLOCKIN_POLICY.authorizationMaximumTtlMs, 604_800_000);
     assert.equal(INITIAL_CLOCKIN_POLICY.productionArmable, true);
+    assert.equal(INITIAL_CLOCKIN_POLICY.caGateMode, "FACTORY_FULL");
+    assert.equal(INITIAL_CLOCKIN_POLICY.catchUpPolicy, "ALL_ELIGIBLE");
+    assert.equal(INITIAL_CLOCKIN_POLICY.maxConcurrentCatchUpLanes, 10);
     assert.match(INITIAL_CLOCKIN_POLICY.configHash, /^sha256:/);
     assert.equal(INITIAL_CLOCKIN_POLICY.blockers.length, 0);
   });
@@ -34,7 +37,7 @@ describe("versioned production strategy configuration", () => {
     assert.notEqual(armed.configHash, INITIAL_CLOCKIN_POLICY.configHash);
   });
 
-  it("rejects budget, identity, cap or emergency-slippage drift instead of reusing v2", () => {
+  it("rejects budget, identity, cap or emergency-slippage drift instead of reusing v3", () => {
     const {
       configHash: _hash,
       productionArmable: _armable,
@@ -46,10 +49,10 @@ describe("versioned production strategy configuration", () => {
       /50000000/,
     );
     assert.throws(
-      () => freezeStrategyConfig({ ...base, caGateMode: "FACTORY_FULL" }),
-      /HYBRID_CA_GATE/,
+      () => freezeStrategyConfig({ ...base, caGateMode: "HYBRID_CA_GATE" }),
+      /FACTORY_FULL/,
     );
-    assert.throws(() => freezeStrategyConfig({ ...base, capPolicy: "STRICT_5U" }), /SHRINK_TO_CAP/);
+    assert.throws(() => freezeStrategyConfig({ ...base, capPolicy: "SHRINK_TO_CAP" }), /STRICT_5U/);
     assert.throws(
       () => freezeStrategyConfig({ ...base, breakGlassExitMaximumSlippageBps: 2_001 }),
       /2000/,

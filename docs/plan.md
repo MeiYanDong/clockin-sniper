@@ -2172,7 +2172,7 @@ lanes 2–10 必须在同一时点同时满足：
 
 ## 37. Verified CLOCKIN quoted hot path 纠正（2026-08-20）
 
-本节是最新 as-built 规格，在冲突时取代第 1–36 节及本文任何其他地方的旧“当前实盘”结论，包括“最终 Factory/ABI 未发布”、“native ETH 为当前主路”、“外部 ETH/USD 价格源位于 CA→签名热路”和“Exit 阻塞 lanes 2–10”。旧结论保留仅用于解释演进历史，不再是当前实盘规格。
+本节记录 2026-08-20 事故前 revision-17 的 as-built 规格；它当时取代第 1–36 节的旧“当前实盘”结论，包括“最终 Factory/ABI 未发布”、“native ETH 为当前主路”、“外部 ETH/USD 价格源位于 CA→签名热路”和“Exit 阻塞 lanes 2–10”。真实 launch 之后，本节的同步 metadata gate、canary-first 和十档等待已被第 38 节与 ADR 0012 取代；其 public/paid RPC、WETH route、canonical reorg 和恢复边界仍保留。
 
 本节使用四层不可互换的证据状态：
 
@@ -2183,7 +2183,7 @@ lanes 2–10 必须在同一时点同时满足：
 
 ### 37.1 链上身份与 CA 热路
 
-- 主路为精确 WETH quoted pad。24×7 public Control 先按 exact pad/topic/approved creator/`externalToken=false` 过滤，并在事件精确块读取 token 的 exact `Clock In`/`CLOCKIN` metadata；名称、symbol、X 文案或网页 CA 单独仍不能创建交易意图。
+- 历史 revision-17 主路为精确 WETH quoted pad。24×7 public Control 先按 exact pad/topic/approved creator/`externalToken=false` 过滤，但随后又在事件精确块同步要求 token 的 exact `Clock In`/`CLOCKIN` metadata。该弱字段 veto 已造成真实漏单；当前第 38 节只异步审计 name/symbol/X/网页，不允许它们阻塞 creator-first handoff。
 - `LaunchCreated` 的 token 字段就是 CA，`id` 是 quoted pad 的买入标识。Created 后不等待官方发 X，而是订阅并回补同 `id` 的 `LaunchArmed`。paid discovery 必须直接接收 public handoff 已冻结的 `pad/id/token/txHash/logIndex/blockNumber/blockHash`，只等待该目标的 Armed；同 creator 随后创建的其他同名币不能污染或阻塞既定目标。
 - Public handoff 在发布前绑定 receipt exact log、canonical block hash 与至少 2 个后续区块。若旧候选被公共 RPC 连续两次证明发生 reorg，系统写入 immutable tombstone、CAS 失效 pointer、rewind cursor，再允许 canonical replacement；瞬时 RPC 错误不得失效候选或推进 cursor。
 - handoff 文件是非敏感的 paid-plane 证据，不直接充当任意文件变化的唤醒信号。只有 canonical ACTIVE pointer 才写独立 `active.signal`；reorg tombstone/失效不得触发 paid service。`clockin-executor.path` 只观察 `active.signal`，是唯一 boot-enabled paid trigger；Control 启动会在确认 pointer 仍 canonical 后重发 signal，以覆盖“pointer 先存在、path 后启动”的竞态。
@@ -2232,3 +2232,49 @@ Exit 仍应尽快实现 quoted 路由并取得真实回执，但当前 generic E
 | 自动退出             | `QUOTED_EXIT_UNSUPPORTED`，无 canonical exit receipt                                                                                                                                                                                                               | 入场可按已接受风险独立武装，但不得声称自动退出就绪                                                                                    |
 
 当前总状态因此仍是 `NOT_HOT_ARMED`。本地 final gate 已通过；剩余顺序为：生成 checksum artifact/profile/auth → 部署与当前进程/hash 回读 → 公共 cursor 追平 confirmed head → 在 path disabled 时创建双 marker 并完成 10/10 wrap/approve/readiness → 只 enable/start `clockin-executor.path` → 回读 valid-only `active.signal`、handoff 前零付费进程及所有当前门禁 → 生成 launch 前 `ENTRY_HOT_ARMED` receipt。真实 launch 后还必须另存 canonical receipt/delta/EffectRecord，才能声称成交。禁止 launch 前手动常驻 paid Executor/Reconciler，当前 generic Exit 不得随 quoted entry 启动或被写成已武装。
+
+---
+
+## 38. CLOCKIN 实盘漏单复盘与 creator-first 竞速策略（2026-08-20）
+
+本节是真实事件后的最新产品决策，在身份授权与入场节奏上取代第 36–37 节的「名称确认 + 单笔 canary + 十档等待」。持久化、nonce fencing、same-raw、canonical receipt、60U all-in cap 和双 marker 不受影响。
+
+### 38.1 已观察的真实事件
+
+- 官方 WETH pad 上的 `LaunchCreated(id=39)` 由已冻结 creator `0x5eB8…8e06` 发出，CA 为 `0xA5bE…666666`。真实 token name 是全大写 `CLOCK IN`，symbol 是 `CLOCKIN`。
+- 当时 Public Control 在 exact pad + exact creator 已命中后，仍用名称字符串做同步 veto。字段大小写差异使 handoff 没有产生，10 个钱包 nonce 均未增加、CLOCKIN 余额均为 0。
+- WETH lane 在 300 秒 anti-bot buffer 结束的同一秒就 graduated/bonded，STONK lane 仅晚约 2 秒。官方 X 再晚约 38 秒发布。所以真正存在的机会是「buffer 结束首个可买块」，而不是之后的十个税率档位。
+
+结论：Factory + approved creator 是具有因果权限的强证据；name/symbol/X/网页只是描述性弱证据。强证据命中后，弱证据不得再通过 `continue`/`return`/`throw` 取消交易候选。
+
+### 38.2 新的身份授权模型
+
+实盘主键为：
+
+```text
+chainId=4663
+AND factory == verified WETH quoted pad
+AND LaunchCreated.creator == approved creator
+AND externalToken == false
+AND receipt/log/blockHash canonical
+```
+
+这组条件命中后立即冻结 `(factory, launchId, token, creator, txHash, logIndex, blockNumber, blockHash)` 并产生 paid handoff。名称、symbol、CA 官网与 X 在另一条异步 audit 链上记录 `OBSERVED/MISMATCH/UNAVAILABLE`：它们可以报警，但不得阻塞 handoff、签名或广播。
+
+creator 授权是 scope-bound 且 one-shot：每次生产武装只允许当前 profile 的第一个 canonical primary `LaunchCreated` 消耗授权。事件完成、失效或过期后必须撤销双 marker；新一次 launch 需新 profile/auth/marker 回执，不得自动继承。
+
+### 38.3 新的入场经济边界
+
+- 真实入场允许条件为签名所在 canonical block 的当前买入税率 `<= 5000 bps`，且不等于 `9999 bps` buffer tax。`startTaxBps` 可以更高；只要窗口内能衰减到 50% 以内就等待首个授权税档，窗口内永远达不到则 `NO_SHOT`。
+- 第一个经济可买块不再先发 1 个 canary 等 receipt，而是 10 个独立 EOA 各用精确 5U WETH principal 并发签名/广播，总 principal 仍为 50U。
+- 10 笔都必须在同一 canonical observation 上取得正数 `quoteBuy`，并各自用已授权的 entry slippage 生成 `minTokensOut`。不再对第一笔使用 `minOut=1`，也不因并发而放开本金、Gas 或 nonce 边界。
+- 新 launch 必须在 `LaunchArmed` 后完成 10/10 WETH、allowance、native Gas、clean nonce、Reconciler 和 60U all-in 复核；这些是并发交易前的统一门禁，不是成交后扩张门。
+- 如果首个可买块已显示 `graduated/bonded/aborted/deadline reached`，默认 `NO_SHOT`。不自动追入外盘；外盘路由是另一个风险、滑点和授权产品，必须单独决策。
+
+### 38.4 实盘、测试与证据边界
+
+生产代码不提供 Shadow/dry-run 交易分支。单元测试、固定链上 fixture、重启恢复和 archive audit 是合并/发布门禁，不是“模拟狙击成功”。只有真实主网 tx receipt + canonical block + WETH/token delta + EffectRecord 能升级为成交证据。
+
+本次 CLOCKIN 机会已毕业，所以旧 `PAID_RPC_APPROVED`/`PRODUCTION_ARM_APPROVED` 已撤销并可恢复归档。新代码可以部署在 keyless Control 与 disabled paid path 状态，但不得在没有新一次授权/资金回读时重建 marker 或声称 `ENTRY_HOT_ARMED`。
+
+该决策由 [ADR 0012](./adr/0012-creator-authority-and-first-buyable-burst.md) 固化。

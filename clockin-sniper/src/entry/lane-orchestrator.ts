@@ -35,6 +35,10 @@ export interface LaneOrchestratorConfig {
   readonly catchUpPolicy: CatchUpPolicy;
   readonly maxConcurrentCatchUpLanes: number;
   readonly capPolicy: CapPolicy;
+  /** Creator-first burst authorizes all prepared wallets without waiting for lane-1 effect. */
+  readonly requireCanaryBeforeLaterLanes?: boolean;
+  /** Specialized quoted execution requires the canary to be quoted like every other lane. */
+  readonly requireQuoteForCanary?: boolean;
 }
 
 interface MutableLane {
@@ -223,9 +227,14 @@ export class TenLaneOrchestrator {
       }
       if (
         lane.trancheNumber > 1 &&
-        (!this.#canaryCalibrated || (identityLevel !== "L3" && identityLevel !== "L4"))
+        this.#config.requireCanaryBeforeLaterLanes !== false &&
+        !this.#canaryCalibrated
       ) {
-        lane.reason = "later lanes require calibrated canary and L3 identity";
+        lane.reason = "later lanes require calibrated canary";
+        return false;
+      }
+      if (lane.trancheNumber > 1 && identityLevel !== "L3" && identityLevel !== "L4") {
+        lane.reason = "later lanes require L3 creator-first identity";
         return false;
       }
       if (lane.trancheNumber > 1 && !this.#laterLaneExecutionReady) {
@@ -246,9 +255,10 @@ export class TenLaneOrchestrator {
         quote.expiresAtMs >= Number(observation.block.blockTimestamp * 1_000n)
       );
     };
-    const quotable = eligible.filter(
-      (lane) => lane.trancheNumber === 1 || quoteIsValid(lane.laneId),
-    );
+    const quotable = eligible.filter((lane) => {
+      if (lane.trancheNumber === 1 && this.#config.requireQuoteForCanary !== true) return true;
+      return quoteIsValid(lane.laneId);
+    });
     let selected: MutableLane[];
     if (this.#config.catchUpPolicy === "ALL_ELIGIBLE") {
       selected = quotable;
@@ -299,7 +309,7 @@ export class TenLaneOrchestrator {
       }
       const quote = quotes.get(lane.laneId);
       if (
-        lane.trancheNumber > 1 &&
+        (lane.trancheNumber > 1 || this.#config.requireQuoteForCanary === true) &&
         quoteIsValid(lane.laneId) &&
         quote?.principalRaw !== principalRaw
       ) {

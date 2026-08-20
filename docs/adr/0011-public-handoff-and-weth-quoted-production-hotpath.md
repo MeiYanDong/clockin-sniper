@@ -1,10 +1,17 @@
 # ADR 0011: Public handoff and WETH-quoted production hot path
 
-- Status: Accepted
+- Status: Superseded in identity and entry policy by ADR 0012
 - Date: 2026-08-20
 - Owners: project owner and engineering
 - Related specification: [plan.md — verified CLOCKIN quoted hot path](../plan.md#37-verified-clockin-quoted-hot-path-纠正2026-08-20)
 - Supersedes: ADR 0010's native-ETH route, official-CA expansion gate, Exit expansion gate, and paid-service startup ordering for the current CLOCKIN launch
+
+> Historical boundary: this ADR records the revision-17 design that was deployed before the
+> 2026-08-20 launch. Its synchronous exact-metadata gate, canary-first expansion and ten tax-band
+> schedule are no longer current policy. [ADR 0012](./0012-creator-authority-and-first-buyable-burst.md)
+> makes the canonical Factory + approved creator event authoritative, treats metadata as asynchronous
+> audit only, and authorizes a first-buyable-block 10×5U burst when the signing-block tax is at most
+> 50%. The public/paid RPC boundary, WETH route and canonical reorg controls below remain applicable.
 
 ## Context
 

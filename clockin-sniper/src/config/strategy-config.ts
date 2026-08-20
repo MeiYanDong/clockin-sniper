@@ -70,15 +70,15 @@ export const STRATEGY_PARAMETER_SCHEMA = Object.freeze([
   {
     key: "configId",
     owner: "PROJECT_OWNER",
-    defaultValue: "clockin-policy-v2",
-    allowed: "clockin-policy-v2",
+    defaultValue: "clockin-policy-v3",
+    allowed: "clockin-policy-v3",
     changeControl: ownerChange,
   },
   {
     key: "revision",
     owner: "PROJECT_OWNER",
-    defaultValue: 2,
-    allowed: "exactly 2",
+    defaultValue: 3,
+    allowed: "exactly 3",
     changeControl: ownerChange,
   },
   {
@@ -140,29 +140,29 @@ export const STRATEGY_PARAMETER_SCHEMA = Object.freeze([
   {
     key: "caGateMode",
     owner: "PROJECT_OWNER",
-    defaultValue: "HYBRID_CA_GATE",
-    allowed: "HYBRID_CA_GATE",
+    defaultValue: "FACTORY_FULL",
+    allowed: "FACTORY_FULL",
     changeControl: ownerChange,
   },
   {
     key: "capPolicy",
     owner: "PROJECT_OWNER",
-    defaultValue: "SHRINK_TO_CAP",
-    allowed: "SHRINK_TO_CAP",
+    defaultValue: "STRICT_5U",
+    allowed: "STRICT_5U",
     changeControl: ownerChange,
   },
   {
     key: "catchUpPolicy",
     owner: "PROJECT_OWNER",
-    defaultValue: "QUOTE_RANKED_BOUNDED",
-    allowed: "QUOTE_RANKED_BOUNDED",
+    defaultValue: "ALL_ELIGIBLE",
+    allowed: "ALL_ELIGIBLE",
     changeControl: ownerChange,
   },
   {
     key: "maxConcurrentCatchUpLanes",
     owner: "PROJECT_OWNER",
-    defaultValue: 2,
-    allowed: "exactly 2",
+    defaultValue: 10,
+    allowed: "exactly 10",
     changeControl: ownerChange,
   },
   {
@@ -334,13 +334,13 @@ function positiveSafeInteger(name: string, value: number): void {
 }
 
 function assertExact<T>(name: string, actual: T, expected: T): void {
-  if (actual !== expected) throw new RangeError(`${name} must be ${String(expected)} in policy v2`);
+  if (actual !== expected) throw new RangeError(`${name} must be ${String(expected)} in policy v3`);
 }
 
 export function freezeStrategyConfig(config: ProductionStrategyConfig): FrozenStrategyConfig {
-  if (config.configId !== "clockin-policy-v2")
-    throw new Error("policy v2 requires its stable config ID");
-  assertExact("revision", config.revision, 2);
+  if (config.configId !== "clockin-policy-v3")
+    throw new Error("policy v3 requires its stable config ID");
+  assertExact("revision", config.revision, 3);
   if (config.owner.trim().length === 0) throw new RangeError("strategy owner is required");
   assertExact("chainId", config.chainId, 4663);
   assertExact("clockInBudgetUsdMicros", config.clockInBudgetUsdMicros, 50_000_000n);
@@ -352,10 +352,10 @@ export function freezeStrategyConfig(config: ProductionStrategyConfig): FrozenSt
     throw new RangeError("ClockIn policy must be 10 one-shot lanes of nominal 5U");
   }
   assertExact("firstLaunchMode", config.firstLaunchMode, "MONITOR_ONLY");
-  assertExact("caGateMode", config.caGateMode, "HYBRID_CA_GATE");
-  assertExact("capPolicy", config.capPolicy, "SHRINK_TO_CAP");
-  assertExact("catchUpPolicy", config.catchUpPolicy, "QUOTE_RANKED_BOUNDED");
-  assertExact("maxConcurrentCatchUpLanes", config.maxConcurrentCatchUpLanes, 2);
+  assertExact("caGateMode", config.caGateMode, "FACTORY_FULL");
+  assertExact("capPolicy", config.capPolicy, "STRICT_5U");
+  assertExact("catchUpPolicy", config.catchUpPolicy, "ALL_ELIGIBLE");
+  assertExact("maxConcurrentCatchUpLanes", config.maxConcurrentCatchUpLanes, 10);
   assertExact("principalRecoveryMultipleBps", config.principalRecoveryMultipleBps, 20_000);
   assertExact("secondProfitMultipleBps", config.secondProfitMultipleBps, 30_000);
   assertExact("secondProfitTokenShareBps", config.secondProfitTokenShareBps, 1_000);
@@ -425,9 +425,9 @@ export function freezeStrategyConfig(config: ProductionStrategyConfig): FrozenSt
   });
 }
 
-export const CLOCKIN_POLICY_V2 = freezeStrategyConfig({
-  configId: "clockin-policy-v2",
-  revision: 2,
+export const CLOCKIN_POLICY_V3 = freezeStrategyConfig({
+  configId: "clockin-policy-v3",
+  revision: 3,
   owner: "project-owner",
   chainId: 4663,
   clockInBudgetUsdMicros: 50_000_000n,
@@ -436,10 +436,10 @@ export const CLOCKIN_POLICY_V2 = freezeStrategyConfig({
   nominalLaneUsdMicros: 5_000_000n,
   minimumShrunkLaneUsdMicros: 1_000_000n,
   firstLaunchMode: "MONITOR_ONLY",
-  caGateMode: "HYBRID_CA_GATE",
-  capPolicy: "SHRINK_TO_CAP",
-  catchUpPolicy: "QUOTE_RANKED_BOUNDED",
-  maxConcurrentCatchUpLanes: 2,
+  caGateMode: "FACTORY_FULL",
+  capPolicy: "STRICT_5U",
+  catchUpPolicy: "ALL_ELIGIBLE",
+  maxConcurrentCatchUpLanes: 10,
   principalRecoveryMultipleBps: 20_000,
   secondProfitMultipleBps: 30_000,
   secondProfitTokenShareBps: 1_000,
@@ -461,8 +461,9 @@ export const CLOCKIN_POLICY_V2 = freezeStrategyConfig({
   gasSafetyMarginBps: 3_000,
   automaticTopUpPolicy: "DISABLED",
   deploymentTopology: "ONE_ACTIVE_ONE_KEYLESS_OBSERVER",
-  changedAt: "2026-08-16T00:00:00.000Z",
+  changedAt: "2026-08-20T07:00:00.000Z",
 });
 
-/** Compatibility alias for callers that previously imported the initial policy. */
-export const INITIAL_CLOCKIN_POLICY = CLOCKIN_POLICY_V2;
+/** Compatibility alias while legacy modules are migrated to the creator-first policy name. */
+export const CLOCKIN_POLICY_V2 = CLOCKIN_POLICY_V3;
+export const INITIAL_CLOCKIN_POLICY = CLOCKIN_POLICY_V3;

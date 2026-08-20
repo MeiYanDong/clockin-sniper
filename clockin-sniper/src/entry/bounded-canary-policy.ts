@@ -20,6 +20,28 @@ export const BOUNDED_CANARY_POLICY_HASH = stableHash({
   maximumPrincipalUsdMicros: BOUNDED_CANARY_POLICY.maximumPrincipalUsdMicros.toString(),
 });
 
+/** Current quoted-path risk decision. The bounded canary policy remains for legacy adapters. */
+export const FIRST_BUYABLE_BURST_POLICY = Object.freeze({
+  policyId: "clockin-first-buyable-burst-v1",
+  laneCount: 10,
+  principalUsdMicrosPerLane: 5_000_000n,
+  aggregatePrincipalUsdMicros: 50_000_000n,
+  allInRiskCapUsdMicros: 60_000_000n,
+  maximumBuyTaxBps: 5_000,
+  bufferTaxBps: 9_999,
+  identityAnchor: "EXACT_FACTORY_APPROVED_CREATOR_FIRST_PRIMARY_EVENT" as const,
+  metadataAuthority: "AUDIT_ONLY" as const,
+  executionMode: "FIRST_BUYABLE_ALL_TEN" as const,
+  graduatedPolicy: "NO_SHOT" as const,
+});
+
+export const FIRST_BUYABLE_BURST_POLICY_HASH = stableHash({
+  ...FIRST_BUYABLE_BURST_POLICY,
+  principalUsdMicrosPerLane: FIRST_BUYABLE_BURST_POLICY.principalUsdMicrosPerLane.toString(),
+  aggregatePrincipalUsdMicros: FIRST_BUYABLE_BURST_POLICY.aggregatePrincipalUsdMicros.toString(),
+  allInRiskCapUsdMicros: FIRST_BUYABLE_BURST_POLICY.allInRiskCapUsdMicros.toString(),
+});
+
 export interface EntryExpansionEvidence {
   readonly codeIdentityTier: LaunchCodeIdentityTier;
   readonly canonicalCanaryEffect: boolean;

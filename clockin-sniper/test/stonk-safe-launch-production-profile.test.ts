@@ -21,7 +21,7 @@ import {
 
 function draft(): StonkSafeLaunchProductionProfileDraft {
   return Object.freeze({
-    formatVersion: 1,
+    formatVersion: 2,
     profileId: "clockin-safe-launch-weth-mainnet-v1",
     revision: 1,
     chainId: 4_663,
@@ -41,10 +41,13 @@ function draft(): StonkSafeLaunchProductionProfileDraft {
     }),
     identity: Object.freeze({
       expectedCreator: CLOCKIN_APPROVED_LAUNCH_CREATOR,
-      expectedName: "Clock In",
-      expectedSymbol: "CLOCKIN",
+      identityAnchor: "EXACT_FACTORY_APPROVED_CREATOR_FIRST_PRIMARY_EVENT",
+      displayNameHint: "CLOCK IN",
+      symbolHint: "CLOCKIN",
+      metadataAuthority: "AUDIT_ONLY",
       requirePrimaryExternalToken: false,
       officialCa: Object.freeze({
+        authority: "AUDIT_ONLY",
         url: "https://clockin.win/",
         jsonKey: "contractAddress",
         pollMs: 500,
@@ -53,7 +56,8 @@ function draft(): StonkSafeLaunchProductionProfileDraft {
     mechanismBounds: Object.freeze({
       bufferTaxBps: SAFE_LAUNCH_BUFFER_TAX_BPS,
       maximumBufferSeconds: 3_600,
-      maximumStartTaxBps: 4_000,
+      maximumStartTaxBps: 10_000,
+      maximumEntryTaxBps: 5_000,
       minimumDecayPerMinuteBps: 1,
       minimumWindowSeconds: 60,
       maximumWindowSeconds: 5_940,
@@ -69,12 +73,12 @@ function draft(): StonkSafeLaunchProductionProfileDraft {
       maximumFeePerGasWei: "2000000000",
       maximumPriorityFeePerGasWei: "1000000000",
       quoteMaximumAgeMs: 15_000,
-      laterLaneMaximumDriftBps: 300,
-      canaryMinimumOutputRaw: "1",
+      maximumEntrySlippageBps: 300,
       maximumExecutionDriftBps: 500,
     }),
     expansion: Object.freeze({
-      requireCanonicalCanaryEffect: true,
+      executionMode: "FIRST_BUYABLE_ALL_TEN",
+      requireCanonicalCanaryEffect: false,
       requireStrongOnchainBinding: true,
       requireExecutableExitBeforeLanes2To10: false,
     }),
@@ -96,7 +100,7 @@ describe("quoted Safe Launch production profile", () => {
     assert.equal(profile.expansion.requireExecutableExitBeforeLanes2To10, false);
     assert.equal(profile.mechanismBounds.capMode, "NO_CAP");
     assert.equal(profile.mechanismBounds.cooldownMode, "NONE");
-    assert.equal(profile.mechanismBounds.minimumDistinctExecutableTaxStates, 10);
+    assert.equal(profile.mechanismBounds.minimumDistinctExecutableTaxStates, 1);
   });
 
   it("rejects any pad, creator, funding mode, hash, or expansion drift", () => {
@@ -115,7 +119,7 @@ describe("quoted Safe Launch production profile", () => {
         ...profile,
         mechanismBounds: {
           ...profile.mechanismBounds,
-          minimumDistinctExecutableTaxStates: 9,
+          minimumDistinctExecutableTaxStates: 2,
         },
       },
     ]) {
@@ -127,11 +131,11 @@ describe("quoted Safe Launch production profile", () => {
     );
   });
 
-  it("accepts observed 33%-per-minute economics and blocks values outside authorization", () => {
+  it("authorizes the observed signing tax, not only the launch start tax", () => {
     const profile = freezeStonkSafeLaunchProductionProfile(draft());
     assert.doesNotThrow(() =>
       assertLaunchWithinProductionBounds(profile, {
-        startTaxBps: 3_300,
+        startTaxBps: 8_000,
         decayPerMinuteBps: 100,
         windowSeconds: 1_980,
         bufferSeconds: 300,
@@ -165,7 +169,7 @@ describe("quoted Safe Launch production profile", () => {
           bufferSeconds: 300,
           externalToken: false,
         }),
-      /exceed/,
+      /never reach/,
     );
     assert.throws(
       () =>
@@ -178,23 +182,37 @@ describe("quoted Safe Launch production profile", () => {
         }),
       /external-token/,
     );
+    assert.doesNotThrow(() =>
+      assertLaunchWithinProductionBounds(profile, {
+        startTaxBps: 5_000,
+        decayPerMinuteBps: 5_000,
+        windowSeconds: 60,
+        bufferSeconds: 300,
+        externalToken: false,
+      }),
+    );
     assert.throws(
       () =>
         assertLaunchWithinProductionBounds(profile, {
-          startTaxBps: 4_000,
-          decayPerMinuteBps: 4_000,
+          startTaxBps: 5_001,
+          decayPerMinuteBps: 100,
           windowSeconds: 60,
           bufferSeconds: 300,
           externalToken: false,
         }),
-      /fewer than ten distinct executable tax states/,
+      /never reach/,
     );
     const overbroad = freezeStonkSafeLaunchProductionProfile({
       ...draft(),
-      mechanismBounds: { ...draft().mechanismBounds, maximumStartTaxBps: 9_900 },
+      mechanismBounds: { ...draft().mechanismBounds, maximumStartTaxBps: 10_001 },
     });
+    assert.throws(() => parseStonkSafeLaunchProductionProfile(overbroad), /protocol field bound/);
     assert.throws(
-      () => parseStonkSafeLaunchProductionProfile(overbroad),
+      () =>
+        parseStonkSafeLaunchProductionProfile({
+          ...profile,
+          mechanismBounds: { ...profile.mechanismBounds, maximumEntryTaxBps: 5_001 },
+        }),
       /owner-approved execution bound/,
     );
   });

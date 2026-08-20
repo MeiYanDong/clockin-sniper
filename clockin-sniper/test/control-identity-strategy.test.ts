@@ -643,6 +643,16 @@ describe("identity, mechanism and strategy authorization", () => {
     );
   });
 
+  it("never lets audit-only name or symbol fields veto an approved creator", () => {
+    const evaluation = evaluateClockInIdentity(
+      candidate({ name: "UNEXPECTED DISPLAY NAME", symbol: "OTHER" }),
+      Object.freeze({ ...policy, nameSymbolAuthority: "AUDIT_ONLY" as const }),
+    );
+    assert.equal(evaluation.candidateMatch, true);
+    assert.equal(evaluation.clockInBound, true);
+    assert.deepEqual(evaluation.reasons, []);
+  });
+
   it("freezes canonical identity and reports official CA mismatch without replacement", () => {
     const frozen = freezeLaunchIdentity({
       candidate: candidate(),

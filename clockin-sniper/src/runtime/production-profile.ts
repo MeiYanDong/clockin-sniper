@@ -9,7 +9,7 @@ import {
 
 import { CLOCKIN_POLICY_V2 } from "../config/strategy-config.js";
 import { type Address, type Hex32, stableHash } from "../core/canonical.js";
-import { BOUNDED_CANARY_POLICY_HASH } from "../entry/bounded-canary-policy.js";
+import { FIRST_BUYABLE_BURST_POLICY_HASH } from "../entry/bounded-canary-policy.js";
 import type { CapScope, CooldownScope } from "../identity/mechanism-profiler.js";
 import type { WalletManifest } from "../wallets/wallet-manifest.js";
 
@@ -131,8 +131,8 @@ export interface ProductionAuthorization {
   readonly authorizationId: string;
   readonly mode: "AUTO_POLICY";
   readonly actorRef: string;
-  readonly policyId: "clockin-policy-v2";
-  readonly policyVersion: "2";
+  readonly policyId: "clockin-policy-v3";
+  readonly policyVersion: "3";
   readonly profileId: string;
   readonly profileRevision: number;
   readonly profileHash: string;
@@ -819,7 +819,7 @@ export function productionAuthorizationBinding(
     breakGlassExitMaximumSlippageBps: CLOCKIN_POLICY_V2.breakGlassExitMaximumSlippageBps,
     maximumSellTransactionsPerWallet: CLOCKIN_POLICY_V2.maximumSellTransactionsPerWallet,
     automaticTopUpPolicy: CLOCKIN_POLICY_V2.automaticTopUpPolicy,
-    boundedCanaryPolicyHash: BOUNDED_CANARY_POLICY_HASH,
+    firstBuyableBurstPolicyHash: FIRST_BUYABLE_BURST_POLICY_HASH,
   });
   return Object.freeze({ walletManifestHash, scopeHash, riskEnvelopeHash });
 }
@@ -841,8 +841,8 @@ export function createProductionAuthorization(input: {
       authorizationId: input.authorizationId,
       mode: "AUTO_POLICY",
       actorRef: input.actorRef,
-      policyId: "clockin-policy-v2",
-      policyVersion: "2",
+      policyId: "clockin-policy-v3",
+      policyVersion: "3",
       profileId: input.profile.profileId,
       profileRevision: input.profile.revision,
       profileHash: input.profile.profileHash,
@@ -885,8 +885,8 @@ export function parseProductionAuthorization(
     authorizationId: stringValue(input.authorizationId, "authorization.authorizationId"),
     mode: "AUTO_POLICY",
     actorRef: stringValue(input.actorRef, "authorization.actorRef"),
-    policyId: "clockin-policy-v2",
-    policyVersion: "2",
+    policyId: "clockin-policy-v3",
+    policyVersion: "3",
     profileId: stringValue(input.profileId, "authorization.profileId"),
     profileRevision: integer(input.profileRevision, "authorization.profileRevision", 1),
     profileHash: stringValue(input.profileHash, "authorization.profileHash"),
@@ -902,8 +902,8 @@ export function parseProductionAuthorization(
   if (
     input.formatVersion !== 1 ||
     input.mode !== "AUTO_POLICY" ||
-    input.policyId !== "clockin-policy-v2" ||
-    String(input.policyVersion) !== "2"
+    input.policyId !== "clockin-policy-v3" ||
+    String(input.policyVersion) !== "3"
   ) {
     throw new TypeError("authorization policy identity is invalid");
   }

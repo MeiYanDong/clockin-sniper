@@ -7,6 +7,7 @@ import {
   BOUNDED_CANARY_POLICY,
   BOUNDED_CANARY_POLICY_HASH,
   evaluateEntryExpansion,
+  FIRST_BUYABLE_BURST_POLICY_HASH,
 } from "../src/entry/bounded-canary-policy.js";
 import { prepareCanaryInParallel } from "../src/entry/canary-preparation.js";
 import {
@@ -16,7 +17,7 @@ import {
   StatefulFrictionEstimator,
   type CanaryEffectInput,
 } from "../src/entry/canary-estimator.js";
-import { planTenFeeBands } from "../src/entry/fee-band-planner.js";
+import { planTenFeeBands, planTenFirstBuyableBurst } from "../src/entry/fee-band-planner.js";
 import {
   freezeQuoteBoundedEntryPlan,
   type EntryPlanDraft,
@@ -136,6 +137,23 @@ describe("ten fee-band planner", () => {
         ),
       /unique/,
     );
+  });
+
+  it("freezes all ten 5U lanes at the same first-buyable tax", () => {
+    const burst = planTenFirstBuyableBurst(
+      5_000,
+      Array.from({ length: 10 }, (_, index) => `wallet-${index + 1}`),
+      Array.from({ length: 10 }, (_, index) => `reservation-${index + 1}`),
+    );
+    assert.deepEqual(
+      burst.lanes.map((lane) => lane.targetFeeBps),
+      Array.from({ length: 10 }, () => 5_000),
+    );
+    assert.equal(
+      burst.lanes.reduce((total, lane) => total + lane.nominalUsdMicros, 0n),
+      50_000_000n,
+    );
+    assert.match(FIRST_BUYABLE_BURST_POLICY_HASH, /^sha256:/u);
   });
 });
 
@@ -445,6 +463,41 @@ describe("ten independent entry lanes", () => {
     );
     assert.equal(blocked.length, 0);
     assert.match(orchestrator.snapshot()[1]?.reason ?? "", /calibrated canary/);
+  });
+
+  it("dispatches ten quoted wallets together in creator-first burst mode", () => {
+    const burstPlan = planTenFirstBuyableBurst(
+      5_000,
+      Array.from({ length: 10 }, (_, index) => `wallet-${index + 1}`),
+      Array.from({ length: 10 }, (_, index) => `reservation-${index + 1}`),
+    );
+    const orchestrator = new TenLaneOrchestrator(burstPlan, {
+      batchPrincipalRaw: 5_000n,
+      minimumShrunkPrincipalRaw: 5_000n,
+      aggregatePrincipalCapRaw: 50_000n,
+      catchUpPolicy: "ALL_ELIGIBLE",
+      maxConcurrentCatchUpLanes: 10,
+      capPolicy: "STRICT_5U",
+      requireCanaryBeforeLaterLanes: false,
+      requireQuoteForCanary: true,
+    });
+    orchestrator.setLaterLaneExecutionReadiness(true, "all ten wallets are production-ready");
+    const quotes = new Map(
+      burstPlan.lanes.map((lane, index) => [
+        lane.laneId,
+        quote(lane.laneId, BigInt(1_000 - index)),
+      ]),
+    );
+    const decisions = orchestrator.observe(observation({ currentFeeBps: 5_000 }), "L3", quotes);
+    assert.equal(decisions.length, 10);
+    assert.equal(
+      decisions.reduce((total, decision) => total + decision.principalRaw, 0n),
+      50_000n,
+    );
+    assert.deepEqual(
+      decisions.map((decision) => decision.targetFeeBps),
+      Array.from({ length: 10 }, () => 5_000),
+    );
   });
 
   it("ranks catch-up quotes, bounds concurrency and never dispatches twice", () => {

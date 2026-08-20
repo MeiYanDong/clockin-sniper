@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Creator-first v3 identity authority: exact WETH pad + approved creator + canonical primary `LaunchCreated` freezes the candidate before any token metadata read; name, symbol, X and website observations are asynchronous audit-only signals.
+- `FIRST_BUYABLE_ALL_TEN` live policy: at the first canonical block whose current tax is at most 50%, ten independent wallets may concurrently submit one exact-5U WETH buy, while preserving the 50U principal and 60U all-in caps.
+- A real missed-launch postmortem for official WETH launch id `39`, CA `0xA5bE…666666`: the canonical name was `CLOCK IN`, the old synchronous `Clock In` comparison vetoed handoff, and all ten wallets remained nonce `2` with zero CLOCKIN balance.
+- Per-lane positive current quotes and bounded `minTokensOut` for all ten burst lanes; the specialized quoted path no longer uses canary `minOut=1` or waits for a lane-1 receipt before releasing lanes 2–10.
 - Verified CLOCKIN WETH quoted-pad adapter and discovery path: exact pad and approved creator `LaunchCreated` filtering, same-id `LaunchArmed` correlation, dynamic `getLaunch/currentTaxBps/quoteBuy` reads, and nonpayable `buy(id, quoteIn, minTokensOut, ref)` construction.
 - WETH principal readiness and preparation planning for ten 5U lanes, including native-Gas separation, exact/bounded allowance checks, and fail-closed `0 WETH / 0 allowance` reporting.
 - A real-funds quoted Executor implementation and tests, plus repository-external immutable profile and seven-day authorization rendering; the quoted release, profile and authorization now have a production deployment/readback receipt, without claiming a live buy effect.
@@ -50,6 +54,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Changed the 50% owner boundary from a maximum start tax to a maximum tax at the actual canonical signing block. Launches may start higher and decay into range; launches that never reach `<=5000 bps` during their live window remain `NO_SHOT`.
+- Revoked the expired CLOCKIN paid/signing authorization after both curves graduated: the path and paid services are stopped, both markers are archived root-only, and the historical `ENTRY_HOT_ARMED` receipt is no longer current readiness evidence.
+- Marked creator-first v3 as local tested source only. The deployed revision-17 artifact remains historical and must not be described as containing this fix or as currently armed.
 - Replaced the historical “final Factory/ABI unpublished” entry blocker with 2026-08-20 verified quoted-protocol evidence, then completed quoted artifact/profile/authorization deployment, bounded WETH preparation, dual interlocks, public catch-up and valid-only path activation. Entry is now `ENTRY_HOT_ARMED`; no live buy effect exists yet.
 - Made chain events the execution trigger. X and website observations are asynchronous confirmation/conflict inputs only and never sit on the `LaunchCreated → LaunchArmed → dynamic buy` hot path.
 - Corrected the primary principal asset from native ETH to WETH. Native ETH funds WETH deposit and Gas; STONK is not required for the current CLOCKIN primary path.
@@ -61,8 +68,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Extended the verification command to include formatting, linting, coverage, production dependency audit, and package-content audit.
 - Changed the default live entrypoint to fail closed until the verified quoted profile is deployed and current production readiness passes; legacy single-wallet commands are explicitly audit/replay-only.
 - Replaced the historical generic three-sell Gas readiness assumption for this quoted entry path with buffered WETH plus wrap/approve/entry maximum Gas under the 60U all-in cap.
-- Raised the current functional baseline to 386 passing tests; core coverage is line `89.13%`, branch `68.60%`, and function `88.19%`, with a separate production-entrypoint regression gate at line `34.35%`, branch `70.41%`, and function `68.82%`.
-- Updated operational truth: keyless failover Control is active and caught up at cursor/head `40914339`; the valid-only path is enabled/active waiting, both `root:clockin 0440` markers are present, and all ten wallets have nonce `2`, positive native Gas, and `2407976970983877` raw WETH plus equal exact-pad allowance. With no CA/handoff, all paid services correctly remain static inactive and no buy receipt exists.
+- Raised the current functional baseline to 393 passing tests; core coverage is line `89.28%`, branch `68.90%`, and function `88.93%`, with a separate production-entrypoint regression gate at line `34.38%`, branch `70.89%`, and function `68.82%`.
+- Recorded the prior armed-idle state as a historical snapshot rather than current truth. The official CA has now been observed, no local buy was submitted, and the old interlocks have been revoked.
 - Changed Executor startup ordering so Reconciler remains mandatory while Exit prewarms in parallel. The earlier rule making missing Exit block lanes 2–10 is superseded: Exit no longer gates entry expansion.
 - Removed the unimplemented later-lane no-quote dispatch fallback and made transient pre-sign readiness loss return a lane to `DEFERRED` instead of consuming it as a final failure.
 
