@@ -24,7 +24,7 @@ import {
 
 const DEFAULT_MAXIMUM_BLOCKS_PER_QUERY = 2_000n;
 const DEFAULT_CONFIRMATION_DEPTH = 2n;
-const CLOCKIN_TOKEN_NAME = "Clock In";
+const CLOCKIN_TOKEN_NAME_CANONICAL = "CLOCK IN";
 const CLOCKIN_TOKEN_SYMBOL = "CLOCKIN";
 const erc20MetadataInterface = new Interface([
   "function name() view returns (string)",
@@ -211,7 +211,7 @@ async function matchesClockInMetadata(
   blockNumber: bigint,
 ): Promise<boolean> {
   const name = await readErc20MetadataField(requester, tokenAddress, "name", blockNumber);
-  if (name !== CLOCKIN_TOKEN_NAME) return false;
+  if (name.toUpperCase() !== CLOCKIN_TOKEN_NAME_CANONICAL) return false;
   const symbol = await readErc20MetadataField(requester, tokenAddress, "symbol", blockNumber);
   return symbol === CLOCKIN_TOKEN_SYMBOL;
 }

@@ -200,7 +200,7 @@ class FakePublicRpc implements JsonRpcRequester {
       throw new Error("invalid metadata eth_call fixture");
     }
     const values = this.tokenMetadata.get(call.to.toLowerCase()) ?? {
-      name: "Clock In",
+      name: "CLOCK IN",
       symbol: "CLOCKIN",
     };
     const fragment = metadata.getFunction(call.data.slice(0, 10));
