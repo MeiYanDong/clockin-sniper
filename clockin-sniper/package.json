@@ -54,9 +54,9 @@
     "verify": "npm run secrets:check && npm run secrets:history && npm run format:check && npm run lint && npm run typecheck && npm run coverage && npm run audit:prod && npm run package:audit"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.8",
-    "@types/node": "^26.2.0",
-    "tsx": "^4.23.12",
+    "@biomejs/biome": "2.5.12",
+    "@types/node": "^26.4.1",
+    "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   },
   "dependencies": {
